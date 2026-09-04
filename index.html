@@ -4616,6 +4616,13 @@ function setReviseAt(i){
   renderStrip(window._voicings||[]);
 }
 function updateInsertNote(){
+  // Item 7 follow-up: moved ahead of renderPassingSuggestions() deliberately. That function
+  // had its own pre-existing bug (see its own comment) that could throw and halt the rest of
+  // this function — which silently stopped the map refresh below from ever running too,
+  // since it used to come after. Refreshing the map first means a future bug anywhere else
+  // in this function can't take the map down with it.
+  buildRoots();
+  renderDots();
   renderPassingSuggestions();
   const el=document.getElementById('insert-note');
   if(!el)return;
@@ -4629,11 +4636,6 @@ function updateInsertNote(){
     if(cancelBtn) cancelBtn.onclick=()=>{reviseAt=null;renderStrip(window._voicings||[]);};
     return;
   }
-  // Item 7: the map's own key follows the cursor now (see effectiveMapKeyContext), so it
-  // needs to redraw any time the insert/revise cursor moves — not just on the wider
-  // renderAll() passes that already covered it.
-  buildRoots();
-  renderDots();
   if(insertAt===null){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block';
   const pos = insertAt===0 ? 'the very start' : `right after chord ${insertAt}`;
@@ -4658,7 +4660,16 @@ function renderPassingSuggestions(){
   const el=document.getElementById('passing-section');
   if(!el) return;
   if(insertAt===null || insertAt<=0 || insertAt>=seq.length){ el.style.display='none'; el.innerHTML=''; return; }
+  // Bug fix: this used to grab seq[insertAt-1]/seq[insertAt] and hand them straight to
+  // passingChordCandidates assuming both were real chords — but either neighbor can be a
+  // key-change MARKER (no .idx field the way a real chord has), which crashed downstream in
+  // entryBassPC. Found via item 7 testing: the crash happened to sit earlier in
+  // updateInsertNote() than the map refresh, so it was silently blocking the map from
+  // updating too, whenever the insert cursor sat immediately next to a marker. A passing
+  // chord needs a real chord on both sides by definition, so treating a marker neighbor as
+  // "no candidates" is the correct behavior here, not just a crash guard.
   const prevEntry=seq[insertAt-1], nextEntry=seq[insertAt];
+  if(isMarker(prevEntry) || isMarker(nextEntry)){ el.style.display='none'; el.innerHTML=''; return; }
   const cands=passingChordCandidates(prevEntry,nextEntry);
   el.style.display='block';
   if(!cands.length){

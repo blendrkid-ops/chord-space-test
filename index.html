@@ -2427,6 +2427,8 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
     <button id="stopseq">◼ stop</button>
     <button id="loopseq" class="btn-loop" aria-pressed="false" title="Loop the progression">⟲ loop</button>
     <button id="metronomeseq" class="btn-loop" aria-pressed="false" title="Click on every beat during playback, synced to the active time signature">♩ click</button>
+    <button id="undo-tp" title="Undo">↶ undo</button>
+    <button id="redo-tp" title="Redo">↷ redo</button>
   </div>
   <div class="tp-group">
     <span class="tp-label">bpm</span>
@@ -2441,8 +2443,8 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
   <div class="tp-group">
     <span class="tp-label">note</span>
     <select id="global-dur" class="dur-select">
-      <option value="1n">𝅝 whole</option>
-      <option value="2n" selected>𝅗𝅥 half</option>
+      <option value="1n">○ whole</option>
+      <option value="2n" selected>◐ half</option>
       <option value="4n">♩ quarter</option>
       <option value="8n">♪ eighth</option>
     </select>
@@ -4027,6 +4029,25 @@ function keyContextAt(i){
   }
   return {keyRoot,keyMode};
 }
+// Item 7: which key the Build tab's map (buildRoots/renderDots) should actually build
+// itself in. Previously the map always used the raw global keyRoot/keyMode regardless of
+// where the insert cursor sat — flagged only via a text caveat when it disagreed with the
+// region the cursor was actually in. Now the map itself follows: whatever position a click
+// would actually land at (the pending insert point, or the chord being revised, or the end
+// of the sequence when just appending) is run through the same keyContextAt() backward-scan
+// already used elsewhere (e.g. renderSuggestions), so a single source of truth decides "what
+// key is active here" everywhere in the app.
+function effectiveMapKeyContext(){
+  // insertAt is the array index the new chord will occupy (see addChordAtInsertPoint's
+  // splice) — so the chord it lands AFTER is seq[insertAt-1], not seq[insertAt] itself.
+  // Using insertAt directly would misfire if the insert point sits immediately before a
+  // key-change marker: keyContextAt would hit that marker's NEW key, when the chord being
+  // inserted actually still belongs to the OLD key preceding it. Same convention already
+  // used by updateInsertNote's own region-note text, just applied to the map now too.
+  if(insertAt!==null) return keyContextAt(insertAt<=0?0:insertAt-1);
+  if(reviseAt!==null) return keyContextAt(reviseAt); // matches the revise-mode label's own keyContextAt(reviseAt) usage
+  return keyContextAt(seq.length);
+}
 // Active time signature for seq index i — same backward-scan-to-nearest-marker pattern as
 // keyContextAt. A marker only carries a meter change if one was explicitly set on it
 // (see insertKeyMarker/setMarkerMeter); markers created before this feature, or left
@@ -4354,15 +4375,18 @@ function updateModeNote(){
 
 function buildRoots(){
   rootsWrap.innerHTML='';
-  const ds=diatonicChords(keyRoot,keyMode);
+  // Item 7: builds in whatever key is active at the insert cursor, not always the global
+  // Build-tab key — see effectiveMapKeyContext().
+  const mkc=effectiveMapKeyContext();
+  const ds=diatonicChords(mkc.keyRoot,mkc.keyMode);
   // Functional mode's "which root is favored" signal now lives in the
   // Suggested next chords list (renderSuggestions), same place atonal and
   // geometric suggestions live — this row stays a plain root/tier picker.
   sharpNames.forEach((_,i)=>{
     const b=document.createElement('button');
     const isDia=ds.some(d=>d.root===i);
-    const t=rootTier(i,keyRoot,keyMode);
-    b.textContent=keySpell(i,keyRoot,keyMode);
+    const t=rootTier(i,mkc.keyRoot,mkc.keyMode);
+    b.textContent=keySpell(i,mkc.keyRoot,mkc.keyMode);
     let cls='pill-btn';
     if(isDia) cls+=' diatonic';
     if(t.tier==='tonic') cls+=' tier-tonic';
@@ -4453,7 +4477,9 @@ function renderSuggestions(voicings){
 
 function renderDots(){
   wrap.innerHTML='';
-  const ds=diatonicChords(keyRoot,keyMode);
+  // Item 7: same effective-key source as buildRoots() — the map follows the insert cursor.
+  const mkc=effectiveMapKeyContext();
+  const ds=diatonicChords(mkc.keyRoot,mkc.keyMode);
   // Ranked next-chord suggestions live in the "Suggested next chords" list
   // (renderSuggestions) — this map is a quiet reference: root/quality picker
   // plus diatonic/tonic/signature marking only, no per-mode ring math here.
@@ -4461,7 +4487,7 @@ function renderDots(){
   lib.forEach((ch,i)=>{
     const [px,py]=toPct(ch.x,ch.y);
     const dm=ds.find(d=>d.root===currentRoot&&qualityFamilyMatch(ch.n,d.quality));
-    const dt=dm?rootTier(currentRoot,keyRoot,keyMode):null;
+    const dt=dm?rootTier(currentRoot,mkc.keyRoot,mkc.keyMode):null;
     const sigCls=dt?(dt.tier==='tonic'?' sig-tonic':(dt.tier==='signature'?' sig-signature':'')):'';
     const dot=document.createElement('div');
     dot.className='dot'+(dm?' diatonic':'')+sigCls;
@@ -4471,7 +4497,7 @@ function renderDots(){
     wrap.appendChild(dot);
     const lbl=document.createElement('div');
     const sigMark = (dt && dt.tier==='signature') ? ' ★' : '';
-    const rootLabel=keySpell(currentRoot,keyRoot,keyMode);
+    const rootLabel=keySpell(currentRoot,mkc.keyRoot,mkc.keyMode);
     lbl.textContent=rootLabel+' '+ch.n+(dm?` · ${dm.num}${sigMark}`:'');
     lbl.className='dot-label'+(dm?' diatonic':'')+sigCls;
     lbl.style.cssText=`left:${px}%;top:calc(${py}% + ${size/2+6}px);`;
@@ -4495,7 +4521,16 @@ function cutSegment(i){
 function addChordAtInsertPoint(entry){
   if(!entry.hasOwnProperty('inv')) entry.inv=0;
   if(!entry.hasOwnProperty('invLocked')) entry.invLocked=false; // item 30: new chords start unlocked
-  if(!entry.hasOwnProperty('dur')) entry.dur=null;
+  // Item 18: a brand-new chord always starts as a quarter note, regardless of the active
+  // meter or whatever the transport's "note" dropdown (globalDur) is currently set to.
+  // Previously this was null (meaning "inherit globalDur"), which could silently overflow a
+  // short bar — e.g. a whole note dropped into a 3/4 section right after working in 4/4.
+  // Quarter note fits inside any meter Chord Space supports, so it's a safe unconditional
+  // default rather than computing bar-length math per meter. fitNewChordDuration() below
+  // still applies on top of this if a following chord leaves even less room than a quarter
+  // note. Existing/loaded chords with dur:null are untouched — getChordDur() still falls
+  // back to globalDur for those, so old files play back exactly as before.
+  if(!entry.hasOwnProperty('dur')) entry.dur='4n';
   if(!entry.hasOwnProperty('manualVoicing')) entry.manualVoicing=null;
   if(reviseAt!==null && seq[reviseAt] && !isMarker(seq[reviseAt])){
     // Revise mode: replace the chord at reviseAt in place. This is a clean swap, not a
@@ -4594,18 +4629,23 @@ function updateInsertNote(){
     if(cancelBtn) cancelBtn.onclick=()=>{reviseAt=null;renderStrip(window._voicings||[]);};
     return;
   }
+  // Item 7: the map's own key follows the cursor now (see effectiveMapKeyContext), so it
+  // needs to redraw any time the insert/revise cursor moves — not just on the wider
+  // renderAll() passes that already covered it.
+  buildRoots();
+  renderDots();
   if(insertAt===null){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block';
   const pos = insertAt===0 ? 'the very start' : `right after chord ${insertAt}`;
-  // If the cursor sits in a key region other than the current Build-tab key, the map picks
-  // roots in the Build-tab key while the inserted chord will READ in the region's key — flag
-  // that honestly so a root chosen from the map isn't silently relabeled on insert.
+  // The map itself now switches to the region's key automatically (item 7), so this is just
+  // a plain heads-up that it did — not a mismatch warning the way it used to be, since the
+  // map and the inserted chord's label always agree now.
   let regionNote='';
   if(seq.some(isMarker) && insertAt!==null){
     const at=insertAt<=0?0:insertAt-1;
     const kc=keyContextAt(at);
     if(kc.keyRoot!==keyRoot||kc.keyMode!==keyMode){
-      regionNote=` This spot is in the <strong>${selfSpell(kc.keyRoot)} ${kc.keyMode}</strong> region, so the chord you add will be labeled in that key (the map still picks roots in your current ${selfSpell(keyRoot)} ${keyMode} key).`;
+      regionNote=` This spot is in the <strong>${selfSpell(kc.keyRoot)} ${kc.keyMode}</strong> region, so the map below has switched to that key for this insert.`;
     }
   }
   el.innerHTML = `Insert mode: the next chord you click on the map (or secondary dominant) will be placed ${pos}.${regionNote} You can also drop a key change here with <strong>+ key change</strong> below. <strong id="cancel-insert" style="cursor:pointer;">cancel</strong>`;
@@ -5398,6 +5438,33 @@ function attachLinesLongPressErase(el,onErase){
   el.addEventListener('touchmove',()=>{ moved=true; if(timer){clearTimeout(timer);timer=null;} },{passive:true});
   el.addEventListener('touchend',()=>{ if(timer){clearTimeout(timer);timer=null;} });
 }
+// General-purpose long-press (item 17), same 550ms threshold and cancel-on-move pattern as
+// attachLinesLongPressErase above, but for BOTH touch and mouse (mousedown-and-hold), since
+// a chord chip's own click handler already means a plain tap/click stays a single-chord
+// preview — long-press is what triggers something bigger (here: play from this chord).
+// Sets el._longPressFired=true for one tick after firing so the caller's own click/mouseup
+// handler can check it and skip its normal action, rather than both firing back to back.
+function attachLongPress(el,onLongPress,delayMs){
+  const ms=delayMs||550;
+  let timer=null, moved=false;
+  const cancel=()=>{ if(timer){clearTimeout(timer);timer=null;} };
+  const start=()=>{
+    moved=false; el._longPressFired=false;
+    cancel();
+    timer=setTimeout(()=>{
+      if(!moved){ el._longPressFired=true; onLongPress(); }
+    },ms);
+  };
+  const move=()=>{ moved=true; cancel(); };
+  el.addEventListener('touchstart',start,{passive:true});
+  el.addEventListener('touchmove',move,{passive:true});
+  el.addEventListener('touchend',cancel,{passive:true});
+  el.addEventListener('touchcancel',cancel,{passive:true});
+  el.addEventListener('mousedown',start);
+  el.addEventListener('mousemove',move);
+  el.addEventListener('mouseup',cancel);
+  el.addEventListener('mouseleave',cancel);
+}
 // A click (mousedown, no real drag) on a note either selects it alone, toggles it in/out
 // of the selection (shift), or — if it's already part of a multi-note selection — grabs
 // the WHOLE selection for a group drag without collapsing it down to one note first.
@@ -6016,7 +6083,15 @@ function renderStrip(voicings){
       tag.textContent=passingKindLabel[s.passing.kind]||'passing';
       chip.appendChild(tag);
     }
-    chip.onclick=()=>{Tone.start();ensureSynth();const d=durToSeconds(getChordDur(s));synth.triggerAttackRelease(voicings[i].map(midiToNote),d);};
+    chip.onclick=()=>{
+      if(chip._longPressFired){ chip._longPressFired=false; return; } // long-press already handled this touch/click
+      Tone.start();ensureSynth();const d=durToSeconds(getChordDur(s));synth.triggerAttackRelease(voicings[i].map(midiToNote),d);
+    };
+    // Item 17 — long-press a chip to start playback from that chord, instead of only ever
+    // being able to play from the top. A plain tap still does the existing single-chord
+    // preview (see chip.onclick above); only a held press reaches this.
+    chip.title='Tap to preview this chord \u00b7 long-press to play the progression from here';
+    attachLongPress(chip,()=>{ playProgression(i); });
     const btnRow=document.createElement('div');
     btnRow.className='chip-btn-row';
     const bassBtn=document.createElement('button');
@@ -6080,8 +6155,12 @@ function renderStrip(voicings){
     if(s.dur){
       // Passive status badge — duration is now edited on the Rhythm tab's timeline
       // (drag or step a block there), so this is informational only, not a click target.
-      const durLabels={'1n':'𝅝','2n':'𝅗𝅥','4n':'♩','8n':'♪','16n':'♬',
-        '1n_d':'𝅝·','2n_d':'𝅗𝅥·','4n_d':'♩·','8n_d':'♪·', '8n_t':'♪³','4n_t':'♩³','16n_t':'♬³'};
+      // Whole/half note icons use plain-Unicode circle glyphs (○/◐), not the SMP musical
+      // note characters (𝅝/𝅗𝅥) — those have no fallback in iOS Safari's font stack and were
+      // rendering as blank boxes on real-device testing. Quarter/eighth/sixteenth (♩♪♬) are
+      // BMP characters with broad cross-platform support and are unaffected.
+      const durLabels={'1n':'○','2n':'◐','4n':'♩','8n':'♪','16n':'♬',
+        '1n_d':'○·','2n_d':'◐·','4n_d':'♩·','8n_d':'♪·', '8n_t':'♪³','4n_t':'♩³','16n_t':'♬³'};
       const dtag=document.createElement('span');
       dtag.className='chip-dur has-dur';
       dtag.style.cursor='default';
@@ -7071,9 +7150,16 @@ function restoreFrom(idx){
 function doUndo(){ if(histIdx>0){ histIdx--; restoreFrom(histIdx); } }
 function doRedo(){ if(histIdx<history.length-1){ histIdx++; restoreFrom(histIdx); } }
 function updateUndoRedoButtons(){
+  // Undo/redo now has two entry points: the original pair inside the Build tab, and a
+  // duplicate pair in the transport bar (id suffix "-tp") so it's reachable from every tab,
+  // not just Build — raised during mobile testing. Both pairs share the same history/histIdx
+  // state; this just keeps both sets of buttons in sync with it.
   const u=document.getElementById('undo'), r=document.getElementById('redo');
+  const uTp=document.getElementById('undo-tp'), rTp=document.getElementById('redo-tp');
   if(u) u.disabled = histIdx<=0;
   if(r) r.disabled = histIdx>=history.length-1;
+  if(uTp) uTp.disabled = histIdx<=0;
+  if(rTp) rTp.disabled = histIdx>=history.length-1;
 }
 
 function renderSessionOverview(){
@@ -7216,6 +7302,8 @@ document.getElementById('diatonic-q-sevenths').onclick=()=>setDiatonicListQualit
 document.getElementById('diatonic-q-triads').onclick=()=>setDiatonicListQuality(true);
 document.getElementById('undo').onclick=()=>doUndo();
 document.getElementById('redo').onclick=()=>doRedo();
+document.getElementById('undo-tp').onclick=()=>doUndo();
+document.getElementById('redo-tp').onclick=()=>doRedo();
 document.getElementById('clear').onclick=()=>{seq=[];melodyTrack=[];bassTrack=[];activeBassIndex=null;activeInvIndex=null;activeMelodyIndex=null;activeKeyboardIndex=null;insertAt=null;reviseAt=null;renderAll();};
 // Cmd/Ctrl-Z = undo, Cmd/Ctrl-Shift-Z or Ctrl-Y = redo. Ignored while typing in a field.
 document.addEventListener('keydown',e=>{
@@ -7423,7 +7511,13 @@ function highlightChord(idx){
   if(window.cylOnChordPlay) window.cylOnChordPlay(idx);
 }
 
-function playProgression(){
+// Item 17 — "play from here": startIndex is the seq index to begin playback at (a real
+// chord, not a marker). Defaults to the very top, so every existing call site that invokes
+// playProgression() with no argument is unaffected. Guarded against a stray non-number —
+// `document.getElementById('playseq').onclick=playProgression` passes the click Event
+// itself as the first argument, which would otherwise land here as "startIndex".
+function playProgression(startIndex){
+  const wantStart = (typeof startIndex==='number' && startIndex>=0) ? startIndex : 0;
   if(!seq.length)return;
   Tone.start();
   ensureSynth();
@@ -7435,7 +7529,9 @@ function playProgression(){
   Tone.Transport.bpm.value=bpm;
   isPlaying=true;
   // Cylinder auto-frame-then-free: if the cylinder view is built, ease its camera to a
-  // framing that shows the whole path as playback begins, then hand control back.
+  // framing that shows the whole path as playback begins, then hand control back. Still
+  // frames the WHOLE progression even when starting mid-way through — just a viewing
+  // choice, not tied to the start offset.
   if(window.cylOnPlayStart) window.cylOnPlayStart();
 
   // Schedule each chord at its ABSOLUTE grid position (in seconds) — beatLayout() is the
@@ -7445,6 +7541,13 @@ function playProgression(){
   // to the same clock.
   const spq=60/bpm; // seconds per quarter-note-equivalent beat
   const {starts:layoutStarts,total:layoutTotalBeats}=beatLayout();
+  // Every event below is still scheduled at its normal absolute position — nothing here
+  // changes. "Starting mid-progression" only changes where Transport.start() itself begins
+  // (see the offset passed to it further down): any event scheduled before that offset
+  // simply never fires, because the transport's playhead starts past it. No separate
+  // filtering of which chords get scheduled is needed.
+  const startOffsetSec = (wantStart>0 && layoutStarts[wantStart]!==undefined)
+    ? layoutStarts[wantStart]*spq : 0;
   const seqSnapshot=seq.slice(); // snapshot in case seq changes mid-playback
   const chordsMuted=laneEffectivelyMuted('chords'); // Lines mute/solo can silence the chord bed
   // Per-voice solo (item 26): reuses the exact same voice-identity threading the roll's
@@ -7545,7 +7648,12 @@ function playProgression(){
   Tone.Transport.loopStart=0;
   Tone.Transport.loopEnd=loopTime;
 
-  Tone.Transport.start();
+  // Item 17: starting with an offset just moves where the transport's own playhead begins —
+  // loopStart/loopEnd above are untouched, so if loop is on, the first wrap-around still
+  // takes it back to true position 0 (the top), not back to wantStart. "Enter partway
+  // through, then loop the whole thing" — the simplest of the two options raised when this
+  // item was scoped, going with it as a default rather than adding a second loop mode.
+  Tone.Transport.start("+0", startOffsetSec);
 }
 // --- Metronome ---------------------------------------------------------------------
 // A click on every quarter-note-equivalent beat, synced to whichever time signature is
@@ -8967,7 +9075,17 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   function stop(){ running=false; if(raf) cancelAnimationFrame(raf); raf=null; }
 
   // --- interaction ---
+  // Single-finger orbit only. activePointerId pins the drag to whichever finger/pointer
+  // started it — a second finger touching down (e.g. a pinch attempt) is ignored entirely
+  // rather than being allowed to stomp lastX/lastY, which previously caused the camera to
+  // jump/jitter on any two-finger touch (each finger's events were overwriting the same
+  // shared position variables). No pinch-to-zoom gesture is implemented yet — this just
+  // makes a second finger a safe no-op instead of a glitch. Revisit if real pinch-to-zoom
+  // is wanted later (would need per-pointer tracking keyed by pointerId).
+  let activePointerId=null;
   canvas.addEventListener('pointerdown', e=>{
+    if(activePointerId!==null) return; // a drag is already in progress on another finger
+    activePointerId=e.pointerId;
     dragging=true; movedWhileDown=false; lastX=e.clientX; lastY=e.clientY;
     target=null; canvas.classList.add('dragging');
     canvas.setPointerCapture(e.pointerId);
@@ -8975,7 +9093,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   canvas.addEventListener('pointermove', e=>{
     const rect=canvas.getBoundingClientRect();
     hoverSX=e.clientX-rect.left; hoverSY=e.clientY-rect.top;
-    if(dragging){
+    if(dragging && e.pointerId===activePointerId){
       const dx=e.clientX-lastX, dy=e.clientY-lastY;
       if(Math.abs(dx)+Math.abs(dy)>2) movedWhileDown=true;
       az += dx*0.008;
@@ -8983,7 +9101,10 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
       lastX=e.clientX; lastY=e.clientY;
     }
   });
-  function endDrag(e){ dragging=false; canvas.classList.remove('dragging');
+  function endDrag(e){
+    if(e.pointerId!==activePointerId) return; // not the finger driving the drag — ignore
+    activePointerId=null;
+    dragging=false; canvas.classList.remove('dragging');
     try{ canvas.releasePointerCapture(e.pointerId); }catch(_){} }
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);

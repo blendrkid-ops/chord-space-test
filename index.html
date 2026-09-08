@@ -2217,7 +2217,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       </span>
       <div>
         <h1>Chord Space</h1>
-        <p class="subtitle">A spatial progression builder <span class="mono">v6</span></p>
+        <p class="subtitle">A spatial progression builder <span class="mono" id="app-version-label">v6</span></p>
         <input type="text" id="session-name" class="session-name-input" placeholder="Untitled session" aria-label="Session name" maxlength="60" spellcheck="false">
       </div>
     </div>
@@ -2825,6 +2825,14 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script>
+// Canonical application/build version — the single source of truth for CHORD SPACE's own
+// displayed version. Distinct from the .chordspace.json save-schema `version` field (see
+// saveState() below, currently 12 — an independent, unrelated counter with its own history
+// tracked in that field's inline comments) and from any third-party library version (Tone.js/
+// Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
+// validated build; never reuse a value for a different delivered HTML. Every display of the
+// app's own version should read from this constant rather than a separate hardcoded string.
+const APP_VERSION = "v59";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -3176,6 +3184,27 @@ function secondaryDominants(kr, km){
     results.push({root:domRoot, quality:"dominant 7", target:d.root, targetNum:d.num, label});
   });
   return results;
+}
+
+// --- Item 50: single shared authority for secondary-dominant classification ---
+// Mirrors item 46's truth-first principle (borrowedStatusAt): a chord's secondary-dominant
+// status is always re-derived from its root+quality against the LOCAL key context, reusing the
+// same secondaryDominants() candidate list the Related Chords "Secondary" picker already uses
+// to populate its options — never trusted from the persisted s.secDom flag, which only records
+// how the chord was originally added and can go stale after a later key/mode change (e.g. the
+// degree it targets stops being diatonic, or the whole progression modulates). No new theory
+// engine: this is a membership check against the existing detector's own candidate list.
+// Native classification always takes precedence — every call site below checks its own `dm`
+// (native-function match) first and only calls this when that comes back empty, preserving the
+// existing native > secdom > borrowed > passing > chromatic cascade order unchanged.
+function secDomStatusAt(i){
+  const s=seq[i]; if(!s||isMarker(s)) return {isSecDom:false, label:null, target:null, targetNum:null};
+  const ch=lib[s.idx];
+  const kc=keyContextAt(i);
+  const candidates=secondaryDominants(kc.keyRoot,kc.keyMode);
+  const match=candidates.find(c=>c.root===s.root && c.quality===ch.n);
+  if(!match) return {isSecDom:false, label:null, target:null, targetNum:null};
+  return {isSecDom:true, label:match.label, target:match.target, targetNum:match.targetNum};
 }
 
 // --- Passing chords: connective, non-functional chords suggested at an insert
@@ -4158,15 +4187,18 @@ function exportTheory(){
 
     // Function classification (against the local key). Item 46: borrowed status comes
     // exclusively from the shared borrowedStatusAt() authority — never from s.borrowed
-    // directly — so this export always agrees with the strip chip, live detail panel, and
-    // Cylinder Map, regardless of how the chord originally entered the progression.
+    // directly. Item 50: secondary-dominant status likewise comes exclusively from
+    // secDomStatusAt() — never from s.secDom directly — so this export always agrees with
+    // the strip chip, live detail panel, and Cylinder Map, regardless of how the chord
+    // originally entered the progression or whether the key has since changed under it.
     let fn='', fnClass='chromatic', borrowDisclosure=null;
     const bStatus=dm?null:borrowedStatusAt(ce.seqIdx);
+    const sdStatus=dm?null:secDomStatusAt(ce.seqIdx);
     if(dm){
       fn=dm.num; fnClass='diatonic';
       if(dm.characteristic){ fn+='\u2009\u2605'; fnClass='characteristic'; }
-    } else if(s.secDom){
-      fn=s.secDom; fnClass='secdom';
+    } else if(sdStatus.isSecDom){
+      fn=sdStatus.label; fnClass='secdom';
     } else if(s.passing){
       fn=passingKindLabel[s.passing.kind]||'passing'; fnClass='passing';
     } else if(bStatus.isBorrowed){
@@ -4225,10 +4257,15 @@ function exportTheory(){
   }
   // Per-transition classification; VL Δ reuses the SAME bijective vlDistances the summary uses.
   // classifyTransition's key-relative common-tone spelling reads the LATER chord's local key.
-  const chordMeta=chordEntries.map(ce=>{const s=ce.s,ch=lib[s.idx],ds=diatonicChords(ce.kr,ce.km);return {
+  // Item 50: secDom re-derived per chord via secDomStatusAt() (local-key-aware), not read raw
+  // off s.secDom — so the root-motion diagram's "secondary dominant → target" edge styling
+  // can't persist on a chord whose target degree is no longer diatonic after a modulation.
+  const chordMeta=chordEntries.map(ce=>{const s=ce.s,ch=lib[s.idx],ds=diatonicChords(ce.kr,ce.km);
+    const isNative=!!nativeDegreeByFunction(s.root,ch.n,ds);
+    return {
     root:s.root, quality:ch.n, pcs:pcsOf(s.root,ch.n),
-    isDiatonic:!!nativeDegreeByFunction(s.root,ch.n,ds),
-    isDom:(ch.n==='dominant 7'||ch.n==='9th'), secDom:s.secDom||null };});
+    isDiatonic:isNative,
+    isDom:(ch.n==='dominant 7'||ch.n==='9th'), secDom:isNative?null:secDomStatusAt(ce.seqIdx).label };});
   const transitions=[];
   for(let i=1;i<chordMeta.length;i++){
     const t=classifyTransition(chordMeta[i-1],chordMeta[i],chordEntries[i].kr);
@@ -7062,7 +7099,14 @@ function renderStrip(voicings){
     const invNames=['','¹','²','³'];
     const invSuffix=(s.inv||0)>0?` (${invNames[s.inv]}inv)`:'';
     const label=s.bass!==null?`${rn} ${ch.n}${invSuffix} / ${keySpell(s.bass,kc.keyRoot,kc.keyMode)}`:`${rn} ${ch.n}${invSuffix}`;
-    const secLabel = s.secDom ? ` [${s.secDom}]` : '';
+    // Item 50: secondary-dominant chip bracket comes from secDomStatusAt() — never the raw
+    // s.secDom flag — gated on native-first (matching the precedence every other cascade in
+    // the app already uses), so a chord that's become native, or reclassified after a key
+    // change, never shows a stale [V/x] bracket here while every other surface has already
+    // stopped showing it.
+    const isNativeHere=!!nativeDegreeByFunction(s.root,ch.n,diatonicChords(kc.keyRoot,kc.keyMode));
+    const sdStat=isNativeHere?{isSecDom:false}:secDomStatusAt(i);
+    const secLabel = sdStat.isSecDom ? ` [${sdStat.label}]` : '';
     // Roman-numeral / function label: reuses the app's established vlRoman(i) — the exact
     // same function already labeling chords in renderInfo and the map-dot display. It matches
     // on root AND function (via functionMatchesDegree's guide-tone test — item 49), then
@@ -7383,7 +7427,11 @@ function vlRoman(i,_ds){
   const ds=diatonicChords(kc.keyRoot,kc.keyMode);
   const dm=nativeDegreeByFunction(s.root,ch.n,ds);
   if(dm)return dm.num;
-  if(s.secDom)return s.secDom;
+  // Item 50: secondary-dominant numeral comes from secDomStatusAt() — never the raw s.secDom
+  // flag — so a chord that's stopped being a valid secondary dominant in its local key (target
+  // degree no longer diatonic, or a later modulation) never shows a stale V/x numeral here.
+  const sdStatus=secDomStatusAt(i);
+  if(sdStatus.isSecDom)return sdStatus.label;
   if(s.passing)return passingKindLabel[s.passing.kind]||'passing';
   // Item 46: numeral for a borrowed chord comes from the shared borrowedStatusAt()
   // authority (never the raw s.borrowed flag), so a manually-typed borrowable chord gets
@@ -8159,9 +8207,13 @@ function renderInfo(voicings){
       dn += ` This is an altered chord — its ${outNames} ${pcs.outside.length>1?'are':'is'} chromatic to ${kn} ${keyMode}.`;
     }
   } else {
-    // Check if it's a secondary dominant
-    if(s.secDom){
-      dn = ` ${s.secDom} in ${kn} ${keyMode} — a secondary dominant temporarily tonicizing ${keySpell(((s.root+5)%12),keyRoot,keyMode)}.`;
+    // Item 50: secondary-dominant status comes exclusively from the shared secDomStatusAt()
+    // authority — never from s.secDom directly — so a chord that's stopped functioning as a
+    // secondary dominant in its local key (target no longer diatonic, or a later modulation)
+    // never reads as one here, on exactly the same terms as every other surface.
+    const sdStatus = secDomStatusAt(li);
+    if(sdStatus.isSecDom){
+      dn = ` ${sdStatus.label} in ${kn} ${keyMode} — a secondary dominant temporarily tonicizing ${keySpell(((s.root+5)%12),keyRoot,keyMode)}.`;
     } else if(s.passing){
       dn = ` Passing chord: ${passingKindDesc[s.passing.kind]||'a connective chord'}. Chosen for the step it fills, not for any function in ${kn} ${keyMode}.`;
     } else {
@@ -9090,7 +9142,7 @@ function updateVoicingNote(){
 function saveState(){
   if(!seq.length){ alert('Nothing to save — add some chords first.'); return; }
   const state={
-    version:12,
+    version:12, // .chordspace.json SAVE-SCHEMA version — independent of APP_VERSION above; do not conflate
     sessionName, // v12: free-text session label; empty string = untitled, same as before this field existed
     keyRoot, keyMode, currentRoot, mode, bpm, globalDur,
     voicingStyle, voiceRange, maxSpread, preferCloseVL, craftVoiceLeading, loopEnabled, swingAmount,
@@ -9291,6 +9343,13 @@ function loadState(file){
   };
   reader.readAsText(file);
 }
+// App-version label: static markup carries a placeholder; this is the one place that
+// placeholder gets overwritten, from the single canonical APP_VERSION constant declared at
+// the top of the first script block, rather than being a second hardcoded copy of the value.
+(function(){
+  const versionLabel=document.getElementById('app-version-label');
+  if(versionLabel) versionLabel.textContent=APP_VERSION;
+})();
 // Session name field: free-text label, kept in sync with the `sessionName` global that
 // saveState/downloadMidi/exportTheory all read from. Trimmed on the way in so trailing
 // spaces typed while editing don't leak into filenames.
@@ -10271,20 +10330,27 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
       // native after a key/mode change is never faded/tiered/labeled "borrowed" here on a
       // stale flag's say-so, and a chord that arrived without one but is genuinely
       // borrowable in its local context colors exactly the same as a picker-added one.
+      // Item 50: identical treatment for secondary dominants — secDomStatusAt() re-derives
+      // status fresh from the local key rather than trusting the raw s.secDom flag, gated on
+      // native-first the same way every other cascade in the app already is, so a chord
+      // whose target degree stops being diatonic (or that reclassifies as native outright)
+      // never keeps a stale "secondary dom" tier/fade/label here.
+      const isNativeHere=!!nativeDegreeByFunction(s.root,lib[s.idx].n,diatonicChords(kc.keyRoot,kc.keyMode));
       const bStatus=borrowedStatusAt(i);
-      const out=(tier==='chromatic')||!!s.secDom||bStatus.isBorrowed;
+      const sdStatus=isNativeHere?{isSecDom:false}:secDomStatusAt(i);
+      const out=(tier==='chromatic')||sdStatus.isSecDom||bStatus.isBorrowed;
       // "muted": right root, wrong quality — a lighter visual state than fully out-of-key
       // (fade/out), so the constellation still distinguishes "borrowed color on a native
       // degree" from "not in this key at all" rather than collapsing both into one look.
       const muted=!out && !tFits;
       let tierWord=({tonic:'tonic',signature:'signature',diatonic:'in key',chromatic:'chromatic'})[tier]||'in key';
-      if(s.secDom)tierWord='secondary dom';
+      if(sdStatus.isSecDom)tierWord='secondary dom';
       else if(bStatus.isBorrowed)tierWord='borrowed';
       else if(muted)tierWord+=' (borrowed color)';
       prog.push({
         i:prog.length, seqIdx:i, root:s.root, libIdx:s.idx, w:worldOf(s.idx,s.root), col:lib[s.idx].col, fade:out, muted,
         tierWord, tier, keyRoot:kc.keyRoot, keyMode:kc.keyMode, chordName:`${rootName(s.root,kc.keyRoot,kc.keyMode)}${symOf(lib[s.idx].n)}`,
-        quality:lib[s.idx].n, secDom:!!s.secDom, borrowed:bStatus.isBorrowed
+        quality:lib[s.idx].n, secDom:sdStatus.isSecDom?sdStatus.label:null, borrowed:bStatus.isBorrowed
       });
     });
     sceneData.progression=prog;
@@ -10338,12 +10404,49 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   function makeLine(points,color,opacity=.35){
     const geo=new THREE.BufferGeometry().setFromPoints(points); const mat=new THREE.LineBasicMaterial({color,transparent:true,opacity}); return new THREE.Line(geo,mat);
   }
+  // v59 path-legibility pass: thickness range and the makeTube() minimum-radius clamp are
+  // scaled down TOGETHER by the same ~65% factor (targeting the requested 60-70% band). Scaling
+  // only the upstream addSegment() formula while leaving the old 0.012 clamp in place would have
+  // let the clamp swallow most of the reduction for typical (low-VL, same-region) segments —
+  // exactly the failure mode flagged before starting. All four constants below (both bases, the
+  // VL-driven additive cap, and the clamp floor) carry the same 0.65 factor, so the *relative*
+  // thickness encoding (voice-leading distance, same- vs cross-region) is preserved exactly —
+  // only the absolute visual weight drops, uniformly across the whole range.
   function makeTube(a,b,color,radius){
     const pts=[new THREE.Vector3(a.x,a.y,a.z), new THREE.Vector3(b.x,b.y,b.z)];
     const curve=new THREE.CatmullRomCurve3(pts);
-    const geo=new THREE.TubeGeometry(curve,12,Math.max(0.012,radius),12,false);
+    const geo=new THREE.TubeGeometry(curve,12,Math.max(0.0078,radius),12,false); // was Math.max(0.012, radius)
     const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(color),emissive:new THREE.Color(color),emissiveIntensity:0.18,roughness:0.52,metalness:0.08,transparent:true,opacity:0.78});
     return new THREE.Mesh(geo,mat);
+  }
+  // Decorative direction arrowhead for a progression segment — added as a CHILD of the tube
+  // mesh (not pushed into `interactive`), so it is never a raycast/click target: the existing
+  // raycaster.intersectObjects(interactive,false) call already runs non-recursive, and omitting
+  // it from `interactive` is a second, independent guarantee even if that ever changed. Being a
+  // child also means selection/hover's existing obj.scale.setScalar(...) bump on the parent tube
+  // (see applySelectionStyles) scales the arrow together with it for free — no separate hover
+  // logic needed, per the brief's "if that falls naturally out of the existing group behavior."
+  // Placed at 67.5% of the way from source to destination (middle of the requested 65-70% band),
+  // comfortably short of the destination sphere/label. Returns null for a degenerate (near-zero-
+  // length) segment — e.g. a same-root repeat landing on the same worldOf() position — rather
+  // than special-casing that as a redesigned loop treatment; whatever already renders for that
+  // case today is left exactly as it was.
+  function addArrowhead(a,b,color,tubeRadius,opacity){
+    const dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+    const len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    if(len<1e-6) return null;
+    const dir=new THREE.Vector3(dx,dy,dz).normalize();
+    const t=0.675;
+    const pos=new THREE.Vector3(a.x+dx*t, a.y+dy*t, a.z+dz*t);
+    const coneRadius=tubeRadius*1.8; // "only modestly wider than the path itself"
+    const coneHeight=coneRadius*2.6;
+    const geo=new THREE.ConeGeometry(coneRadius,coneHeight,10);
+    const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(color),emissive:new THREE.Color(color),emissiveIntensity:0.16,roughness:0.52,metalness:0.08,transparent:true,opacity});
+    const cone=new THREE.Mesh(geo,mat);
+    cone.position.copy(pos);
+    // ConeGeometry's tip points along +Y by default; rotate +Y onto the A→B direction.
+    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+    return cone;
   }
   function buildWireframe(){
     clearGroup(wireGroup);
@@ -10384,11 +10487,19 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   }
   function addSegment(seg){
     const color=seg.crossRegion ? COL.mv : (REL_COLS[seg.rel.fam]||COL.text);
-    const radius=(seg.crossRegion ? 0.011 : 0.008) + Math.min(0.016, ((seg.vl===null?1.2:seg.vl)/6)*0.010);
+    // v59: base + VL-driven range both carry the same 0.65 factor as the makeTube() clamp above
+    // (was: (crossRegion?0.011:0.008) + Math.min(0.016, (vl/6)*0.010)) — see the comment on
+    // makeTube() for why the clamp had to move together with this, not independently.
+    const radius=(seg.crossRegion ? 0.0072 : 0.0052) + Math.min(0.0104, ((seg.vl===null?1.2:seg.vl)/6)*0.0065);
     const tube=makeTube(seg.A.w, seg.B.w, color, radius);
     tube.material.opacity = seg.crossRegion ? 0.44 : 0.34;
     tube.material.emissiveIntensity = seg.crossRegion ? 0.24 : 0.10;
     tube.userData={kind:'segment',data:seg,label:`${seg.A.chordName} → ${seg.B.chordName} · ${seg.rel.rel || 'move'}${seg.vl===null?'':` · VL Δ ${fmt(seg.vl)}`}`,baseRadius:radius,baseEmissive:seg.crossRegion ? 0.24 : 0.10,baseOpacity:seg.crossRegion ? 0.44 : 0.34};
+    // Direction arrowhead: a decorative child of the tube (see addArrowhead's own comment for
+    // why child-of-tube, not a sibling). Restrained opacity — noticeably softer than the tube's
+    // own, so it reads as a direction cue rather than a second heavy element on the path.
+    const arrow=addArrowhead(seg.A.w, seg.B.w, color, radius, tube.material.opacity*0.85);
+    if(arrow) tube.add(arrow);
     pathGroup.add(tube); interactive.push(tube); seg.mesh=tube;
   }
   function rebuildScene(){

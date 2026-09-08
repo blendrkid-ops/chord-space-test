@@ -10143,6 +10143,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   let THREE=null, renderer=null, scene3=null, camera=null, rootGroup=null, wireGroup=null, chordGroup=null, pathGroup=null, fxGroup=null;
   let raycaster=null, pointer=null, interactive=[];
   let pulseMesh=null;
+  let pulseTail=[]; // v60: trailing fade meshes so the playback tracer reads as riding the path, not a floating dot
   let overlayItems=[];
   let selection=null;
   let selectedRegionIdx=null;
@@ -10404,48 +10405,71 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   function makeLine(points,color,opacity=.35){
     const geo=new THREE.BufferGeometry().setFromPoints(points); const mat=new THREE.LineBasicMaterial({color,transparent:true,opacity}); return new THREE.Line(geo,mat);
   }
-  // v59 path-legibility pass: thickness range and the makeTube() minimum-radius clamp are
-  // scaled down TOGETHER by the same ~65% factor (targeting the requested 60-70% band). Scaling
-  // only the upstream addSegment() formula while leaving the old 0.012 clamp in place would have
-  // let the clamp swallow most of the reduction for typical (low-VL, same-region) segments —
-  // exactly the failure mode flagged before starting. All four constants below (both bases, the
-  // VL-driven additive cap, and the clamp floor) carry the same 0.65 factor, so the *relative*
-  // thickness encoding (voice-leading distance, same- vs cross-region) is preserved exactly —
-  // only the absolute visual weight drops, uniformly across the whole range.
+  // v60 path-legibility correction pass. v59 scaled the whole thickness range down by 0.65×
+  // (targeting 60-70% of the pre-v59 look). Ricky's follow-up brief asked for "a small bump, not
+  // a reversion" if it helps readability — these four constants (both bases, the VL-driven
+  // additive cap, and the clamp floor) now carry a 0.72× factor instead of 0.65×, still ~30%
+  // thinner than the original but a modest nudge up from last round. Relative encoding (voice-
+  // leading distance, same- vs cross-region) is preserved exactly — only absolute weight moved.
   function makeTube(a,b,color,radius){
     const pts=[new THREE.Vector3(a.x,a.y,a.z), new THREE.Vector3(b.x,b.y,b.z)];
     const curve=new THREE.CatmullRomCurve3(pts);
-    const geo=new THREE.TubeGeometry(curve,12,Math.max(0.0078,radius),12,false); // was Math.max(0.012, radius)
+    const geo=new THREE.TubeGeometry(curve,12,Math.max(0.0086,radius),12,false); // v59 was Math.max(0.0078, radius)
     const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(color),emissive:new THREE.Color(color),emissiveIntensity:0.18,roughness:0.52,metalness:0.08,transparent:true,opacity:0.78});
+    return new THREE.Mesh(geo,mat);
+  }
+  // v60: a second, larger-radius, normally-invisible tube built from the EXACT SAME endpoints as
+  // the base tube — a selection/playback glow overlay. This exists specifically to fix the v59
+  // detachment bug: the old approach called obj.scale.setScalar(1.1) on the base tube itself for
+  // a "thicker selected" look, but the tube's geometry is built from absolute world-space points
+  // (not centered on the mesh's own local origin), so scaling the mesh scaled those endpoints
+  // away from the mesh's local (0,0,0) — which is NOT the same point as either chord orb — and
+  // the line visibly pulled loose from the spheres it's supposed to connect. This overlay tube is
+  // NEVER scaled (nor is the base tube, any more); "thicker/brighter selected" is achieved purely
+  // by animating this overlay's opacity/emissive from 0 up to a visible glow. Same curve, same
+  // endpoints, always — so it can never detach. Not pushed into `interactive` (decorative only).
+  function makeGlowTube(a,b,color,radius){
+    const pts=[new THREE.Vector3(a.x,a.y,a.z), new THREE.Vector3(b.x,b.y,b.z)];
+    const curve=new THREE.CatmullRomCurve3(pts);
+    const geo=new THREE.TubeGeometry(curve,12,radius,10,false);
+    const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(color),emissive:new THREE.Color(color),emissiveIntensity:0,roughness:0.4,metalness:0,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending});
     return new THREE.Mesh(geo,mat);
   }
   // Decorative direction arrowhead for a progression segment — added as a CHILD of the tube
   // mesh (not pushed into `interactive`), so it is never a raycast/click target: the existing
   // raycaster.intersectObjects(interactive,false) call already runs non-recursive, and omitting
-  // it from `interactive` is a second, independent guarantee even if that ever changed. Being a
-  // child also means selection/hover's existing obj.scale.setScalar(...) bump on the parent tube
-  // (see applySelectionStyles) scales the arrow together with it for free — no separate hover
-  // logic needed, per the brief's "if that falls naturally out of the existing group behavior."
-  // Placed at 67.5% of the way from source to destination (middle of the requested 65-70% band),
+  // it from `interactive` is a second, independent guarantee even if that ever changed.
+  // v60: the arrow used to inherit the parent tube's obj.scale.setScalar(...) selection bump "for
+  // free" — but that bump is exactly what caused the detachment bug (see makeGlowTube's comment),
+  // so the base tube is no longer scaled at all. The arrow now grows/brightens on ITSELF
+  // (applySelectionStyles scales `tube.userData.arrowMesh` directly), which is what the brief
+  // asked for explicitly: "Arrow growth should happen on the arrow object itself, not by scaling
+  // the whole path object." Scaling the cone's own object only resizes its geometry around its
+  // own center — it does not move `cone.position`, so the arrow grows in place without drifting
+  // off the line. Also bumped size/contrast this round: cone radius ratio 1.8×→2.4× the tube's
+  // own radius, and opacity/emissive are no longer derived from the tube's own (quite low, 0.34-
+  // 0.44) opacity — they're set to their own restrained-but-legible baseline instead, so the
+  // arrow reads clearly without becoming louder than the chord spheres.
+  // Placed at 67.5% of the way from source to destination (unchanged, middle of the 65-70% band),
   // comfortably short of the destination sphere/label. Returns null for a degenerate (near-zero-
-  // length) segment — e.g. a same-root repeat landing on the same worldOf() position — rather
-  // than special-casing that as a redesigned loop treatment; whatever already renders for that
-  // case today is left exactly as it was.
-  function addArrowhead(a,b,color,tubeRadius,opacity){
+  // length) segment — e.g. a same-root repeat landing on the same worldOf() position.
+  function addArrowhead(a,b,color,tubeRadius,baseOpacity){
     const dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
     const len=Math.sqrt(dx*dx+dy*dy+dz*dz);
     if(len<1e-6) return null;
     const dir=new THREE.Vector3(dx,dy,dz).normalize();
     const t=0.675;
     const pos=new THREE.Vector3(a.x+dx*t, a.y+dy*t, a.z+dz*t);
-    const coneRadius=tubeRadius*1.8; // "only modestly wider than the path itself"
-    const coneHeight=coneRadius*2.6;
+    const coneRadius=tubeRadius*2.4; // v59 was 1.8× ("only modestly wider than the path itself")
+    const coneHeight=coneRadius*2.4;
     const geo=new THREE.ConeGeometry(coneRadius,coneHeight,10);
-    const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(color),emissive:new THREE.Color(color),emissiveIntensity:0.16,roughness:0.52,metalness:0.08,transparent:true,opacity});
+    const baseEmissive=0.42; // v59 was 0.16 — arrow now reads on its own contrast, not the tube's
+    const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(color),emissive:new THREE.Color(color),emissiveIntensity:baseEmissive,roughness:0.48,metalness:0.1,transparent:true,opacity:baseOpacity});
     const cone=new THREE.Mesh(geo,mat);
     cone.position.copy(pos);
     // ConeGeometry's tip points along +Y by default; rotate +Y onto the A→B direction.
     cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+    cone.userData={baseOpacity, baseEmissive};
     return cone;
   }
   function buildWireframe(){
@@ -10487,24 +10511,28 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   }
   function addSegment(seg){
     const color=seg.crossRegion ? COL.mv : (REL_COLS[seg.rel.fam]||COL.text);
-    // v59: base + VL-driven range both carry the same 0.65 factor as the makeTube() clamp above
-    // (was: (crossRegion?0.011:0.008) + Math.min(0.016, (vl/6)*0.010)) — see the comment on
-    // makeTube() for why the clamp had to move together with this, not independently.
-    const radius=(seg.crossRegion ? 0.0072 : 0.0052) + Math.min(0.0104, ((seg.vl===null?1.2:seg.vl)/6)*0.0065);
+    // v60: base + VL-driven range both carry a 0.72 factor now (v59 used 0.65 — see makeTube()'s
+    // comment for the "small bump, not a reversion" rationale).
+    const radius=(seg.crossRegion ? 0.0079 : 0.0058) + Math.min(0.0115, ((seg.vl===null?1.2:seg.vl)/6)*0.0072);
     const tube=makeTube(seg.A.w, seg.B.w, color, radius);
     tube.material.opacity = seg.crossRegion ? 0.44 : 0.34;
     tube.material.emissiveIntensity = seg.crossRegion ? 0.24 : 0.10;
     tube.userData={kind:'segment',data:seg,label:`${seg.A.chordName} → ${seg.B.chordName} · ${seg.rel.rel || 'move'}${seg.vl===null?'':` · VL Δ ${fmt(seg.vl)}`}`,baseRadius:radius,baseEmissive:seg.crossRegion ? 0.24 : 0.10,baseOpacity:seg.crossRegion ? 0.44 : 0.34};
-    // Direction arrowhead: a decorative child of the tube (see addArrowhead's own comment for
-    // why child-of-tube, not a sibling). Restrained opacity — noticeably softer than the tube's
-    // own, so it reads as a direction cue rather than a second heavy element on the path.
-    const arrow=addArrowhead(seg.A.w, seg.B.w, color, radius, tube.material.opacity*0.85);
-    if(arrow) tube.add(arrow);
+    // Direction arrowhead: a decorative child of the tube (see addArrowhead's own comment). Its
+    // own baseline opacity, not derived from the tube's low opacity — restrained but clearly
+    // legible, still a touch softer for same-region than cross-region moves.
+    const arrow=addArrowhead(seg.A.w, seg.B.w, color, radius, seg.crossRegion ? 0.82 : 0.72);
+    if(arrow){ tube.add(arrow); tube.userData.arrowMesh=arrow; }
+    // v60: selection/playback glow overlay — see makeGlowTube's comment. Same endpoints as the
+    // base tube, always; opacity-only animation in applySelectionStyles, never scaled/moved.
+    const glow=makeGlowTube(seg.A.w, seg.B.w, color, radius*2.3);
+    tube.userData.glowMesh=glow;
+    pathGroup.add(glow);
     pathGroup.add(tube); interactive.push(tube); seg.mesh=tube;
   }
   function rebuildScene(){
     if(!THREE)return;
-    clearGroup(chordGroup); clearGroup(pathGroup); clearGroup(fxGroup); interactive=[]; pulseMesh=null; playingMesh=null; overlayItems=[]; rings=[]; pulse=null;
+    clearGroup(chordGroup); clearGroup(pathGroup); clearGroup(fxGroup); interactive=[]; pulseMesh=null; pulseTail=[]; playingMesh=null; overlayItems=[]; rings=[]; pulse=null;
     buildWireframe();
     sceneData.constellation.forEach(d=>addNode(d,false));
     sceneData.progression.forEach(d=>addNode(d,true));
@@ -10513,6 +10541,14 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     pulseMesh=new THREE.Mesh(new THREE.SphereGeometry(.034,16,12), new THREE.MeshBasicMaterial({color:new THREE.Color(COL.accent), transparent:true, opacity:.44}));
     pulseMesh.visible=false;
     fxGroup.add(pulseMesh);
+    // v60: two small trailing meshes behind the tracer orb, each fainter/smaller than the last,
+    // so the playback pulse reads as a short glow riding along the path rather than a lone dot
+    // hopping in space. Same lerp curve as pulseMesh (the segment is a straight A→B line, so this
+    // exactly coincides with the tube's own centerline — it visually "rides" the actual path).
+    pulseTail=[0.09,0.17].map(offset=>{
+      const m=new THREE.Mesh(new THREE.SphereGeometry(.026,12,10), new THREE.MeshBasicMaterial({color:new THREE.Color(COL.accent), transparent:true, opacity:0}));
+      m.visible=false; m.userData={offset}; fxGroup.add(m); return m;
+    });
     buildOverlayLabels();
     applySelectionStyles();
   }
@@ -10555,14 +10591,34 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     });
   }
   function clearSelection(){ selection=null; selectedRegionIdx=null; applySelectionStyles(); renderSelectionDetail(); }
+  // v60: segment ("path") selection/playback styling no longer scales the tube mesh at all — see
+  // makeGlowTube's comment for why that caused the v59 detachment bug. The base tube's transform
+  // stays at scale 1 always, so its endpoints stay exactly where they were built (locked to the
+  // chord orb centers). "Thicker/brighter" is now purely a material animation across three
+  // independent, always-anchored parts: the base tube's own opacity/emissive, a glow-overlay tube
+  // built from the identical endpoints (invisible at rest, opacity-only at selection/playback),
+  // and the arrowhead's own scale/opacity (grows in place — cone.position never changes).
   function applySelectionStyles(){
     if(!interactive.length) return;
     interactive.forEach(obj=>{
       if(obj.userData.kind==='segment'){
         const sel = selection && selection.object===obj;
-        obj.material.emissiveIntensity = sel ? 0.55 : (obj.userData.baseEmissive||0.18);
-        obj.material.opacity = sel ? 0.88 : (obj.userData.baseOpacity||0.34);
-        obj.scale.setScalar(sel ? 1.1 : 1);
+        const playingSeg = pulse && pulse.segMesh===obj;
+        obj.scale.setScalar(1); // never scaled — endpoints stay locked to the orbs, always
+        obj.material.emissiveIntensity = playingSeg ? 0.68 : (sel ? 0.55 : (obj.userData.baseEmissive||0.18));
+        obj.material.opacity = playingSeg ? 0.92 : (sel ? 0.88 : (obj.userData.baseOpacity||0.34));
+        const glow=obj.userData.glowMesh;
+        if(glow){
+          glow.material.opacity = playingSeg ? 0.40 : (sel ? 0.26 : 0);
+          glow.material.emissiveIntensity = playingSeg ? 0.85 : (sel ? 0.55 : 0);
+        }
+        const arrow=obj.userData.arrowMesh;
+        if(arrow){
+          const ab=arrow.userData||{};
+          arrow.scale.setScalar(playingSeg ? 1.5 : (sel ? 1.4 : 1));
+          arrow.material.opacity = playingSeg ? 0.98 : (sel ? 0.94 : (ab.baseOpacity!=null?ab.baseOpacity:0.78));
+          arrow.material.emissiveIntensity = playingSeg ? 0.75 : (sel ? 0.62 : (ab.baseEmissive!=null?ab.baseEmissive:0.42));
+        }
       } else {
         const sel = selection && selection.object===obj;
         const playing = playingMesh===obj;
@@ -10679,12 +10735,23 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
         const tt=Math.max(0,Math.min(1,(now-pulse.t0)/pulse.dur));
         pulseMesh.visible=true;
         pulseMesh.position.set(lerp(A.w.x,B.w.x,tt), lerp(A.w.y,B.w.y,tt), lerp(A.w.z,B.w.z,tt));
-        pulseMesh.material.opacity = 0.56*(1-Math.abs(tt-0.5)*1.15);
-        pulseMesh.scale.setScalar(0.82 + 0.24*Math.sin(tt*Math.PI));
-        if(tt>=1){ pulse=null; pulseMesh.visible=false; }
-      } else { pulse=null; pulseMesh.visible=false; }
+        // v60: slightly brighter/bigger head than v59 (0.56→0.7 peak opacity) so the tracer
+        // reads clearly as it rides the (now-thinner) path, not just as endpoint activity.
+        pulseMesh.material.opacity = 0.70*(1-Math.abs(tt-0.5)*1.15);
+        pulseMesh.scale.setScalar(0.86 + 0.26*Math.sin(tt*Math.PI));
+        // Trailing fade: two smaller/fainter meshes sit slightly BEHIND the head along the same
+        // A→B line (clamped so they don't pop in before the head starts or linger past it).
+        pulseTail.forEach((tm,i)=>{
+          const tt2=tt-tm.userData.offset;
+          if(tt2<0||tt2>1){ tm.visible=false; return; }
+          tm.visible=true;
+          tm.position.set(lerp(A.w.x,B.w.x,tt2), lerp(A.w.y,B.w.y,tt2), lerp(A.w.z,B.w.z,tt2));
+          tm.material.opacity = (0.70*(1-Math.abs(tt2-0.5)*1.15)) * (i===0?0.42:0.20);
+        });
+        if(tt>=1){ pulse=null; pulseMesh.visible=false; pulseTail.forEach(tm=>tm.visible=false); applySelectionStyles(); }
+      } else { pulse=null; pulseMesh.visible=false; pulseTail.forEach(tm=>tm.visible=false); }
     } else if(pulseMesh){
-      pulseMesh.visible=false;
+      pulseMesh.visible=false; pulseTail.forEach(tm=>tm.visible=false);
     }
   }
   function frame(now){
@@ -10787,17 +10854,25 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     if(pos<sceneData.progression.length-1){
       let durMs=420;
       try{ durMs=Math.max(160, durToSeconds(getChordDur(seq[idx]))*1000*0.58); }catch(e){}
-      pulse={from:pos,to:pos+1,t0:performance.now(),dur:durMs};
-    } else { pulse=null; if(pulseMesh) pulseMesh.visible=false; }
+      // v60: look up the actual segment mesh for this A→B move so applySelectionStyles can give
+      // the active path itself (not just the traveling orb) a visible glow while it plays.
+      const activeSeg=sceneData.segments.find(s=>s.a===pos && s.b===pos+1);
+      pulse={from:pos,to:pos+1,t0:performance.now(),dur:durMs,segMesh:activeSeg?activeSeg.mesh:null};
+    } else { pulse=null; if(pulseMesh) pulseMesh.visible=false; pulseTail.forEach(tm=>tm.visible=false); }
     applySelectionStyles();
     if(readout) readout.textContent=`Now playing · ${d.chordName}`;
   };
   window.cylOnPlayStop = function(){
     pulse=null;
     if(pulseMesh) pulseMesh.visible=false;
+    pulseTail.forEach(tm=>tm.visible=false);
     rings.forEach(r=>{ if(r.mesh){ fxGroup.remove(r.mesh); disposeObject(r.mesh); } });
     rings=[];
-    if(playingMesh){ playingMesh=null; applySelectionStyles(); }
+    playingMesh=null;
+    // v60: unconditional now (was gated on playingMesh) — a stopped-mid-tween pulse needs this
+    // too, to drop the just-playing segment's glow overlay back to its resting state. Paths
+    // remain fully visible after this call; only the elevated playback glow is cleared.
+    applySelectionStyles();
   };
   window.cylOnPlayStart = function(){
     // auto-frame-then-free: ease to a view that faces the bulk of the path, then release.

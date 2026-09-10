@@ -345,6 +345,22 @@ header .subtitle .mono {
 .note-disclosure summary:hover { color: var(--text-primary); }
 .note-disclosure .note-terms { margin-top: 2px; padding-left: 2px; }
 
+/* Item 6 (v65a mobile repair): on mobile, both Rhythm-tab info disclosures ("How this
+   works & honest caveats" on the timeline, "How Lines works" on the Lines section) used
+   to expand inline in normal page flow — reachable in principle via page scroll, but a
+   long dt/dd list opening on a short mobile viewport (further shortened by iOS Safari's
+   collapsing URL bar) didn't read as scrollable, so the bottom felt cut off. Scoped to
+   #tab-session specifically (not every .note-disclosure app-wide — Build/Voice/Cylinder's
+   own disclosures are untouched, out of scope for this pass). 60dvh (dynamic viewport
+   height) rather than 60vh so the collapsing browser chrome can't reopen this same gap.
+   Desktop (above 760px, same breakpoint as item 5/item 32) is completely unaffected. */
+@media (max-width: 760px) {
+  #tab-session .note-disclosure[open] .note-terms {
+    max-height: 60dvh;
+    overflow-y: auto;
+  }
+}
+
 /* Lines-only info-indicator + hover-preview variant. Keeps the underlying details-element
    click/tap-to-open behavior fully intact (still the only way in on touch, which has no
    hover) and layers a hover-triggered preview panel on top for desktop/mouse users, so a
@@ -6497,8 +6513,17 @@ const LINES_MELODY_VIEWPORT_H=168, LINES_BASS_VIEWPORT_H=140;
 const LINES_ROWPX_MIN=3, LINES_ROWPX_MAX=22, LINES_ROWPX_ZOOM_STEP=1.3;
 // Default row height: the old "fills the viewport exactly" size, zoomed in 4 clicks
 // (Ricky's request) using the exact same step/cap the zoom buttons apply themselves.
-let linesMelodyRowPx=Math.min(LINES_ROWPX_MAX,(LINES_MELODY_VIEWPORT_H/(LINES_MELODY_MAX-LINES_MELODY_MIN+1))*Math.pow(LINES_ROWPX_ZOOM_STEP,4));
-let linesBassRowPx=Math.min(LINES_ROWPX_MAX,(LINES_BASS_VIEWPORT_H/(LINES_BASS_MAX-LINES_BASS_MIN+1))*Math.pow(LINES_ROWPX_ZOOM_STEP,4));
+// Item 5 (v65a mobile repair): on a mobile-width viewport, open Melody/Bass rows at the
+// existing zoom ceiling (LINES_ROWPX_MAX) instead of the formula-derived desktop default —
+// finger-sized targets from the first frame, no extra taps needed. Gated on the SAME
+// 760px breakpoint the transport's mobile collapse (item 32) already uses, so "mobile"
+// means one consistent thing across the app. Desktop's own computed default (below the
+// breakpoint check) is completely untouched — this only replaces what gets picked when
+// the check is true. Read once at script load, same as before; the existing +/- zoom
+// buttons work identically from whichever starting value this resolves to.
+const LINES_MOBILE_DEFAULT_ZOOM = window.matchMedia && window.matchMedia('(max-width:760px)').matches;
+let linesMelodyRowPx = LINES_MOBILE_DEFAULT_ZOOM ? LINES_ROWPX_MAX : Math.min(LINES_ROWPX_MAX,(LINES_MELODY_VIEWPORT_H/(LINES_MELODY_MAX-LINES_MELODY_MIN+1))*Math.pow(LINES_ROWPX_ZOOM_STEP,4));
+let linesBassRowPx = LINES_MOBILE_DEFAULT_ZOOM ? LINES_ROWPX_MAX : Math.min(LINES_ROWPX_MAX,(LINES_BASS_VIEWPORT_H/(LINES_BASS_MAX-LINES_BASS_MIN+1))*Math.pow(LINES_ROWPX_ZOOM_STEP,4));
 function linesRowPxFor(trackName){ return trackName==='melody'?linesMelodyRowPx:linesBassRowPx; }
 function linesContentHeight(minM,maxM,rowPx){ return (maxM-minM+1)*rowPx; }
 function laneYForPitch(pitch,minM,maxM,rowPx){ return (maxM-pitch)*rowPx; }
@@ -11117,6 +11142,19 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(color),emissive:new THREE.Color(color),emissiveIntensity:0,roughness:0.4,metalness:0,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending});
     return new THREE.Mesh(geo,mat);
   }
+  // Item 7 (v65a mobile repair): invisible, wider-radius companion tube used ONLY as a
+  // raycast target — see addSegment's call site for the full rationale. Same curve/endpoint
+  // construction as makeTube/makeGlowTube. Not rendered: opacity 0 and colorWrite off so it
+  // has zero visual footprint even if some future material tweak elsewhere changes defaults;
+  // Three.js raycasting only checks object.visible (true here), never material opacity, so
+  // it stays a real hit target while staying fully invisible.
+  function makeHitTube(a,b,radius){
+    const pts=[new THREE.Vector3(a.x,a.y,a.z), new THREE.Vector3(b.x,b.y,b.z)];
+    const curve=new THREE.CatmullRomCurve3(pts);
+    const geo=new THREE.TubeGeometry(curve,12,radius,8,false);
+    const mat=new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false});
+    return new THREE.Mesh(geo,mat);
+  }
   // Decorative direction arrowhead for a progression segment — added as a CHILD of the tube
   // mesh (not pushed into `interactive`), so it is never a raycast/click target: the existing
   // raycaster.intersectObjects(interactive,false) call already runs non-recursive, and omitting
@@ -11210,7 +11248,22 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     const glow=makeGlowTube(seg.A.w, seg.B.w, color, radius*2.3);
     tube.userData.glowMesh=glow;
     pathGroup.add(glow);
-    pathGroup.add(tube); interactive.push(tube); seg.mesh=tube;
+    pathGroup.add(tube); seg.mesh=tube; // visible — no longer the raycast target, see hitTube below
+    // Item 7 (v65a mobile repair): a separate, invisible, wider-radius companion tube is the
+    // ACTUAL raycast target now — the visible tube above stays thin for legibility. Same
+    // curve/endpoints discipline as makeGlowTube (built fresh from seg.A.w/seg.B.w, never
+    // derived by scaling the visible tube), so it can't drift loose from what it represents.
+    // Radius starts conservative at 3× the visible tube's own radius per design-lock — small
+    // enough to stay clear of the ~0.078-radius chord-orb hit spheres in dense clusters, wide
+    // enough to matter for a finger; can go up after a real-device pass if still too tight.
+    // hitTest() redirects a hit on this mesh back to `tube` via userData.redirectTo, so
+    // selectObject/applySelectionStyles/commitHit/hoverAt all keep operating on the exact same
+    // visible-tube object they always did — nothing downstream of hitTest() needed to change.
+    // Applies to desktop mouse too, not touch-gated — a more forgiving click zone doesn't cost
+    // mouse precision anything, per design-lock.
+    const hitTube=makeHitTube(seg.A.w, seg.B.w, radius*3);
+    hitTube.userData={redirectTo:tube};
+    pathGroup.add(hitTube); interactive.push(hitTube);
   }
   function rebuildScene(){
     if(!THREE)return;
@@ -11372,7 +11425,12 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   function hitTest(clientX,clientY){
     if(!raycaster||!camera)return null;
     const r=canvas.getBoundingClientRect(); pointer.x=((clientX-r.left)/r.width)*2-1; pointer.y=-((clientY-r.top)/r.height)*2+1;
-    raycaster.setFromCamera(pointer,camera); const hits=raycaster.intersectObjects(interactive,false); return hits[0]?.object||null;
+    raycaster.setFromCamera(pointer,camera); const hits=raycaster.intersectObjects(interactive,false);
+    const obj=hits[0]?.object||null;
+    // Item 7: a hit on a segment's invisible wider hit-tube (see makeHitTube) redirects to
+    // its paired VISIBLE tube here — the single point every consumer of hitTest() (hoverAt,
+    // commitHit, the dblclick handler) goes through, so nothing downstream needed to change.
+    return (obj && obj.userData.redirectTo) ? obj.userData.redirectTo : obj;
   }
   function hoverAt(clientX,clientY){
     const hit=hitTest(clientX,clientY);

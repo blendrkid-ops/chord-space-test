@@ -374,7 +374,9 @@ header .subtitle .mono {
   font-family: var(--font-mono); font-size: 10px; font-weight: 700; line-height: 1;
   flex: none;
 }
-.note-disclosure summary:hover .lines-info-badge, .note-disclosure[open] .lines-info-badge { border-color: var(--accent); color: var(--accent); }
+/* [open] badge accent is a real open/closed state indicator, not a hover affordance —
+   stays unconditional, all devices. */
+.note-disclosure[open] .lines-info-badge { border-color: var(--accent); color: var(--accent); }
 .lines-info-popover {
   position: absolute; top: 100%; left: 0; margin-top: 8px; z-index: 50;
   width: min(420px, 80vw); max-height: 360px; overflow-y: auto;
@@ -384,12 +386,24 @@ header .subtitle .mono {
   transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
   pointer-events: none;
 }
-/* Hover trigger is the whole summary row, not just the small badge — a 16px circle is
+/* Item 6 (v65a mobile repair, follow-up): both hover-only behaviors gated to devices that
+   report genuine hover + a fine pointer — a real mouse/trackpad. iOS Safari never reports
+   that combination, so a tap can no longer trigger either rule below, regardless of its
+   well-known "sticky emulated :hover after tap" behavior (confirmed via real-device
+   screenshots: tapping "How Lines works" closed correctly, but the leftover :hover state
+   was immediately re-matching :not([open]) summary:hover and popping the hover-preview
+   popover open underneath the just-closed disclosure). Native <details> tap-to-open/close
+   and the popover's own desktop markup/behavior are otherwise completely unchanged — only
+   the trigger conditions move inside this query.
+   Hover trigger is the whole summary row, not just the small badge — a 16px circle is
    too small a target to expect someone to land on precisely; the badge is the visual
    signal, the whole row is the usable one. */
-.note-disclosure:not([open]) summary:hover .lines-info-popover {
-  opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
-  transition: opacity .12s ease, transform .12s ease;
+@media (hover: hover) and (pointer: fine) {
+  .note-disclosure summary:hover .lines-info-badge { border-color: var(--accent); color: var(--accent); }
+  .note-disclosure:not([open]) summary:hover .lines-info-popover {
+    opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+    transition: opacity .12s ease, transform .12s ease;
+  }
 }
 /* While the accordion is pinned open (clicked/tapped), suppress the hover popover instead
    of stacking a duplicate copy of the same content directly on top of the open panel. */

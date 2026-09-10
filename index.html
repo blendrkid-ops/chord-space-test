@@ -1482,6 +1482,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   z-index: 1;
 }
 .rhythm-block:active { cursor: grabbing; }
+.rhythm-block-accent {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 4px;
+  pointer-events: none; z-index: 0;
+}
 .rhythm-block.dragging { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .rhythm-tick {
   position: absolute;
@@ -1841,6 +1845,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   stroke-width: 2;
   filter: drop-shadow(0 0 5px var(--accent)) drop-shadow(0 0 10px var(--accent));
 }
+/* Item A: manual click-audition glow — architecturally separate from .playing (transport)
+   so the two states can never conflict. Same bright/white visual language as .playing
+   (communicates "this just sounded") but driven by its own helper/timer, never by
+   highlightChord()/clearPlaybackHighlights(). */
+.roll-dot.auditioning {
+  stroke: var(--text-primary);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 5px var(--accent)) drop-shadow(0 0 10px var(--accent));
+}
 .roll-dot.draggable { cursor: grab; }
 .roll-dot.draggable:hover { stroke: var(--mv); stroke-width: 2; }
 .roll-dot.dragging { cursor: grabbing; stroke: var(--mv); stroke-width: 2.5; }
@@ -1850,6 +1863,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .roll-head:hover { fill: var(--mv) !important; }
 .roll-head.kb-active { fill: var(--mv) !important; text-decoration: underline; }
 .roll-head.playing { fill: var(--text-primary) !important; }
+.roll-head.auditioning, .roll-head.kb-active.auditioning { fill: var(--text-primary) !important; }
 
 .keyboard-panel {
   margin-top: 16px;
@@ -1919,6 +1933,102 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   max-height: 380px;
   min-height: 160px;          /* legibility floor: below this the note rows crowd regardless of width */
 }
+.vl-metrics-caption {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  margin: 6px 0 0; letter-spacing: .02em;
+}
+
+/* --- Item 56: Voice Leading "Notes" view — read-only piano-roll of actual sounding
+   voicings at real startUnit/duration timing (unitLayout(), same source of truth as
+   Rhythm/Lines/playback), distinct from Flow's proportional-duration column layout below.
+   Deliberately separate class names from .lines-* — visually similar (a pitch reference +
+   horizontal note bars) but a different, non-editable data surface, and kept structurally
+   independent per the "no Rhythm-tab control dependency" precedent (Lines' own zoom used
+   to live here and was moved out for exactly this confusion). --- */
+.notes-zoom-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.notes-zoom-row .notes-zoom-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-right: 2px; }
+.notes-zoom-row button { padding: 5px 10px; font-size: 12px; }
+.roll-container.notes-roll {
+  height: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+  position: relative;
+}
+/* Item 62: sticky chord-label strip. Deliberately NOT nested inside .notes-scroll-outer —
+   an element with overflow-x:auto and any non-visible overflow-y becomes a scroll container
+   on BOTH axes per the CSS overflow spec, which would make position:sticky resolve against
+   THAT box (which never itself scrolls vertically) instead of the real vertical-scrolling
+   ancestor (.roll-container.notes-roll) — sticky would silently do nothing. Living as a
+   direct child of .roll-container.notes-roll instead makes the sticky math resolve against
+   the actual vertical scrollport. Horizontal position is kept in sync with the note lane by
+   JS (syncNotesLabelScroll, modeled on the existing syncLinesKeyScroll pattern), not CSS,
+   since the strip's own overflow is hidden (no user-drag scrolling of its own). */
+.notes-label-strip {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: stretch;
+  height: 32px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+.notes-label-strip-spacer { flex: 0 0 auto; width: 38px; background: var(--surface-2); border-right: 1px solid var(--border); }
+.notes-label-scroll { flex: 1 1 auto; overflow: hidden; position: relative; }
+.notes-label-inner { position: relative; height: 100%; }
+.notes-roll-grid { display: flex; align-items: flex-start; }
+.notes-key-col {
+  flex: 0 0 auto; width: 38px; position: relative;
+  background: var(--surface-2); border-right: 1px solid var(--border);
+}
+.notes-key {
+  position: absolute; left: 0; right: 0;
+  border-bottom: 1px solid var(--surface-1);
+  box-sizing: border-box;
+}
+.notes-key.nk-white { background: var(--text-primary); }
+.notes-key.nk-black { background: #0a0806; right: 32%; }
+.notes-key-label {
+  position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
+  font-family: var(--font-mono); font-size: 8px; color: var(--surface-1); pointer-events: none;
+}
+.notes-scroll-outer { flex: 1 1 auto; overflow-x: auto; overflow-y: hidden; position: relative; background: var(--surface-1); }
+.notes-content { position: relative; }
+.notes-pitch-row { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); opacity: 0.3; pointer-events: none; }
+.notes-pitch-row.notes-c-row { border-top-color: var(--text-muted); opacity: 0.6; }
+.notes-bar {
+  position: absolute; border-radius: 3px; cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35) inset;
+  transition: filter .1s ease;
+}
+.notes-bar:hover { filter: brightness(1.25); }
+.notes-bar.playing { filter: brightness(1.6); box-shadow: 0 0 0 1.5px var(--text-primary) inset, 0 0 6px currentColor; }
+/* Item A: same bright glow language as .playing, architecturally separate — see roll-dot
+   comment above. Notes' persistent selection stays on the label/band (kb-active, --mv);
+   only the bars themselves flash for audition, never the label. */
+.notes-bar.auditioning { filter: brightness(1.6); box-shadow: 0 0 0 1.5px var(--text-primary) inset, 0 0 6px currentColor; }
+.notes-chord-label {
+  position: absolute; top: 2px; font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--accent); cursor: pointer; white-space: nowrap; user-select: none;
+}
+.notes-chord-label .notes-chord-name { display: block; font-family: var(--font-body); font-size: 10px; font-weight: 400; color: var(--text-secondary); }
+.notes-chord-label.playing, .notes-chord-label.playing .notes-chord-name { color: var(--text-primary); text-decoration: underline; }
+/* Item 65: restrained --mv selection treatment — explicitly targets both the Roman
+   numeral and its .notes-chord-name child, since the child declares its own color above
+   and would not otherwise inherit this. Distinct from .playing (white/underline) so
+   selection and "currently sounding" stay visually separable, per design-lock. */
+.notes-chord-label.kb-active, .notes-chord-label.kb-active .notes-chord-name { color: var(--mv); }
+.notes-chord-label.kb-active.playing, .notes-chord-label.kb-active.playing .notes-chord-name { color: var(--text-primary); }
+.notes-selection-band {
+  position: absolute; top: 0; bottom: 0;
+  background: color-mix(in srgb, var(--mv) 16%, transparent);
+  pointer-events: none; z-index: 0;
+}
+.notes-key-marker { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed var(--secdom); pointer-events: none; }
+.notes-key-marker-label {
+  position: absolute; top: -1px; font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  color: var(--secdom); white-space: nowrap; transform: translateX(2px);
+}
+.notes-empty-msg { padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
 .vl-metrics { display: flex; gap: 14px; flex-wrap: wrap; margin: 0; }
 .vl-metrics .ov {
   display: flex; flex-direction: column; gap: 4px;
@@ -2415,6 +2525,15 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
           <dd>Shape each chord's duration on the Rhythm tab.</dd>
         </dl>
       </details>
+      <details class="note-disclosure" id="mv-shared-disclosure" style="margin-top:0;margin-bottom:8px;" hidden>
+        <summary>ⓘ Manual voicings override Bass, Melody and Inversion</summary>
+        <dl class="note-terms">
+          <dt>What's overridden</dt>
+          <dd>A chord marked <strong style="color:var(--text-secondary);">voicing · set</strong> below is playing an exact, hand-placed or imported voicing. Its saved Bass, Melody, and Inversion pins are still stored, but not currently controlling playback.</dd>
+          <dt>Where to change it</dt>
+          <dd>Drag notes on the Voice Leading tab, or double-click a note there to release it back to Auto.</dd>
+        </dl>
+      </details>
       <p id="insert-note" class="insert-note" style="display:none;"></p>
       <div class="row" style="margin-bottom:8px;">
         <button id="add-keychange" class="keychange-btn" title="Insert a mid-progression key change at the cursor (or at the end)">+ key change</button>
@@ -2512,6 +2631,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
     </div>
     <div class="vl-metrics" id="vl-metrics"></div>
     <p class="vl-compare" id="vl-compare"></p>
+    <p class="vl-metrics-caption">Optimal motion reference — the smoothest theoretical connection between chords, not a measurement of the voicing shown in Notes below.</p>
   </div>
 
   <div class="section">
@@ -2519,9 +2639,39 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       <p class="section-label">Voice leading · low to high pitch</p>
       <div class="voice-solo-row" id="voice-solo-row"></div>
     </div>
-    <div class="roll-container vl-roll">
+    <div class="row gap-lg" id="vl-view-toggle" style="margin-bottom:10px;" title="Notes: what's actually sounding, at real time. Flow: how each voice moves between chords.">
+      <button id="vlview-notes" class="active">Notes</button>
+      <button id="vlview-flow">Flow</button>
+    </div>
+    <p class="vl-metrics-caption">Colors follow voices, not pitches. The same color stays with a voice as it moves (for example D → E). Solo buttons use the same colors.</p>
+
+    <div id="notes-view-wrap">
+      <div class="notes-zoom-row" id="notes-zoom-row">
+        <span class="notes-zoom-label">zoom</span>
+        <button id="notes-zoom-fit" class="active" title="Fit the whole progression to the visible width">Fit</button>
+        <button id="notes-zoom-out" title="Zoom out">&minus;</button>
+        <button id="notes-zoom-in" title="Zoom in">+</button>
+      </div>
+      <div class="roll-container notes-roll" id="notes-roll-container">
+        <div class="notes-label-strip" id="notes-label-strip">
+          <div class="notes-label-strip-spacer"></div>
+          <div class="notes-label-scroll" id="notes-label-scroll">
+            <div class="notes-label-inner" id="notes-label-inner"></div>
+          </div>
+        </div>
+        <div class="notes-roll-grid">
+          <div class="notes-key-col" id="notes-keys"></div>
+          <div class="notes-scroll-outer" id="notes-scroll-outer">
+            <div class="notes-content" id="notes-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="roll-container vl-roll" id="flow-view-wrap" hidden>
       <svg id="roll" viewBox="0 0 1180 380" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
+
     <div id="keyboardpanel"></div>
     <div class="tp-group oct-transpose-group vl-oct-transpose" title="Shift the whole progression up or down by octaves — corrects a smoothest-connection search that landed too low or high overall. Affects playback and MIDI export.">
       <span class="tp-label">progression octave</span>
@@ -2832,7 +2982,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v59";
+const APP_VERSION = "v64";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -2902,7 +3052,7 @@ const modeCadences = {
   Lydian:     {7:2, 2:2},             // V, II (characteristic)
   Mixolydian: {10:3, 5:1},            // bVII (characteristic), IV
   Aeolian:    {10:2, 5:1, 8:1},       // bVII, iv, bVI
-  Locrian:    {1:1}                   // bII (weak; Locrian rarely cadences)
+  Locrian:    {1:1}                   // bII (str 1, below CADENCE_STRONG: Locrian produces no pull event)
 };
 
 const modeOrder = ["Ionian","Dorian","Phrygian","Lydian","Mixolydian","Aeolian","Locrian"];
@@ -3999,17 +4149,50 @@ function cadenceVal(root,kr,km){
   const off=((root-kr)%12+12)%12;
   return (modeCadences[km]||{})[off] || 0;
 }
+// Item 47: classify each STRONG pull (modeCadences value >= CADENCE_STRONG) as a
+// tonal pull (the mode's dominant-type degree) or a modal pull (the mode's
+// characteristic degree). Keyed on (mode, offset-from-tonic), NOT on the whole mode,
+// because a single mode can carry both kinds — Lydian has a tonal V (7) and a modal
+// II (2); Ionian has two tonal pulls, V (7) and vii° (11). Only offsets that are
+// actually strong pulls need an entry; sub-threshold offsets never reach the label
+// branch. This table is parallel to modeCadences and must be kept in lockstep with it:
+// if a future pass changes a modeCadences value or CADENCE_STRONG such that a new
+// offset becomes a strong pull, add its class here. An unclassified strong pull falls
+// back to 'modal' (the more conservative claim, since 'tonal' overclaims) — under the
+// current constants this fallback can never fire.
+const cadencePullClass = {
+  Ionian:     {7:'tonal', 11:'tonal'}, // V, vii°
+  Dorian:     {5:'modal'},             // IV (characteristic)
+  Phrygian:   {1:'modal'},             // bII (characteristic)
+  Lydian:     {7:'tonal', 2:'modal'},  // V; II (characteristic)
+  Mixolydian: {10:'modal'},            // bVII (characteristic)
+  Aeolian:    {10:'modal'},            // bVII
+  Locrian:    {}                       // only pull (bII, str 1) is sub-threshold: no event
+};
+function cadencePullKind(root,kr,km){
+  const off=((root-kr)%12+12)%12;
+  return (cadencePullClass[km]||{})[off] || 'modal';
+}
 // chordRoots: array of pitch-class roots in sequence order. Returns cadence events,
 // each {at, type}: 'at' is the 0-indexed position of the strong-pull chord involved.
+// 'type' encodes BOTH the pull's tonal/modal class and its resolution outcome — the
+// detector is root-motion-only (it knows nothing about chord quality or phrase
+// structure), so it deliberately does not use textbook cadence names. Six types:
+//   tonalResolve / tonalAway / tonalUnresolved / modalResolve / modalAway / modalUnresolved
 function detectCadences(chordRoots,kr,km){
   const events=[];
   for(let i=0;i<chordRoots.length-1;i++){
     if(cadenceVal(chordRoots[i],kr,km)>=CADENCE_STRONG){
-      events.push({at:i, type: chordRoots[i+1]===kr ? 'authentic' : 'deceptive'});
+      const kind=cadencePullKind(chordRoots[i],kr,km);
+      const resolves=chordRoots[i+1]===kr;
+      events.push({at:i, type: kind==='tonal'
+        ? (resolves?'tonalResolve':'tonalAway')
+        : (resolves?'modalResolve':'modalAway')});
     }
   }
   if(chordRoots.length && cadenceVal(chordRoots[chordRoots.length-1],kr,km)>=CADENCE_STRONG){
-    events.push({at:chordRoots.length-1, type:'half'});
+    const kind=cadencePullKind(chordRoots[chordRoots.length-1],kr,km);
+    events.push({at:chordRoots.length-1, type: kind==='tonal'?'tonalUnresolved':'modalUnresolved'});
   }
   return events;
 }
@@ -4319,12 +4502,34 @@ function exportTheory(){
       segStart=segEnd+1;
     }
   }
-  const cadenceLabels={authentic:'Authentic cadence',deceptive:'Deceptive motion (expected resolution didn\u2019t land on tonic)',half:'Half cadence (ends on a pulling chord, unresolved)'};
+  const cadenceLabels={
+    tonalResolve:'Tonal resolution to tonic',
+    tonalAway:'Tonal pull does not resolve to tonic',
+    tonalUnresolved:'Unresolved tonal pull',
+    modalResolve:'Modal resolution to tonic',
+    modalAway:'Modal pull does not resolve to tonic',
+    modalUnresolved:'Unresolved modal pull'
+  };
   // Any mode among the regions is Locrian → the "no cadences" note still applies.
   const anyLocrian=chordEntries.some(ce=>ce.km==='Locrian');
+  // Item 55: Harmonic Arc pills gain a Roman-numeral prefix, display-only. Reuses the
+  // SAME r.fn/r.fnClass this export already computed for the Function column above —
+  // no new matching logic. Gated to the classes that actually carry a scale-degree
+  // reading (diatonic/characteristic/secdom/borrowed); passing/chromatic chords hold a
+  // descriptive word in r.fn ("passing dim7", "chromatic"), not a numeral, so per
+  // design-lock those pills show the chord name alone rather than inventing one.
+  const ARC_NUMERAL_CLASSES={diatonic:1,characteristic:1,secdom:1,borrowed:1};
+  // Presentation-only flat symbol: r.fn itself keeps the app's existing literal "b"
+  // spelling (unchanged everywhere else in this doc — Function column, chain diagram).
+  // Only the Harmonic Arc pill renders the proper "\u266D" glyph, per design-lock. "b"
+  // only ever appears as this flat-degree prefix (start of the numeral, or after "/"
+  // for a secondary-dominant target like "V/bVII") — never elsewhere inside a numeral.
+  const arcFlatDisplay=n=>n.replace(/(^|\/)b/g,(m,p1)=>p1+'\u266D');
   const arcGroupsHtml=regionGroups.map(g=>{
-    const chips=rows.slice(g.start,g.end+1).map(r=>
-      `<span class="chord-badge" style="background:rgb(${r.col.join(',')});color:#fff">${r.label}</span>`).join('');
+    const chips=rows.slice(g.start,g.end+1).map(r=>{
+      const rn=ARC_NUMERAL_CLASSES[r.fnClass]?`<span class="rn">${arcFlatDisplay(r.fn)}\u2009\u00B7</span> `:'';
+      return `<span class="chord-badge" style="background:rgb(${r.col.join(',')});color:#fff">${rn}${r.label}</span>`;
+    }).join('');
     const keyTag=hasModulation?`<div class="arc-key" style="color:var(--tm)">${g.keyName}</div>`:'';
     return `<div class="arc-group" style="border-color:${fnColors[g.tier]}">
       <div class="arc-chips">${chips}</div>
@@ -4334,7 +4539,7 @@ function exportTheory(){
   const cadenceListHtml=cadenceEvents.length
     ? `<ul class="cadence-list">${cadenceEvents.map(e=>
         `<li><span class="cad-num">#${e.at+1}</span> ${rows[e.at].label} \u2014 <span class="cad-type">${cadenceLabels[e.type]}</span> <span class="cad-key">in ${rows[e.at].keyName}</span></li>`).join('')}</ul>`
-    : `<div class="cadence-none">No strong cadential pulls detected in this progression${anyLocrian?' \u2014 expected in Locrian, which rarely cadences':''}.</div>`;
+    : `<div class="cadence-none">No strong tonal or modal pulls detected${anyLocrian?' \u2014 expected in Locrian, whose only pull (\u266dII) is below the strong-pull threshold, so it produces no pull event':''}.</div>`;
   const relColors={dom:'#eb6834',plagal:'#5a96e6',mediant:'#7fc9a8',circle:'#e0ac4a',step:'#b0a898',none:'#b0a898'};
   const relBgs={dom:'rgba(235,104,52,0.10)',plagal:'rgba(90,150,230,0.10)',mediant:'rgba(127,201,168,0.12)',circle:'rgba(224,172,74,0.10)',step:'rgba(176,168,152,0.07)',none:'rgba(176,168,152,0.07)'};
 
@@ -4521,6 +4726,7 @@ tr:hover td{background:var(--s1)}
 .notes{color:var(--ts);font-family:'JetBrains Mono',monospace;font-size:12px}
 .voice{color:var(--tm);font-size:11px}
 .chord-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;white-space:nowrap}
+.chord-badge .rn{font-size:0.78em;font-weight:400;opacity:0.65}
 .fn-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;white-space:nowrap}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:12px}
 .stat-card{background:var(--s1);border:1px solid var(--bdr);border-radius:10px;padding:16px}
@@ -4585,10 +4791,10 @@ ${motionDiagramHtml?motionDiagramHtml:(transitions.length?`<h2>Motion &amp; voic
     <dd>Groups chords by role \u2014 tonic, signature (the mode's characteristic chord), native function, non-diatonic \u2014 instead of forcing classical T/PD/D onto modes where that grammar doesn't apply. Native function means the chord carries that scale degree's role (by guide tones), independent of whether every note it voices is pitch-content diatonic \u2014 an altered chord still brackets here, same as any other chord in that tier, with its \u00B7 altered qualifier and detail line carrying the pitch-content fact separately.</dd>
     <dt>Borrowed \u2014 "available from"</dt>
     <dd>A borrowed chord's parallel-mode source usually isn't unique \u2014 the same notes can belong to more than one mode built on the same tonic. Rather than naming one mode as "the" source, the detail line lists every mode whose actual scale contains all of the chord's sounding notes (not just a matching function), nearest-mode-first by distance from the local key's mode. A source marked "mode-defining" is that source mode's own characteristic chord.</dd>
-    <dt>Cadence detection</dt>
-    <dd>Built from mode-specific pull-toward-tonic strength. "Deceptive motion" = any strong-pull chord resolving somewhere other than tonic, broader than the strict V\u2192vi textbook definition.</dd>
-    <dt>Locrian and cadences</dt>
-    <dd>Locrian's only pull (\u266dII) is weak, so its progressions typically show zero detected cadences \u2014 expected, not a bug.</dd>
+    <dt>Cadence-oriented pull detection</dt>
+    <dd>Built from mode-specific pull-toward-tonic strength. This is a root-motion signal only \u2014 it reads which chord roots pull toward the tonic and where they go next; it does not read chord quality or phrase structure, so it deliberately avoids textbook cadence names ("authentic," "deceptive," "half"), which claim more than root motion alone can verify. Each strong pull is first classed as <em>tonal</em> (the mode's dominant-type degree \u2014 e.g. Ionian V and vii\u00B0, Lydian V) or <em>modal</em> (the mode's characteristic degree \u2014 e.g. Aeolian and Mixolydian \u266dVII, Phrygian \u266dII, Dorian IV, Lydian II), then labeled by where it resolves: "\u2026 resolution to tonic" (next chord is the tonic), "\u2026 pull does not resolve to tonic" (next chord is elsewhere), or "Unresolved \u2026 pull" (the pull is the final chord).</dd>
+    <dt>Locrian and cadence detection</dt>
+    <dd>Locrian's only pull (\u266dII) sits below the strong-pull threshold, so a Locrian passage produces no tonal or modal pull event at all under the current threshold \u2014 expected, not a bug.</dd>
     <dt>Root motion diagram</dt>
     <dd>Chord roots plotted on the circle of fifths, in the order they're played. A curved arc hugging the rim means an adjacent-fifths move; a straight line means a bigger reach, dashed once it's a genuinely distant jump. Line color follows the same relationship classification as "Relationship" below. A progression with one modulation or fewer shows one diagram (or two connected circles, for the one-modulation case). Two or more modulations add a dropdown above the diagram \u2014 pick which modulation to view; every one is pre-rendered into this file, so nothing needs regenerating to look at a different key change.</dd>
     <dt>Root motion</dt>
@@ -4667,45 +4873,59 @@ ${motionDiagramHtml?motionDiagramHtml:(transitions.length?`<h2>Motion &amp; voic
 //                borrowed just a few chords earlier. This is the reclassification guarantee:
 //                classification always follows the LOCAL key context, never a stored flag.
 //  14. Dm7     — closing native i in C Dorian (root-motion return to the new local tonic).
+//  15. Dm9     — item 52: MIDI-import voicing fidelity. manualVoicing set directly to
+//               [50,60,64,65,69] (D3 C4 E4 F4 A4) — the exact source voicing from the SOTS
+//               regression fixture — standing in for what a MIDI import now populates
+//               automatically on an exact chord-quality match. Confirms live: inversion panel
+//               shows the non-clickable "Manual" pill, bass/melody/inv buttons on its card are
+//               disabled with the "Overridden by manual voicing" tooltip, the card shows
+//               "voicing · set", and playback/preview uses these exact notes — not a freshly
+//               computed voicing — until "clear manual voicing" (keyboard panel) or an
+//               inversion click releases it back to Auto.
 // Ricky clears this before his own final save, per standing delivery rule.
 let currentRoot=0,keyRoot=0,keyMode="Ionian",mode="functional",activeBassIndex=null,insertAt=null,activeInvIndex=null,activeMelodyIndex=null,borrowMode=null,activeKeyboardIndex=null,reviseAt=null;
 // Session name (added for export continuity): a free-text label the user can set for the
 // current sketch. Purely cosmetic — carries into the .chordspace.json save, the MIDI
 // filename + conductor track name, and the theory export doc/filename. Empty string means
 // "untitled" everywhere; every consumer falls back to its old auto-generated name in that case.
-let sessionName="Guide Tones + Borrowed Sources (items 45, 48 & 46 demo)"; // demo value — Ricky clears this before his own save, per standing practice
-// --- Items 45, 48 & 46 demo: quality-aware Functional scoring + rootTier display fix +
-// borrowed-source disclosure. C Ionian for chords 1-11 (single key on purpose for items
-// 45/48, so those fixes are legible), then a key marker into C Dorian for chords 12-14 so the
-// SAME Bbmaj7 chord (9 and 13) can be compared reading borrowed in one home mode and native in
-// the other — item 46's reclassification guarantee, visible in a static save rather than
-// requiring a live key change. It deliberately places borrowed QUALITIES on DIATONIC ROOTS
-// (chords 3-4) so items 45/48 stay visible: the borrowed-quality chords keep their root-motion
-// pull but no longer collect the "in-key"/"home" bonus a genuine native would; the Cylinder
-// Map's Selection card labels those same chords "(borrowed color)" and dims them to a lighter
-// muted state instead of showing full-color "tonic"/"in key" — while the enriched natives
-// (Cmaj9, C6/9) still read as full, unmuted tonic function either way, because their guide tones
-// (3rd + 7th) are the tonic's. Chords 8-11 and 13 are the item-46 additions: compare their
-// "Available from parallel..." disclosure line in the analysis export, the live detail panel's
-// wording, the strip chip (a claim-free "borrowed" tag, no mode name), and the Cylinder Map's
-// tier/fade — all four should agree exactly, since all four now read the same shared
-// borrowedStatusAt() authority rather than each deriving (or mis-deriving) their own answer.
-// Ricky clears this before his own save, per standing practice.
+let sessionName="Cadence-oriented pull detection (item 47 demo)"; // demo value — Ricky clears this before his own save, per standing practice
+// --- Item 47 demo: cadence-oriented pull detection, tonal/modal split. Exercises all six
+// event labels in one progression across a single modulation. The detector is root-motion
+// only, so quality doesn't change the label — but the qualities here are chosen to make the
+// tonal-vs-modal distinction pedagogically honest: the TONAL pull is a real dominant (G7),
+// the MODAL pull is a plain major bVII (Bbmaj7), never a dominant.
+//   Segment A — C Ionian (tonal pulls; V = G, offset 7):
+//     1 Cmaj7 (I)  2 G7 (V)->C  = "Tonal resolution to tonic"
+//     3 Cmaj7 (I)  4 G7 (V)->Am = "Tonal pull does not resolve to tonic"
+//     5 Am7 (vi)   6 G7 (V) is the segment's final chord = "Unresolved tonal pull"
+//   [key marker -> C Aeolian]
+//   Segment B — C Aeolian (modal pulls; bVII = Bb, offset 10):
+//     7 Cm7 (i)    8 Bbmaj7 (bVII)->Cm = "Modal resolution to tonic"
+//     9 Cm7 (i)   10 Bbmaj7 (bVII)->Ab = "Modal pull does not resolve to tonic"
+//    11 Abmaj7(bVI) 12 Bbmaj7 (bVII) is the segment's final chord = "Unresolved modal pull"
+// Read the analysis export's cadence list: exactly six events, three tonal then three modal,
+// each in its own key region. Note the labels avoid "authentic/deceptive/half" on purpose —
+// root motion alone can't verify a textbook cadence. Ab (bVI, offset 8) and Am (vi, offset 9)
+// are sub-threshold pulls and correctly emit no event. Ricky clears this before his own save.
+// Item 56 addition: the Am7's duration below is shortened from '4n' to '8n' (startUnit and
+// every other chord's startUnit are untouched) purely so this same demo also exercises
+// Notes' real-gap rendering — a genuine 6-unit rest now sits between the Am7 and the G7
+// that follows it. Root motion (and therefore all six item-47 cadence events/labels) is
+// unaffected, since cadence detection reads chord roots, not durations.
 let seq=[
-  {idx:15, root:0, startUnit:0,   dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cmaj9    — genuine I (enriched native tonic: still full tonic function)
-  {idx:6,  root:9, startUnit:12,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Am7      — native vi (diatonic, unchanged)
-  {idx:6,  root:5, startUnit:24,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Fm7      — BORROWED iv on the IV root (native IV is Fmaj7): loses in-key bonus, keeps root motion
-  {idx:6,  root:0, startUnit:36,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cm7      — BORROWED quality on the TONIC root (the headline bug case): no tonic-arrival credit now
-  {idx:24, root:7, startUnit:48,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // G7b9     — genuine V (dominant function intact: full cadential pull toward I)
-  {idx:4,  root:0, startUnit:60,  dur:'2n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cmaj7    — genuine I (clean authentic resolution: keeps full tonic credit)
-  {idx:30, root:0, startUnit:84,  dur:'2n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // C6/9     — closing color tag (enriched native tonic: still tonic function)
-  {idx:17, root:10,startUnit:108, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Bbmaj9#11— item 46: pitch-restricted — available from Mixolydian ONLY (the #11 rules out Dorian)
-  {idx:4,  root:10,startUnit:120, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Bbmaj7   — item 46: multi-source — available from Dorian and Mixolydian (not Aeolian)
-  {idx:15, root:8, startUnit:132, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Abmaj9   — item 46: under-detection fix — available from Aeolian and Phrygian (used to read "chromatic")
-  {idx:5,  root:6, startUnit:144, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // F#7      — genuinely chromatic: no parallel-mode match at all, still reads "chromatic"
-  {marker:true, keyRoot:0, keyMode:'Dorian', meter:null},                                                                       // key change: home mode becomes C Dorian from here on
-  {idx:4,  root:10,startUnit:156, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Bbmaj7   — item 46: SAME chord as above, now NATIVE (bVII in Dorian) — reclassification guarantee
-  {idx:6,  root:2, startUnit:168, dur:'2n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Dm7      — closing native i in C Dorian
+  {idx:4,  root:0, startUnit:0,   dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cmaj7  — I (C Ionian)
+  {idx:5,  root:7, startUnit:12,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // G7     — V, resolves to I -> Tonal resolution to tonic
+  {idx:4,  root:0, startUnit:24,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cmaj7  — I
+  {idx:5,  root:7, startUnit:36,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // G7     — V, goes to vi -> Tonal pull does not resolve to tonic
+  {idx:6,  root:9, startUnit:48,  dur:'8n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Am7    — vi (sub-threshold, no event); shortened to 8n (item 56) so Notes shows a real gap before the next chord
+  {idx:5,  root:7, startUnit:60,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // G7     — V, final chord of segment -> Unresolved tonal pull
+  {marker:true, keyRoot:0, keyMode:'Aeolian', meter:null},                                                                      // key change: home mode becomes C Aeolian from here on
+  {idx:6,  root:0, startUnit:72,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cm7    — i (C Aeolian)
+  {idx:4,  root:10,startUnit:84,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Bbmaj7 — bVII, resolves to i -> Modal resolution to tonic
+  {idx:6,  root:0, startUnit:96,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cm7    — i
+  {idx:4,  root:10,startUnit:108, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Bbmaj7 — bVII, goes to bVI -> Modal pull does not resolve to tonic
+  {idx:4,  root:8, startUnit:120, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Abmaj7 — bVI (sub-threshold, no event)
+  {idx:4,  root:10,startUnit:132, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Bbmaj7 — bVII, final chord of segment -> Unresolved modal pull
 ];
 // Whole-progression register bias, in octaves (each unit = ±12 semitones). Applied as a
 // post-process in voicingsForSeq() — never touches computeVoicings (protected) or the
@@ -4819,6 +5039,23 @@ function unitsToNearestDurCapped(rawUnits,ceilingUnits){
   return best || DUR_ORDER[DUR_ORDER.length-1];
 }
 let vlNorm='l1'; // Voice Leading tab optimum target: 'l1' = least total motion, 'linf' = least largest leap
+// Item 56: which Voice Leading sub-view is showing. 'notes' = read-only actual-timing piano
+// roll (default), 'flow' = the pre-existing connector-line roll (unchanged, still the
+// editing/path-analysis surface). notesZoomFit/notesUnitPx are Notes' OWN local zoom state —
+// deliberately never reads or writes RHYTHM_UNIT_PX, per the earlier Lines-relocation lesson
+// (a display controlled from another tab was confusing in real use).
+let vlView='notes';
+let notesZoomFit=true;
+let notesUnitPx=6;
+// Item 66: MIN lowered from 1.5 to 0.25. computeNotesFitPxPerUnit's own floor is 0.5, so a
+// long progression's Fit value can legitimately sit anywhere from 0.5 up — the old 1.5
+// minimum sat ABOVE that range, meaning the first "−" press from a low Fit value clamped
+// UP instead of down (zoomed in, backwards). 0.25 is half of Fit's own floor, so
+// max(MIN, fitValue/1.4) can never be clamped for any value Fit actually produces —
+// guaranteed smaller than Fit on the first press — while still leaving one real step of
+// manual zoom-out below the most extreme Fit case.
+const NOTES_UNIT_PX_MIN=0.25, NOTES_UNIT_PX_MAX=28;
+const NOTES_ROWPX=9; // fixed px per semitone — a stable pitch reference that never squishes, per design-lock
 let globalDur='2n', bpm=120, activeChordIndex=-1, isPlaying=false;
 let loopEnabled=false; // transport loop toggle; applied to Tone.Transport at play time
 // --- Voicing preferences (feed computeVoicings; affect audible + exported voicing) ---
@@ -5408,6 +5645,16 @@ function placeMapLabelsWithoutOverlap(){
   });
   const placed=[]; // rects of labels already confirmed clean, in placement order
   const GAP=6; // px between a dot's edge and a label, matches the original default offset
+  // Item 69: a candidate must also fall entirely within the usable map rect, inset by a
+  // small safety margin (reusing GAP for consistency with the existing dot-to-label
+  // spacing). Previously a candidate was accepted purely on non-overlap with dots/labels/
+  // static furniture — nothing checked it was actually inside the visible map, so a
+  // crowded corner's ring-2 candidates could land outside the container and get clipped by
+  // .map{overflow:hidden}. A rejected out-of-bounds candidate is skipped exactly like a
+  // dot/label/furniture collision already is — the loop just tries the next candidate, then
+  // the wider ring, then falls through to the existing hide-fallback — never clamped back
+  // to the edge (clamping several independently would just recreate the pileup differently).
+  const usableRect={left:mapRect.left+GAP, top:mapRect.top+GAP, right:mapRect.right-GAP, bottom:mapRect.bottom-GAP};
   order.forEach(i=>{
     const label=labelEls[i], dotRect=dotRects[i];
     label.style.display='';
@@ -5446,10 +5693,11 @@ function placeMapLabelsWithoutOverlap(){
     let chosen=null;
     for(const c of candidates){
       const rect={left:c.left, top:c.top, right:c.left+w, bottom:c.top+h};
+      const outOfBounds=rect.left<usableRect.left||rect.top<usableRect.top||rect.right>usableRect.right||rect.bottom>usableRect.bottom;
       const hitsDot=dotRects.some((dr,di)=>di!==i&&rectsOverlap(rect,dr));
       const hitsLabel=placed.some(pr=>rectsOverlap(rect,pr));
       const hitsStatic=staticObstacles.some(sr=>rectsOverlap(rect,sr));
-      if(!hitsDot&&!hitsLabel&&!hitsStatic){ chosen=c; break; }
+      if(!outOfBounds&&!hitsDot&&!hitsLabel&&!hitsStatic){ chosen=c; break; }
     }
     if(chosen){
       label.style.left=(chosen.left-mapRect.left)+'px';
@@ -5879,6 +6127,37 @@ function renderRhythmTab(){
     block.style.width=Math.max(w-4,20)+'px';
     block.dataset.idx=i;
     block.title=`${rn} ${ch.n} — drag to move, drag the right edge to resize`;
+    // Item 63: restrained chord-color accent, reusing the same ch.col authority Build's
+    // chips already use. A separate child strip, not a box-shadow/border/background change
+    // on the block itself — .rhythm-block.dragging/.playing already use box-shadow for their
+    // own state feedback, so touching that property here would silently clobber them.
+    const accent=document.createElement('div');
+    accent.className='rhythm-block-accent';
+    accent.style.background=`rgb(${ch.col.join(',')})`;
+    block.appendChild(accent);
+
+    // Item 68: full-block muted chord tint, reusing the exact color-mix() idiom already
+    // used elsewhere in this file (e.g. the voice-solo buttons) — ~30% chord color mixed
+    // into the existing dark surface, not a new palette. Set via inline style (background)
+    // rather than editing .rhythm-block's own CSS rule, since ch.col is per-chord/computed
+    // in JS. .rhythm-block.is-triplet already sets its OWN background (a diagonal-stripe
+    // gradient) via CSS — inline style would silently override and erase that stripe, so
+    // the triplet case gets its own inline gradient instead, reproducing the exact same
+    // stripe geometry (45°, 6px/12px) but with BOTH stops carrying the same 30% tint (one
+    // mixed into --surface-2, one into --surface-1) so the stripe contrast — and therefore
+    // its visibility — is preserved, just recolored. Ordinary blocks get the flat tint.
+    // Neither touches .dragging/.playing/:hover, which all use border-color/outline/
+    // box-shadow, never background — confirmed no interaction with those states.
+    const tintPct='30%';
+    if(durModifier(dur)==='t'){
+      block.style.background=`repeating-linear-gradient(45deg, `+
+        `color-mix(in srgb, rgb(${ch.col.join(',')}) ${tintPct}, var(--surface-2)), `+
+        `color-mix(in srgb, rgb(${ch.col.join(',')}) ${tintPct}, var(--surface-2)) 6px, `+
+        `color-mix(in srgb, rgb(${ch.col.join(',')}) ${tintPct}, var(--surface-1)) 6px, `+
+        `color-mix(in srgb, rgb(${ch.col.join(',')}) ${tintPct}, var(--surface-1)) 12px)`;
+    } else {
+      block.style.background=`color-mix(in srgb, rgb(${ch.col.join(',')}) ${tintPct}, var(--surface-2))`;
+    }
 
     if(durModifier(dur)==='t'){
       const badge=document.createElement('div');
@@ -7061,6 +7340,11 @@ function renderStrip(voicings){
   }
   if(seq.length===0){
     strip.innerHTML='<span class="strip-empty">No chords yet. Click a chord in the map below to add one.</span>';
+    // Item 64 fix: this branch returns before the shared disclosure's visibility toggle
+    // below ever runs — an empty progression trivially has no valid manual voicing, so
+    // hide it explicitly here rather than letting a previously-visible state linger.
+    const mvDisclosureEmpty=document.getElementById('mv-shared-disclosure');
+    if(mvDisclosureEmpty) mvDisclosureEmpty.hidden=true;
     updateInsertNote();
     return;
   }
@@ -7241,17 +7525,16 @@ function renderStrip(voicings){
       dtag.title='Set on the Rhythm tab — this chord no longer follows the transport\'s default note value.';
       btnRow.appendChild(dtag);
     }
-    if(mvValid){
-      const ov=document.createElement('p');
-      ov.className='voicing-caveat mv-override';
-      ov.innerHTML=`<strong>Manual voicing active</strong> — bass, melody, and inversion pins are saved below but not currently used. Drag notes on the Voice Leading tab to adjust it.`;
-      group.appendChild(ov);
-    } else if(mvStale){
+    if(mvStale){
       const ov=document.createElement('p');
       ov.className='voicing-caveat mv-stale';
       ov.innerHTML=`<strong>Saved voicing doesn't cover every tone</strong> — either this chord changed underneath it, or an edit left a tone missing or doubled over another. Using the computed voicing until it's fixed.`;
       group.appendChild(ov);
     }
+    // Item 64: the valid-manual-voicing explanation is no longer repeated per chord — see
+    // the single shared #mv-shared-disclosure toggled once below, after this loop. The
+    // stale/invalid case above is unchanged: that's a chord-specific problem, so it keeps
+    // its own per-chord warning.
     strip.appendChild(group);
     // Purely decorative connector between cards — comp's "→" glyph. No handler, no
     // insert function here; the real insert-after-this-chord control now lives inside
@@ -7264,6 +7547,15 @@ function renderStrip(voicings){
       strip.appendChild(arrow);
     }
   });
+  // Item 64: shared manual-voicing disclosure — shown once, only when the progression
+  // currently contains at least one VALID manual voicing (the same manualVoicingValid()
+  // check already used per-chord above, not new validity logic). A stale/invalid one
+  // doesn't count here — that's still surfaced per-chord via .mv-stale above.
+  const mvDisclosure=document.getElementById('mv-shared-disclosure');
+  if(mvDisclosure){
+    const hasValidMv=seq.some(s=>!isMarker(s)&&Array.isArray(s.manualVoicing)&&s.manualVoicing.length>0&&manualVoicingValid(s.manualVoicing,pcsOf(s.root,lib[s.idx].n)));
+    mvDisclosure.hidden=!hasValidMv;
+  }
   updateInsertNote();
 }
 
@@ -7583,36 +7875,74 @@ function nearestOctaveOfPitchClass(rawPitch,pc){
   return pc+12*k;
 }
 // ============================================================================
-// Voice-identity threading — shared by the roll's line coloring (renderRoll) and solo
-// playback (the per-voice solo buttons, playProgression). Walks the SAME prev-note-to-
-// cur-note pairing that draws each line on the roll (a transition's `moves`, from
-// computeVLStats) and assigns each distinct physical voice a persistent PALETTE slot, so
-// a slot follows one voice across the whole progression, including through a crossing —
-// a color is looked up by the note it's LEAVING in the map built from the previous
-// transition's arrivals, and carried onto the note it's ARRIVING at for the next
-// transition to pick up. A voice that appears when a chord grows gets the next unused
-// slot; one that disappears when a chord shrinks just stops being referenced. This is a
-// pure rendering/selection aid with no bearing on the underlying data model — there's no
-// persistent S/A/T/B voice-identity concept elsewhere in the app (item 25's honest
-// caveat, now also item 26's: soloing "voice 3" can occasionally let two unrelated
-// physical voices through if the palette wraps past 6 concurrent voices, or silently
-// pick up a different physical voice than the one you started listening to, in the same
-// way the color can re-assign after a chord shrinks and regrows).
+// Voice-identity threading — shared by the roll's line coloring (renderRoll), Notes'
+// note-bar coloring (renderNotesRoll/buildNotesSegments), the per-voice solo row, solo-
+// filtered playback (playProgression), and keyboard playback coloring (renderKeyboardPanel)
+// — five call sites, ALL reading this one function's output, by design: there is exactly
+// one definition of "voice N" in this app, never a per-view substitute.
+// Walks the SAME prev-note-to-cur-note pairing that draws each line on the roll (a
+// transition's `moves`, from computeVLStats) and assigns each distinct physical voice a
+// persistent PALETTE slot, so a slot follows one voice across the whole progression,
+// including through a crossing — a color is looked up by the note it's LEAVING in the map
+// built from the previous transition's arrivals, and carried onto the note it's ARRIVING at
+// for the next transition to pick up. A voice that appears when a chord grows gets the next
+// unused slot; one that disappears when a chord shrinks just stops being referenced.
+//
+// Item 61 fix: a chord-SIZE change forces minimalVoiceLeading to pad the smaller chord's
+// pitch-class set (pcDoublings); realizeMapping then has no second real note to pick at
+// that padded pitch class (this app's voicings never actually double a tone — confirmed by
+// inspecting styleVoicing/smoothestCloseVoicing/applySpreadCap), so it reused the same real
+// note as `mv.nearest` for two different arrivals, and this function handed both arrivals
+// the same slot. Fixed by processing each chord column's moves smallest-motion-first (the
+// same least-motion bias minimalVoiceLeading itself already optimizes for) and tracking
+// which slots are already claimed IN THAT COLUMN: a move that would collide with an
+// already-claimed slot falls through to the SAME "new voice enters" path already used for
+// chord growth, rather than silently aliasing onto an in-use slot. No parallel identity
+// system — the existing mechanism just wasn't triggering for this case. Verified empirically
+// (real verbatim function chain, not reimplemented) against triad->7th, 7th->9th, 9th->7th,
+// 7th->triad, 5-note->6-note, a held common tone across a size change, an irregular
+// manually-voiced/imported chord, and this app's own equal-size demo and crossing cases —
+// same-cardinality transitions never trigger pcDoublings padding, so this is a byte-
+// identical no-op there, confirmed by direct comparison, not assumed.
+// This is a pure rendering/selection aid with no bearing on the underlying data model —
+// there's no persistent S/A/T/B voice-identity concept elsewhere in the app. Residual, out-
+// of-scope limitation (item 25/26's original honest caveat, only the size-change collision
+// above is fixed): a single chord with MORE than 6 simultaneously sounding notes still can't
+// get fully distinct colors — the hard limit of a 6-color palette, not something a slot-
+// assignment fix can solve without adding colors.
 const VOICE_COLORS=['var(--voice-1)','var(--voice-2)','var(--voice-3)','var(--voice-4)','var(--voice-5)','var(--voice-6)'];
 function computeVoiceThreads(chordVoicings, stats){
   let nextSlot=0;
-  const firstSlotFor=()=>nextSlot++%VOICE_COLORS.length;
+  // pickUnused tries the next never-yet-used slot first (matches the pre-existing
+  // "new voice enters" behavior exactly); only once the palette has wrapped past 6 does
+  // it also skip a slot already claimed THIS column, so two genuinely simultaneous voices
+  // never collide as long as 6 or fewer are sounding at once (see the residual limitation
+  // above for the >6 case).
+  const pickUnused=(usedThisCol)=>{
+    for(let tries=0; tries<VOICE_COLORS.length; tries++){
+      const s=nextSlot%VOICE_COLORS.length; nextSlot++;
+      if(!usedThisCol.has(s)) return s;
+    }
+    return (nextSlot++)%VOICE_COLORS.length; // >6 simultaneous voices: genuine palette limit
+  };
   const slotOfNoteAt=[]; // slotOfNoteAt[col] = Map<note, slotIdx>, one map per chord column
   let cur=new Map();
-  if(chordVoicings.length) chordVoicings[0].forEach(n=>{ if(!cur.has(n)) cur.set(n,firstSlotFor()); });
+  const usedCol0=new Set();
+  if(chordVoicings.length) chordVoicings[0].forEach(n=>{
+    if(!cur.has(n)){ const s=pickUnused(usedCol0); usedCol0.add(s); cur.set(n,s); }
+  });
   slotOfNoteAt.push(cur);
   for(let t=0;t<chordVoicings.length-1;t++){
+    const moves=((stats.transitions[t]&&stats.transitions[t].moves)||[]).slice()
+      .sort((a,b)=>a.dist-b.dist); // smallest motion claims a contested slot first
     const next=new Map();
-    const moves=(stats.transitions[t]&&stats.transitions[t].moves)||[];
+    const usedThisCol=new Set();
     moves.forEach(mv=>{
+      if(next.has(mv.note)) return; // same physical arrival note claimed twice (legit convergence) — smallest-move claim already won
       let slot=cur.get(mv.nearest);
-      if(slot===undefined) slot=firstSlotFor(); // new voice entering (chord grew here)
-      if(!next.has(mv.note)) next.set(mv.note,slot);
+      if(slot===undefined || usedThisCol.has(slot)) slot=pickUnused(usedThisCol); // new voice entering, OR this column's collision fix
+      usedThisCol.add(slot);
+      next.set(mv.note,slot);
     });
     slotOfNoteAt.push(next);
     cur=next;
@@ -7756,7 +8086,7 @@ function renderRoll(voicings){
         ? `Pivot chord — ${piv.roman} in ${keySpell(piv.keyRoot,piv.keyRoot,piv.keyMode)} ${piv.keyMode}, reads as ${rom} once the key changes here. Click to hear it and open the keyboard for this chord.`
         : 'Click to hear it and open the keyboard for this chord';
       r.appendChild(rt);
-      r.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();};
+      r.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
       roll.appendChild(r);
     }
     if(!ultraDense){
@@ -7764,7 +8094,7 @@ function renderRoll(voicings){
       const nm=mk('text',{x:x,y:36,'text-anchor':'middle',fill:'var(--text-secondary)','font-family':'var(--font-body)','font-size':'11',class:'roll-head'+(kbActive?' kb-active':''),'data-chord-idx':i});
       nm.textContent=`${keySpell(s.root,kc.keyRoot,kc.keyMode)} ${ch.n}`;
       const nt=mk('title',{});nt.textContent='Click to hear it and open the keyboard for this chord';nm.appendChild(nt);
-      nm.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();};
+      nm.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
       roll.appendChild(nm);
     }
   });
@@ -7778,6 +8108,285 @@ function renderRoll(voicings){
     roll.appendChild(d);
   }
 }
+// =====================================================================================
+// Item 56 — Voice Leading "Notes" view. Read-only piano roll of the ACTUAL sounding
+// voicings (computed or manual — the same per-chord arrays renderRoll already draws),
+// positioned at real absolute time via unitLayout() — the same startUnit/duration source
+// of truth Rhythm, Lines, and playback (playProgression's beatLayout()) already use. This
+// is deliberately NOT Flow's model: Flow packs columns proportional to duration and can't
+// show a gap; Notes shows genuine silence as empty horizontal space. Zero protected
+// functions touched — this only reads voicings/seq/lib, same as renderRoll does.
+// =====================================================================================
+
+function currentNotesDrawUnits(){
+  const {totalUnits}=unitLayout();
+  return Math.max(activeGridLengthUnits(), totalUnits, 1);
+}
+function computeNotesFitPxPerUnit(drawUnits){
+  const outer=document.getElementById('notes-scroll-outer');
+  const w=(outer&&outer.clientWidth)||600;
+  return Math.max(w/Math.max(drawUnits,1), 0.5);
+}
+// Fit | − | + control, scoped entirely to Notes — never reads/writes RHYTHM_UNIT_PX.
+// Clicking − or + while in Fit first "locks in" the current fit-computed pixel scale as
+// the manual starting point, so the first zoom step doesn't jump unpredictably.
+function setNotesZoom(mode){
+  if(mode==='fit'){
+    notesZoomFit=true;
+  } else {
+    if(notesZoomFit) notesUnitPx=computeNotesFitPxPerUnit(currentNotesDrawUnits());
+    notesZoomFit=false;
+    notesUnitPx = mode==='in'
+      ? Math.min(NOTES_UNIT_PX_MAX, notesUnitPx*1.4)
+      : Math.max(NOTES_UNIT_PX_MIN, notesUnitPx/1.4);
+  }
+  const fitBtn=document.getElementById('notes-zoom-fit');
+  if(fitBtn) fitBtn.classList.toggle('active',notesZoomFit);
+  renderNotesRoll(window._voicings||voicingsForSeq());
+}
+// Notes/Flow switch. Metrics, VL-norm toggle, and the per-voice solo row stay shared and
+// visible regardless of which view is showing (design-lock item 9) — only the roll itself
+// and Notes' own zoom row toggle visibility here.
+function setVlView(view){
+  vlView=view;
+  const notesBtn=document.getElementById('vlview-notes'), flowBtn=document.getElementById('vlview-flow');
+  if(notesBtn) notesBtn.classList.toggle('active',view==='notes');
+  if(flowBtn) flowBtn.classList.toggle('active',view==='flow');
+  const notesWrap=document.getElementById('notes-view-wrap'), flowWrap=document.getElementById('flow-view-wrap');
+  const zoomRow=document.getElementById('notes-zoom-row');
+  if(notesWrap) notesWrap.hidden = view!=='notes';
+  if(flowWrap) flowWrap.hidden = view!=='flow';
+  if(zoomRow) zoomRow.hidden = view!=='notes';
+  if(view==='notes') renderNotesRoll(window._voicings||voicingsForSeq());
+  else renderRoll(window._voicings||voicingsForSeq());
+}
+// Builds the merged note-bar segments Notes actually draws. Walks the chord-only
+// (marker-skipping) sequence in time order and, per voice-identity slot (from
+// computeVoiceThreads — the SAME threading Flow's line coloring and per-voice solo use),
+// extends an open segment only when the next chord's note is the identical pitch, on the
+// identical voice slot, starting exactly where the previous one ended (no gap). Any of a
+// pitch change, a slot change, or a gap closes the current segment and opens a new one —
+// so a rearticulation after silence is never merged, even if the pitch happens to match.
+// This is rendering-only: it never reads or writes s.manualVoicing or any chord data.
+function buildNotesSegments(chordIdxs, chordVoicings, slotOfNoteAt, starts){
+  const durUnitsOf=idx=>DUR_UNITS[getChordDur(seq[idx])]||12;
+  const open=new Map(); // slot -> {slot,note,startUnit,endUnit,chordIdxs:[]}
+  const finished=[];
+  for(let t=0;t<chordVoicings.length;t++){
+    const segIdx=chordIdxs[t];
+    const segStart=starts[segIdx];
+    const segEnd=segStart+durUnitsOf(segIdx);
+    const slotsThisChord=new Map(); // slot -> note, for the notes actually sounding this chord
+    chordVoicings[t].forEach(n=>{
+      const slot=slotOfNoteAt[t].get(n);
+      if(slot!==undefined) slotsThisChord.set(slot,n);
+    });
+    // A voice that dropped out (present before, absent now) closes its segment — the next
+    // time that slot reappears (even at the same pitch) starts a fresh segment, which is
+    // exactly "rearticulated after silence, don't merge."
+    for(const [slot,seg] of open){
+      if(!slotsThisChord.has(slot)){ finished.push(seg); open.delete(slot); }
+    }
+    for(const [slot,note] of slotsThisChord){
+      const existing=open.get(slot);
+      if(existing && existing.note===note && existing.endUnit===segStart){
+        existing.endUnit=segEnd;
+        existing.chordIdxs.push(segIdx);
+      } else {
+        if(existing) finished.push(existing);
+        open.set(slot,{slot,note,startUnit:segStart,endUnit:segEnd,chordIdxs:[segIdx]});
+      }
+    }
+  }
+  for(const seg of open.values()) finished.push(seg);
+  return finished;
+}
+function renderNotesRoll(voicings){
+  const keysCol=document.getElementById('notes-keys');
+  const content=document.getElementById('notes-content');
+  const outer=document.getElementById('notes-scroll-outer');
+  const labelInner=document.getElementById('notes-label-inner');
+  if(!keysCol||!content||!outer||!labelInner) return;
+  keysCol.innerHTML=''; content.innerHTML=''; labelInner.innerHTML='';
+
+  const chordIdxs=[]; (voicings||[]).forEach((v,i)=>{ if(v&&!isMarker(seq[i])) chordIdxs.push(i); });
+  if(chordIdxs.length===0){
+    const msg=document.createElement('div');
+    msg.className='notes-empty-msg';
+    msg.textContent = (voicings&&voicings.length)
+      ? 'Add a chord — Notes needs at least one to show anything.'
+      : 'Build a progression on the Build tab to see its voice leading.';
+    content.appendChild(msg);
+    content.style.width='100%'; content.style.height='140px';
+    keysCol.style.height='140px';
+    labelInner.style.width='100%';
+    return;
+  }
+  const chordVoicings=chordIdxs.map(i=>voicings[i]);
+  const stats=computeVLStats(chordVoicings,vlNorm);
+  const {slotOfNoteAt}=computeVoiceThreads(chordVoicings, stats);
+  const {starts}=unitLayout();
+  const drawUnits=currentNotesDrawUnits();
+
+  const pxPerUnit = notesZoomFit ? computeNotesFitPxPerUnit(drawUnits) : notesUnitPx;
+  const outerW=(outer.clientWidth)||600;
+  const totalPx=Math.max(drawUnits*pxPerUnit, outerW);
+
+  // Item 62 revision: vertical range fits around the actual sounding voicings, rounded
+  // outward to full octave (C) boundaries only — no additional octave stacked on top. A
+  // note sitting exactly on a C still gets a full step of headroom (hi rounds UP to the
+  // NEXT octave's C, never its own), so the range is never zero-margin, but the previous
+  // formula's up-to-3-octaves of dead space (an implementation slip, not the intended
+  // design — the handoff always described one octave per side) is gone.
+  const allNotes=chordVoicings.flat();
+  const lo0=allNotes.length?Math.min(...allNotes):60, hi0=allNotes.length?Math.max(...allNotes):72;
+  const loC=Math.floor(lo0/12)*12, hiC=Math.floor(hi0/12)*12+12;
+  const contentH=(hiC-loC)*NOTES_ROWPX;
+
+  content.style.width=totalPx+'px';
+  content.style.height=contentH+'px';
+  keysCol.style.height=contentH+'px';
+  labelInner.style.width=totalPx+'px';
+
+  // Pitch reference column (left, fixed — never scrolls horizontally with the notes; scrolls
+  // vertically together with the note lane since both sit inside the same outer container).
+  const blackPCs=[1,3,6,8,10];
+  for(let p=loC;p<hiC;p++){
+    const pc=((p%12)+12)%12;
+    const isBlack=blackPCs.includes(pc);
+    const y=(hiC-1-p)*NOTES_ROWPX;
+    const key=document.createElement('div');
+    key.className='notes-key '+(isBlack?'nk-black':'nk-white');
+    key.style.top=y+'px'; key.style.height=NOTES_ROWPX+'px';
+    key.title=midiToNote(p);
+    if(pc===0){
+      const lbl=document.createElement('span');
+      lbl.className='notes-key-label'; lbl.textContent=midiToNote(p);
+      key.appendChild(lbl);
+    }
+    keysCol.appendChild(key);
+  }
+
+  // Background pitch rows, C-row emphasized, matching the key column's landmarks.
+  for(let p=loC;p<hiC;p++){
+    const pc=((p%12)+12)%12;
+    const y=(hiC-1-p)*NOTES_ROWPX;
+    const row=document.createElement('div');
+    row.className='notes-pitch-row'+(pc===0?' notes-c-row':'');
+    row.style.top=y+'px';
+    content.appendChild(row);
+  }
+
+  // Item 65: selected-chord time-region band — spans exactly the selected chord's own
+  // startUnit/duration window (same per-chord timing DUR_UNITS/getChordDur math
+  // buildNotesSegments uses below), NOT a merged bar's full span, so a held note that
+  // happens to run through the selected chord's boundary doesn't visually imply the whole
+  // hold belongs to just this one chord. Placed behind the note bars (appended before
+  // them) so voice colors are never obscured — a low-opacity --mv wash only visible in the
+  // gaps around/between the bars.
+  const selIdx=effectiveKeyboardIndex();
+  if(selIdx!==null && chordIdxs.includes(selIdx)){
+    const selDurUnits=DUR_UNITS[getChordDur(seq[selIdx])]||12;
+    const band=document.createElement('div');
+    band.className='notes-selection-band';
+    band.style.left=(starts[selIdx]*pxPerUnit)+'px';
+    band.style.width=Math.max(selDurUnits*pxPerUnit,2)+'px';
+    content.appendChild(band);
+  }
+
+  // Chord labels — one per real chord, always at its true position, independent of any
+  // note-bar merging below, so the learner can always see exactly where the harmony
+  // changes even while a held voice's bar runs straight through that boundary. Item 62:
+  // now live in the sticky notes-label-inner strip, not notes-content, so they stay
+  // visible while the note lane scrolls vertically; horizontal position is kept in sync
+  // with the note lane by syncNotesLabelScroll (called at the end of this function and on
+  // every notes-scroll-outer scroll event) rather than by shared DOM ancestry.
+  let minGapPx=Infinity;
+  for(let t=0;t<chordIdxs.length-1;t++) minGapPx=Math.min(minGapPx,(starts[chordIdxs[t+1]]-starts[chordIdxs[t]])*pxPerUnit);
+  const dense=minGapPx<70, ultraDense=minGapPx<44;
+  const ds=diatonicChords(keyRoot,keyMode);
+  chordIdxs.forEach(i=>{
+    const s=seq[i],ch=lib[s.idx],x=starts[i]*pxPerUnit,rom=vlRoman(i,ds);
+    const piv=pivotInfo(i);
+    const kbActive=effectiveKeyboardIndex()===i;
+    const lbl=document.createElement('div');
+    lbl.className='notes-chord-label'+(kbActive?' kb-active':'');
+    lbl.style.left=x+'px';
+    lbl.dataset.chordIdx=i;
+    const romText = piv ? `${piv.roman} / ${rom}` : (rom||'');
+    if(!ultraDense){
+      const kc=keyContextAt(i);
+      lbl.innerHTML = `${romText}<span class="notes-chord-name">${keySpell(s.root,kc.keyRoot,kc.keyMode)} ${ch.n}</span>`;
+    } else {
+      lbl.textContent = romText;
+    }
+    lbl.title='Click to hear it and open the keyboard for this chord';
+    lbl.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease((voicings[i]||[]).map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
+    labelInner.appendChild(lbl);
+  });
+
+  // Key-change dividers — an instant in real time (a marker occupies no duration), drawn
+  // at the exact absolute position the chord right after it starts at. The vertical dashed
+  // line spans the note lane's full height (stays in notes-content); its text label moves
+  // to the sticky label strip alongside the chord labels, same horizontal-sync mechanism.
+  seq.forEach((s,i)=>{
+    if(!isMarker(s)) return;
+    const x=starts[i]*pxPerUnit;
+    const div=document.createElement('div');
+    div.className='notes-key-marker'; div.style.left=x+'px'; div.style.height=contentH+'px';
+    content.appendChild(div);
+    const lbl=document.createElement('div');
+    lbl.className='notes-key-marker-label'; lbl.style.left=x+'px';
+    lbl.textContent='\u2192 '+selfSpell(s.keyRoot)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
+    labelInner.appendChild(lbl);
+  });
+
+  // Note bars — merged per buildNotesSegments, colored by the same voice-identity slot
+  // Flow, the solo row, keyboard playback coloring, and solo-filtered playback all use
+  // (item 61 fixed the shared computeVoiceThreads collision at its source — buildNotesSegments
+  // itself is unchanged, it just receives correct input now), dimmed by an active solo
+  // exactly as Flow's lines are.
+  const segments=buildNotesSegments(chordIdxs, chordVoicings, slotOfNoteAt, starts);
+  segments.forEach(seg=>{
+    const x=seg.startUnit*pxPerUnit;
+    const w=Math.max((seg.endUnit-seg.startUnit)*pxPerUnit-2, 3);
+    const y=(hiC-1-seg.note)*NOTES_ROWPX;
+    const bar=document.createElement('div');
+    bar.className='notes-bar';
+    bar.style.left=x+'px'; bar.style.top=(y+1)+'px';
+    bar.style.width=w+'px'; bar.style.height=(NOTES_ROWPX-2)+'px';
+    const color=VOICE_COLORS[seg.slot]||'var(--accent)';
+    bar.style.background=color; bar.style.color=color;
+    bar.style.opacity=(voiceSolo.size===0||voiceSolo.has(seg.slot))?1:0.3;
+    bar.dataset.chordIdxs=seg.chordIdxs.join(' ');
+    bar.title=`${noteLabel(seg.note)} \u00B7 Voice ${seg.slot+1} \u2014 click to hear this chord and open the keyboard`;
+    bar.onclick=()=>{
+      const i=seg.chordIdxs[0];
+      const kbActive=effectiveKeyboardIndex()===i;
+      Tone.start();ensureSynth();synth.triggerAttackRelease((voicings[i]||[]).map(midiToNote),'2n');
+      if(!kbActive)activeKeyboardIndex=i;
+      renderAll();
+      flashAuditionGlow(i); // same audition click as a label, so the same glow (item A)
+    };
+    content.appendChild(bar);
+  });
+
+  syncNotesLabelScroll();
+}
+// Item 62 — keeps the sticky chord-label strip's horizontal position locked to the note
+// lane's horizontal scroll, exactly the same technique this codebase already uses for
+// Lines' pinned key column (syncLinesKeyScroll: a transform driven by a scroll listener),
+// just on the horizontal axis instead of vertical. Called on every notes-scroll-outer
+// scroll event and once at the end of every renderNotesRoll (a fresh render doesn't itself
+// fire a scroll event, so the strip needs an explicit resync after rebuilding).
+function syncNotesLabelScroll(){
+  const outer=document.getElementById('notes-scroll-outer');
+  const labelInner=document.getElementById('notes-label-inner');
+  if(!outer||!labelInner) return;
+  labelInner.style.transform=`translateX(${-outer.scrollLeft}px)`;
+}
+
+
 // Row of per-voice solo buttons next to the roll's header (item 26). One button per
 // palette slot actually in use across the current progression (computeVoiceThreads'
 // slotCount — effectively "how many distinct voice colors appear anywhere in this
@@ -8259,7 +8868,7 @@ function renderInfo(voicings){
   info.innerHTML=`<p class="info-chord">${label}<span class="notes">${notes}</span></p><p class="info-body">${move}${dn}${mn}${invn}${bn}${mln}${cvn}</p>`;
 }
 
-function renderAll(){if(isPlaying)stopPlayback();buildRoots();renderDiatonicList();renderSecDoms();renderBorrowedModes();renderBorrowedChords();renderDots();renderPath();const v=voicingsForSeq();renderStrip(v);renderInvPanel(v);renderMelodyPanel(v);renderRoll(v);renderVoiceSoloRow(v);renderKeyboardPanel(v);renderInfo(v);renderSessionOverview();window._voicings=v;renderSuggestions(v);renderVLMetrics();renderMarkerEditor();renderRhythmTab();renderLinesRoll();pushHistory();if(window.cylSync)window.cylSync();}
+function renderAll(){if(isPlaying)stopPlayback();buildRoots();renderDiatonicList();renderSecDoms();renderBorrowedModes();renderBorrowedChords();renderDots();renderPath();const v=voicingsForSeq();renderStrip(v);renderInvPanel(v);renderMelodyPanel(v);renderRoll(v);renderNotesRoll(v);renderVoiceSoloRow(v);renderKeyboardPanel(v);renderInfo(v);renderSessionOverview();window._voicings=v;renderSuggestions(v);renderVLMetrics();renderMarkerEditor();renderRhythmTab();renderLinesRoll();pushHistory();if(window.cylSync)window.cylSync();}
 
 // --- Undo/redo history: snapshots of seq as JSON strings, with a pointer ---
 // pushHistory() runs at the end of renderAll (and once directly from the
@@ -8517,6 +9126,16 @@ function setVlNorm(n){
 }
 document.getElementById('vlnorm-l1').onclick=()=>setVlNorm('l1');
 document.getElementById('vlnorm-linf').onclick=()=>setVlNorm('linf');
+// Item 56 — Notes/Flow switch + Notes' own local zoom control (Fit | − | +), deliberately
+// independent of the Rhythm tab's Timeline Width slider (RHYTHM_UNIT_PX).
+document.getElementById('vlview-notes').onclick=()=>setVlView('notes');
+document.getElementById('vlview-flow').onclick=()=>setVlView('flow');
+document.getElementById('notes-zoom-fit').onclick=()=>setNotesZoom('fit');
+document.getElementById('notes-zoom-out').onclick=()=>setNotesZoom('out');
+document.getElementById('notes-zoom-in').onclick=()=>setNotesZoom('in');
+// Item 62: keep the sticky chord-label strip horizontally locked to the note lane as the
+// user drags/scrolls it — mirrors syncLinesKeyScroll's own scroll-listener pattern.
+document.getElementById('notes-scroll-outer').addEventListener('scroll', syncNotesLabelScroll);
 // Item 10 Type row + altered-dominant chip row. Type row replaces the old triads/7ths
 // toggle (backlog item 2) with five levels; default stays on '7' so nothing changes for
 // existing users until they move the level up. Altered-dominant chips fold into the same
@@ -8712,9 +9331,49 @@ function clearPlaybackHighlights(){
   document.querySelectorAll('.roll-head.playing').forEach(el=>el.classList.remove('playing'));
   document.querySelectorAll('.rhythm-block.playing').forEach(el=>el.classList.remove('playing'));
   document.querySelectorAll('.lines-note.lines-note-playing').forEach(el=>el.classList.remove('lines-note-playing'));
+  document.querySelectorAll('.notes-bar.playing').forEach(el=>el.classList.remove('playing'));
+  document.querySelectorAll('.notes-chord-label.playing').forEach(el=>el.classList.remove('playing'));
   if(window.cylOnPlayStop) window.cylOnPlayStop();
 }
 
+// Item A — manual click-audition glow. Deliberately NOT built on highlightChord()/
+// clearPlaybackHighlights(): those touch activeChordIndex and activeKeyboardIndex
+// (transport-scoped state) and light up the map dot, Build chip, Rhythm block, and path
+// segment — all correct for actual transport playback, all wrong for "the user clicked a
+// Roman numeral to preview one chord." This helper only ever adds/removes its own
+// .auditioning class on Flow's roll-dot/roll-head and Notes' note-bar elements, using the
+// same data-chord-idx/data-chord-idxs attributes highlightChord already reads — it never
+// writes activeChordIndex, activeKeyboardIndex, isPlaying, or any other shared state, so it
+// can't corrupt transport semantics or Solo/keyboard-coloring in either direction. Must be
+// called AFTER renderAll() has finished (renderAll rebuilds the roll/Notes DOM from
+// scratch, so a class applied before that render would just be discarded) — every call
+// site below calls renderAll() first, then this.
+let auditionGlowTimer=null;
+function clearAuditionGlow(){
+  if(auditionGlowTimer){ clearTimeout(auditionGlowTimer); auditionGlowTimer=null; }
+  document.querySelectorAll('.roll-dot.auditioning').forEach(el=>el.classList.remove('auditioning'));
+  document.querySelectorAll('.roll-head.auditioning').forEach(el=>el.classList.remove('auditioning'));
+  document.querySelectorAll('.notes-bar.auditioning').forEach(el=>el.classList.remove('auditioning'));
+}
+function flashAuditionGlow(idx){
+  clearAuditionGlow(); // a new click always cancels/replaces any glow already in progress
+  document.querySelectorAll(`.roll-dot[data-chord-idx="${idx}"]`).forEach(dot=>dot.classList.add('auditioning'));
+  document.querySelectorAll(`.roll-head[data-chord-idx="${idx}"]`).forEach(h=>h.classList.add('auditioning'));
+  // Notes: a held bar lists every chord index it spans in data-chord-idxs (space-separated)
+  // since one continuous bar can cover several chords — reusing that existing membership
+  // data (the same attribute highlightChord already reads) means a bar genuinely sounding
+  // during the clicked chord flashes correctly even when it began several chords earlier.
+  document.querySelectorAll('.notes-bar').forEach(bar=>{
+    const idxs=(bar.dataset.chordIdxs||'').split(' ');
+    if(idxs.includes(String(idx))) bar.classList.add('auditioning');
+  });
+  // Flash duration tracks the actual audition audio, which is always triggered at a fixed
+  // '2n' duration (not the chord's own timeline duration) regardless of where it's clicked
+  // from — durToSeconds('2n') at the current bpm keeps the glow from outlasting or
+  // undershooting the sound it represents. 400ms floor for a sane minimum at very fast bpm.
+  const flashMs=Math.max(400, durToSeconds('2n')*1000);
+  auditionGlowTimer=setTimeout(clearAuditionGlow, flashMs);
+}
 function highlightChord(idx){
   clearPlaybackHighlights();
   activeChordIndex=idx;
@@ -8760,6 +9419,13 @@ function highlightChord(idx){
     dot.setAttribute('r',(baseR*1.55).toFixed(2));
   });
   document.querySelectorAll(`.roll-head[data-chord-idx="${idx}"]`).forEach(h=>h.classList.add('playing'));
+  // Item 56: same highlight on Notes — a merged bar lists every chord index it spans in
+  // data-chord-idxs (space-separated), since one continuous bar can cover several chords.
+  document.querySelectorAll(`.notes-chord-label[data-chord-idx="${idx}"]`).forEach(h=>h.classList.add('playing'));
+  document.querySelectorAll('.notes-bar').forEach(bar=>{
+    const idxs=(bar.dataset.chordIdxs||'').split(' ');
+    if(idxs.includes(String(idx))) bar.classList.add('playing');
+  });
   // Follow playback — the keyboard panel is always open now (item 26), so it always
   // switches to the chord now sounding and lights the keys actually audible, whether or
   // not it had ever been explicitly clicked open. This intentionally overwrites any manual
@@ -9792,7 +10458,14 @@ function deriveImportPreview(parsed, settings, ctx, partsInfo){
       }
     }
     let confidence = match.exact ? 'exact' : ((match.missing+match.extra)<=1 ? 'close' : 'loose');
-    entries.push({ idx, root:match.root, bass, inv, melody, melodySkipped, dur:notation, beats, match, bassPC:chordBassPC, confidence, pcCount:pcSet.size });
+    // Item 52: the cluster's own actual MIDI note numbers (register, spacing, doublings —
+    // exactly what Logic/the source DAW played), independent of pitch-class identification.
+    // Only ever used downstream when match.exact (see commitMidiImport) — an inexact match
+    // means the raw notes don't cover every abstract chord tone, so they'd fail
+    // manualVoicingValid and show as "stale" immediately; simplest to leave those unset and
+    // let the existing computed-voicing path handle them, same as before this item.
+    const rawNotes=c.notes.map(n=>n.note).sort((a,b)=>a-b);
+    entries.push({ idx, root:match.root, bass, inv, melody, melodySkipped, dur:notation, beats, match, bassPC:chordBassPC, confidence, pcCount:pcSet.size, rawNotes });
   });
   // pick the most common notation to become globalDur; others become per-chord overrides
   const counts={};
@@ -9989,7 +10662,16 @@ function commitMidiImport(){
   // differs from the effective global, so rhythm is preserved either way.
   seq=matchedEntries.map(e=>({
     idx:e.idx, root:e.root, bass:e.bass, inv:e.inv||0, invLocked:(e.inv||0)>0, melody:e.melody!==undefined?e.melody:null,
-    manualVoicing:null, secDom:null, borrowed:null, dur:(e.dur===gd)?null:e.dur, startUnit:0
+    // Item 52 — MIDI import voicing fidelity: an exact chord-quality match means every one of
+    // the cluster's raw MIDI notes is a genuine chord tone and nothing's missing, so those
+    // exact notes (register, spacing, doublings) become this chord's initial manual voicing —
+    // "import MIDI, hear the MIDI as imported." Falls through to null (today's computed-
+    // voicing behavior, unchanged) on anything less than an exact match; see deriveImportPreview.
+    // This is the SAME s.manualVoicing slot the Voice Leading tab's own hand-editor writes to,
+    // so Manual/Auto, "clear manual voicing", the inversion-click release, and stale-voicing
+    // detection all apply to imported chords automatically — nothing new to wire up.
+    manualVoicing:(e.match && e.match.exact && Array.isArray(e.rawNotes) && e.rawNotes.length) ? e.rawNotes.slice() : null,
+    secDom:null, borrowed:null, dur:(e.dur===gd)?null:e.dur, startUnit:0
   }));
   // Real grid position — each chord's start is now the CUMULATIVE SUM of the real detected
   // onset-to-onset spans (matchedEntries[i].beats, from deriveImportPreview's "tile to next

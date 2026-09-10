@@ -386,24 +386,23 @@ header .subtitle .mono {
   transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
   pointer-events: none;
 }
-/* Item 6 (v65a mobile repair, follow-up): both hover-only behaviors gated to devices that
-   report genuine hover + a fine pointer — a real mouse/trackpad. iOS Safari never reports
-   that combination, so a tap can no longer trigger either rule below, regardless of its
-   well-known "sticky emulated :hover after tap" behavior (confirmed via real-device
-   screenshots: tapping "How Lines works" closed correctly, but the leftover :hover state
-   was immediately re-matching :not([open]) summary:hover and popping the hover-preview
-   popover open underneath the just-closed disclosure). Native <details> tap-to-open/close
-   and the popover's own desktop markup/behavior are otherwise completely unchanged — only
-   the trigger conditions move inside this query.
-   Hover trigger is the whole summary row, not just the small badge — a 16px circle is
-   too small a target to expect someone to land on precisely; the badge is the visual
-   signal, the whole row is the usable one. */
-@media (hover: hover) and (pointer: fine) {
-  .note-disclosure summary:hover .lines-info-badge { border-color: var(--accent); color: var(--accent); }
-  .note-disclosure:not([open]) summary:hover .lines-info-popover {
-    opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
-    transition: opacity .12s ease, transform .12s ease;
-  }
+/* Item 6 (v65a mobile repair, 2nd follow-up): (hover:hover)+(pointer:fine) detection did
+   NOT reliably suppress the popover on real iPhone hardware — real-device testing showed
+   it could still alternate into view on repeated taps. Rather than continue trusting
+   hover/pointer media-feature detection (apparently not consistently reliable across iOS
+   Safari versions for this purpose), the popover is now hard-suppressed outright below
+   the mobile breakpoint — display:none is an entirely different CSS property than the
+   opacity/visibility/transform the trigger rule below sets, so this wins unconditionally
+   regardless of any :hover state, real or stuck-emulated, with no specificity contest
+   needed. Badge hover-highlight and the popover's own desktop trigger/markup are
+   untouched — this is strictly an additive override, mobile-only. */
+@media (max-width: 760px) {
+  .lines-info-popover { display: none; }
+}
+.note-disclosure summary:hover .lines-info-badge { border-color: var(--accent); color: var(--accent); }
+.note-disclosure:not([open]) summary:hover .lines-info-popover {
+  opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+  transition: opacity .12s ease, transform .12s ease;
 }
 /* While the accordion is pinned open (clicked/tapped), suppress the hover popover instead
    of stacking a duplicate copy of the same content directly on top of the open panel. */
@@ -6776,6 +6775,30 @@ function renderLinesNoteEl(lane,note,trackName,minM,maxM,rowPx){
 
   lane.appendChild(el);
 }
+// Item 2/3 fix (v65b mobile repair): during an active move/resize drag, reposition the
+// SPECIFIC existing note element directly via inline style instead of calling the full
+// renderLinesRoll() rebuild on every move tick. This is the actual fix for "place a note,
+// then can't reliably grab/move/resize it" — the old code called renderLinesRoll()
+// synchronously inside touchstart and again on every move, destroying and recreating the
+// exact DOM node currently receiving the touch. iOS Safari locks a touch sequence to its
+// original target element for the gesture's duration; replacing that element mid-gesture
+// can silently break delivery of the remaining touchmove/touchend events for it. Keeping
+// the original element alive for the whole gesture (full renderLinesRoll() only once, in
+// the gesture's own 'up' handler, after the touch sequence has already ended) sidesteps
+// this entirely. Mirrors renderLinesNoteEl's own x/y/width math exactly so the live drag
+// position always matches what a fresh render would produce.
+function repositionLinesNoteEl(trackName,note){
+  const el=document.querySelector(`.lines-note[data-track="${trackName}"][data-id="${note.id}"]`);
+  if(!el) return;
+  const minM=trackName==='melody'?LINES_MELODY_MIN:LINES_BASS_MIN;
+  const maxM=trackName==='melody'?LINES_MELODY_MAX:LINES_BASS_MAX;
+  const rowPx=linesRowPxFor(trackName);
+  const clampedPitch=Math.max(minM,Math.min(maxM,note.pitch));
+  el.style.left=linesUnitsToPx(note.startUnit)+'px';
+  el.style.top=laneYForPitch(clampedPitch,minM,maxM,rowPx)+'px';
+  const w=note.durUnits*RHYTHM_UNIT_PX;
+  el.style.width=Math.max(w-2,6)+'px';
+}
 // Long-press erase for touch, where right-click doesn't exist. Runs alongside the note's
 // own touchstart move-drag handler — a plain tap-and-release never fires the timer, and a
 // held tap that also nudges the drag by a pixel or two before release still erases
@@ -6783,12 +6806,24 @@ function renderLinesNoteEl(lane,note,trackName,minM,maxM,rowPx){
 // gone). Known minor rough edge, same tier as the touch verification already queued for
 // the Rhythm tab (backlog QA pass).
 function attachLinesLongPressErase(el,onErase){
-  let timer=null, moved=false;
-  el.addEventListener('touchstart',()=>{
+  let timer=null, moved=false, startX=0, startY=0;
+  el.addEventListener('touchstart',ev=>{
     moved=false;
+    const t=ev.touches[0]; startX=t.clientX; startY=t.clientY;
     timer=setTimeout(()=>{ if(!moved) onErase(); },550);
   },{passive:true});
-  el.addEventListener('touchmove',()=>{ moved=true; if(timer){clearTimeout(timer);timer=null;} },{passive:true});
+  // Item 4 fix (v65b mobile repair): the old check cancelled on ANY touchmove event at
+  // all, with zero magnitude tolerance — but real touchscreens fire touchmove events from
+  // ordinary finger jitter even during a genuinely held-still long-press, so the timer was
+  // getting cancelled almost immediately on real hardware, well before the 550ms mark.
+  // Reuses the same generous LINES_TOUCH_TAP_THRESH as the rest of this pass so "held
+  // still" and "moved enough to mean something else" agree everywhere in Lines.
+  el.addEventListener('touchmove',ev=>{
+    const t=ev.touches[0];
+    if(Math.abs(t.clientX-startX)>LINES_TOUCH_TAP_THRESH || Math.abs(t.clientY-startY)>LINES_TOUCH_TAP_THRESH){
+      moved=true; if(timer){clearTimeout(timer);timer=null;}
+    }
+  },{passive:true});
   el.addEventListener('touchend',()=>{ if(timer){clearTimeout(timer);timer=null;} });
 }
 // General-purpose long-press (item 17), same 550ms threshold and cancel-on-move pattern as
@@ -6851,7 +6886,7 @@ function startLinesGroupMove(ev,grabbedTrack,grabbedId){
     const n=linesTrackArr(tn).find(x=>x.id===nid);
     if(!n) return;
     snapshot.push({
-      note:n, origStart:n.startUnit, origPitch:n.pitch,
+      note:n, track:tn, origStart:n.startUnit, origPitch:n.pitch,
       minM:tn==='melody'?LINES_MELODY_MIN:LINES_BASS_MIN,
       maxM:tn==='melody'?LINES_MELODY_MAX:LINES_BASS_MAX,
     });
@@ -6872,12 +6907,19 @@ function startLinesGroupMove(ev,grabbedTrack,grabbedId){
     }
   };
   linesMoveDrag={track:grabbedTrack,id:grabbedId};
-  renderLinesRoll();
+  // Item 2 fix (v65b mobile repair): no renderLinesRoll() here — see
+  // repositionLinesNoteEl's comment just above renderLinesNoteEl. Instant "picked up"
+  // visual feedback via a class toggle on the already-rendered elements instead, which
+  // never touches the DOM tree structure, so the originally-touched element survives.
+  snapshot.forEach(s=>{
+    const el=document.querySelector(`.lines-note[data-track="${s.track}"][data-id="${s.note.id}"]`);
+    if(el) el.classList.add('lines-selected');
+  });
   const move=e=>{
     if(!linesMoveDrag) return;
     const x=(e.touches?e.touches[0].clientX:e.clientX), y=(e.touches?e.touches[0].clientY:e.clientY);
     applyFor(x,y);
-    renderLinesRoll();
+    snapshot.forEach(s=>repositionLinesNoteEl(s.track,s.note));
     if(e.cancelable) e.preventDefault();
   };
   const up=e=>{
@@ -6890,7 +6932,7 @@ function startLinesGroupMove(ev,grabbedTrack,grabbedId){
     document.removeEventListener('touchmove',move);
     document.removeEventListener('touchend',up);
     pushHistory();
-    renderLinesRoll();
+    renderLinesRoll(); // full, authoritative render — safe now, the gesture is over
   };
   document.addEventListener('mousemove',move);
   document.addEventListener('mouseup',up);
@@ -6908,12 +6950,13 @@ function startLinesNoteResize(ev,trackName,id){
     note.durUnits=Math.max(LINES_SNAP_UNITS,origDur+deltaUnits);
   };
   linesResizeDrag={track:trackName,id};
-  renderLinesRoll();
+  // Item 3 fix (v65b mobile repair): no renderLinesRoll() here — same reasoning as
+  // startLinesGroupMove just above.
   const move=e=>{
     if(!linesResizeDrag) return;
     const x=(e.touches?e.touches[0].clientX:e.clientX);
     applyFor(x);
-    renderLinesRoll();
+    repositionLinesNoteEl(trackName,note);
     if(e.cancelable) e.preventDefault();
   };
   const up=e=>{
@@ -7005,6 +7048,52 @@ function placeLinesNoteFromClick(clientX,clientY,laneEl,trackName,minM,maxM,rowP
   pushHistory();
   renderLinesRoll();
 }
+// Generous touch-only tap-vs-everything-else threshold, shared across Lines (background
+// tap-to-place, long-press-erase). Deliberately larger than mouse's 4px lasso threshold —
+// real touchscreens routinely report several px of apparent movement from finger
+// contact-patch jitter even on a genuinely stationary tap (same lesson learned from the
+// Cylinder Map's own tap-vs-drag threshold, item 7).
+const LINES_TOUCH_TAP_THRESH=10;
+// Touch-only path for a bare-background touch in a Lines lane (v65b mobile repair,
+// scroll-safety fix). Deliberately does NOT attempt lasso-select on touch at all — touch
+// users don't have a separate "scroll via wheel" affordance the way mouse users do, so
+// "drag across empty space" on a touchscreen means scroll, full stop; lasso-select stays
+// mouse-only (see the mouse branch in startLinesLassoOrPlace below, unchanged). Never
+// calls preventDefault, so the browser's native vertical (.lines-lane-viewport) and
+// horizontal (.lines-scroll-outer) scrolling both work exactly as on any other page — this
+// is the actual fix for "swiping to scroll accidentally created a note": the old code
+// called preventDefault unconditionally on touchstart, before knowing the gesture's
+// intent, which silently blocked native scroll outright; a fast/short swipe that hadn't
+// crossed the old 4px threshold by release then fell through to "no real movement = place
+// a note." A note is only ever placed once the WHOLE gesture has completed as a genuine
+// stationary tap (checked after the fact, on touchend), so a gesture that turns out to
+// have been a scroll can never retroactively place a note.
+function startLinesTouchOnLane(ev,laneEl,trackName,minM,maxM,rowPx){
+  const t=ev.touches[0];
+  const startX=t.clientX, startY=t.clientY;
+  let moved=false;
+  const move=e=>{
+    const mt=e.touches[0];
+    if(Math.abs(mt.clientX-startX)>LINES_TOUCH_TAP_THRESH || Math.abs(mt.clientY-startY)>LINES_TOUCH_TAP_THRESH) moved=true;
+  };
+  const end=e=>{
+    laneEl.removeEventListener('touchmove',move);
+    laneEl.removeEventListener('touchend',end);
+    laneEl.removeEventListener('touchcancel',cancelTouch);
+    if(!moved){
+      const ct=e.changedTouches[0];
+      placeLinesNoteFromClick(ct.clientX,ct.clientY,laneEl,trackName,minM,maxM,rowPx);
+    }
+  };
+  const cancelTouch=()=>{
+    laneEl.removeEventListener('touchmove',move);
+    laneEl.removeEventListener('touchend',end);
+    laneEl.removeEventListener('touchcancel',cancelTouch);
+  };
+  laneEl.addEventListener('touchmove',move,{passive:true});
+  laneEl.addEventListener('touchend',end,{passive:true});
+  laneEl.addEventListener('touchcancel',cancelTouch,{passive:true});
+}
 // Mousedown on a lane's bare background (never a note) starts EITHER a lasso selection
 // or a new-note placement, decided by whether the pointer actually moves past a small
 // threshold before release — a plain click places a note (unchanged v1 behavior); a real
@@ -7013,11 +7102,17 @@ function placeLinesNoteFromClick(clientX,clientY,laneEl,trackName,minM,maxM,rowP
 // lasso span both the melody and bass lanes — and the gap between them — for free: a
 // note's real on-screen box either overlaps the drawn rectangle or it doesn't, regardless
 // of which lane it lives in or how either lane happens to be scrolled at that moment.
+// Touch is handled entirely separately (see startLinesTouchOnLane above) — this mouse
+// path is otherwise byte-for-byte the same logic it always was.
 function startLinesLassoOrPlace(ev,laneEl,trackName,minM,maxM,rowPx){
   if(ev.target!==laneEl) return;
+  if(ev.type==='touchstart'){
+    startLinesTouchOnLane(ev,laneEl,trackName,minM,maxM,rowPx);
+    return;
+  }
   ev.preventDefault();
-  const startX=(ev.touches?ev.touches[0].clientX:ev.clientX);
-  const startY=(ev.touches?ev.touches[0].clientY:ev.clientY);
+  const startX=ev.clientX;
+  const startY=ev.clientY;
   const THRESH=4;
   let moved=false, lassoEl=null;
   const updateLasso=(x,y)=>{
@@ -7027,16 +7122,14 @@ function startLinesLassoOrPlace(ev,laneEl,trackName,minM,maxM,rowPx){
     lassoEl.style.width=Math.abs(x-startX)+'px'; lassoEl.style.height=Math.abs(y-startY)+'px';
   };
   const move=e=>{
-    const x=(e.touches?e.touches[0].clientX:e.clientX), y=(e.touches?e.touches[0].clientY:e.clientY);
+    const x=e.clientX, y=e.clientY;
     if(!moved && (Math.abs(x-startX)>THRESH||Math.abs(y-startY)>THRESH)) moved=true;
-    if(moved){ updateLasso(x,y); if(e.cancelable) e.preventDefault(); }
+    if(moved) updateLasso(x,y);
   };
   const up=e=>{
-    const x=(e.changedTouches?e.changedTouches[0].clientX:e.clientX), y=(e.changedTouches?e.changedTouches[0].clientY:e.clientY);
+    const x=e.clientX, y=e.clientY;
     document.removeEventListener('mousemove',move);
     document.removeEventListener('mouseup',up);
-    document.removeEventListener('touchmove',move);
-    document.removeEventListener('touchend',up);
     if(lassoEl) lassoEl.remove();
     if(moved){
       const rL=Math.min(startX,x), rT=Math.min(startY,y), rR=Math.max(startX,x), rB=Math.max(startY,y);
@@ -7055,8 +7148,6 @@ function startLinesLassoOrPlace(ev,laneEl,trackName,minM,maxM,rowPx){
   };
   document.addEventListener('mousemove',move);
   document.addEventListener('mouseup',up);
-  document.addEventListener('touchmove',move,{passive:false});
-  document.addEventListener('touchend',up);
 }
 
 // --- Lines analysis (Phase B) ---------------------------------------------------------

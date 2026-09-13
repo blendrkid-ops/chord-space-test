@@ -1657,11 +1657,44 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
      LEFTWARD into the block body rather than shifting its right edge — and since ::before/
      ::after are positioned via `right:` offsets FROM that same right edge, they land at the
      exact same pixel position they always did. Visuals unchanged; only the grabbable area
-     changes. 34px is a starting value per design-lock, pending on-device validation that it
-     doesn't eat too much of a short block's own move/tap zone at low zoom — retune this one
-     value if the real test calls for it, nothing else here needs to change.
+     changes. This 34px zone is confirmed working on-device for blocks at/above
+     RHYTHM_SHORT_BLOCK_PX — below that, .rhythm-block-short-touch switches it off in favor
+     of the external chip below, since there isn't room for both inside the block itself.
   */
   .rhythm-resize-handle { width: 34px; }
+  .rhythm-block.rhythm-block-short-touch .rhythm-resize-handle { pointer-events: none; opacity: 0; }
+  .rhythm-block-touch-proxy, .rhythm-resize-chip { display: block; }
+}
+/* Short-block touch model (mobile touch-input pass — reopened after on-device report that
+   short chords can't separate tap/move/resize inside their own visual footprint). Both
+   rules below are inert (display:none) outside @media(pointer:coarse) above, so mouse never
+   sees them — a fine pointer keeps using the internal .rhythm-resize-handle exactly as
+   before, on blocks of any width. See RHYTHM_SHORT_BLOCK_PX and neighbors in the Rhythm JS
+   for the threshold/gap derivation and the guardrails against proxy/chip overlap. */
+.rhythm-block-touch-proxy {
+  position: absolute;
+  z-index: 0; /* below .rhythm-block (z-index:1) — a touch inside the block's own real footprint still hits the block/steppers first, unchanged; this only fills the padding margin around it */
+  display: none;
+  background: transparent;
+}
+.rhythm-resize-chip {
+  position: absolute;
+  top: 0; bottom: 26px; /* same span convention as .rhythm-resize-handle — stops above the steppers row */
+  z-index: 3;
+  display: none;
+  cursor: ew-resize;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  opacity: 0.6;
+}
+.rhythm-resize-chip::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 3px; height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--text-muted);
 }
 .rhythm-barline {
   position: absolute;
@@ -6059,6 +6092,18 @@ let RHYTHM_UNIT_PX=14;            // pixel width of one grid unit — adjustable
 // reachable from here), started at the same numeric value for consistency but tunable
 // independently after on-device testing.
 const RHYTHM_TOUCH_TAP_THRESH=10; // px, horizontal-only, cumulative from touchstart
+// Short-block touch model (mobile touch-input pass, reopened after on-device report that
+// short chords can't reliably separate tap/move/resize). Threshold is DERIVED from the two
+// real touch-target numbers already in play, not picked freestanding: a block needs at
+// least the coarse-pointer resize zone's own width PLUS a minimum usable body before both
+// affordances can coexist inside it without competing for the same physical area.
+const RHYTHM_RESIZE_TOUCH_ZONE_PX=34; // must mirror the CSS .rhythm-resize-handle width in @media(pointer:coarse) — keep in sync if either changes
+const RHYTHM_MIN_TAP_BODY_PX=40;      // minimum body width considered reliably tappable once resize is excluded from it
+const RHYTHM_SHORT_BLOCK_PX=RHYTHM_RESIZE_TOUCH_ZONE_PX+RHYTHM_MIN_TAP_BODY_PX; // 74 — below this, switch models
+const RHYTHM_TOUCH_PROXY_HPAD_PX=10;  // max invisible horizontal expansion per side for the tap/move sibling hit target — hard-capped further at render time by half the REAL gap to whatever's next to it, so neighboring proxies/chips can never overlap
+const RHYTHM_TOUCH_PROXY_VPAD_PX=8;   // vertical expansion — no neighbor-overlap risk on this axis (one block per row), kept modest to stay clear of the barline-label row above
+const RHYTHM_RESIZE_CHIP_MIN_GAP_PX=28; // minimum right-side gap required before the external resize chip is drawn at all — genuinely usable, not merely nonzero
+const RHYTHM_RESIZE_CHIP_WIDTH_PX=22;   // the chip's own footprint once there IS room
 const RHYTHM_UNIT_PX_MIN=4, RHYTHM_UNIT_PX_MAX=32;
 const RHYTHM_MARKER_GUTTER_PX=14; // extra visual spacing reserved around a marker divider
 let rhythmDrag=null;     // {i} while a resize (duration) drag is in progress
@@ -6161,6 +6206,7 @@ function renderRhythmTab(){
 
   // Chord blocks.
   let chordCount=0;
+  let claimedRightEdge=0; // short-block touch model: tracks how far right the PREVIOUS chord's own footprint (block, or its resize chip if one was drawn) actually extends, so this chord's own left-side touch-proxy padding can never encroach on it — updated for every chord, short or not
   seq.forEach((s,i)=>{
     if(isMarker(s)) return;
     chordCount++;
@@ -6274,6 +6320,72 @@ function renderRhythmTab(){
     block.appendChild(handle);
 
     wrap.appendChild(block);
+
+    // Short-block touch model (coarse-pointer only — see the RHYTHM_SHORT_BLOCK_PX group
+    // of constants above for the derivation). Below threshold, the visible block alone
+    // can't host reliable tap/move AND resize at once, so: tap/move gets a separate
+    // invisible sibling hit target (never a ::before on the block itself, which would be
+    // clipped by the block's own overflow:hidden); resize relocates to a small external
+    // affordance in the gap to the right, drawn only when that gap is genuinely large
+    // enough to be a real touch target; and the internal resize handle is switched off
+    // for touch on this block (CSS, @media(pointer:coarse) only — mouse never sees any of
+    // this, the block keeps its already-passed normal interaction for a fine pointer).
+    const visualW=Math.max(w-4,20);
+    if(visualW<RHYTHM_SHORT_BLOCK_PX){
+      block.classList.add('rhythm-block-short-touch');
+      const nextIdx=nextChordIndex(i);
+      const rightEdgeOfNext=nextIdx>=0 ? px(nextIdx) : (activeGridLengthUnits()*RHYTHM_UNIT_PX);
+      const rightGap=Math.max(0, rightEdgeOfNext-(x+visualW));
+
+      // Guardrail 2: only a genuinely usable gap gets a chip — not merely nonzero.
+      let chipDrawn=false, chipLeft=0, chipW=0;
+      if(rightGap>=RHYTHM_RESIZE_CHIP_MIN_GAP_PX){
+        chipDrawn=true;
+        chipW=Math.min(RHYTHM_RESIZE_CHIP_WIDTH_PX, rightGap-4);
+        chipLeft=x+visualW+2;
+        const chip=document.createElement('div');
+        chip.className='rhythm-resize-chip';
+        chip.style.left=chipLeft+'px';
+        chip.style.width=chipW+'px';
+        chip.dataset.idx=i;
+        chip.title='Drag to change duration';
+        // Touch-only by design — mouse keeps using the block's own internal handle,
+        // untouched, exactly as it already does for every block regardless of width.
+        chip.addEventListener('touchstart',ev=>{ev.stopPropagation();startRhythmDrag(ev,i,block);},{passive:false});
+        wrap.appendChild(chip);
+      }
+
+      // Guardrail 1: tap/move proxy padding is capped at half the REAL gap on each side —
+      // left gap measured against claimedRightEdge (the previous chord's true footprint,
+      // including ITS chip if it drew one), right gap against whatever this chord's own
+      // chip just claimed (or the raw neighbor gap, if no chip was drawn) — so two
+      // neighboring short blocks' proxies, or a proxy and a chip, can never overlap each
+      // other: every touch resolves to exactly one target by construction, not tie-break.
+      const leftGap=Math.max(0, x-claimedRightEdge);
+      const rightGapForProxy=chipDrawn ? Math.max(0, chipLeft-(x+visualW)) : rightGap;
+      const padL=Math.max(0, Math.min(RHYTHM_TOUCH_PROXY_HPAD_PX, leftGap/2));
+      const padR=Math.max(0, Math.min(RHYTHM_TOUCH_PROXY_HPAD_PX, rightGapForProxy/2));
+      const proxy=document.createElement('div');
+      proxy.className='rhythm-block-touch-proxy';
+      proxy.style.left=(x-padL)+'px';
+      proxy.style.top=(-RHYTHM_TOUCH_PROXY_VPAD_PX)+'px';
+      proxy.style.width=(visualW+padL+padR)+'px';
+      proxy.style.height=(76+2*RHYTHM_TOUCH_PROXY_VPAD_PX)+'px'; // 76 = .rhythm-block's own fixed CSS height
+      proxy.dataset.idx=i;
+      proxy.dataset.padl=String(padL);
+      proxy.dataset.padr=String(padR);
+      // Sits BELOW the block in stacking order (see CSS z-index) so a touch anywhere
+      // inside the block's own real footprint still hits the block/steppers first,
+      // unchanged — this only adds interactivity to the padding margin around it.
+      proxy.addEventListener('touchstart',ev=>{
+        startRhythmMove(ev,i,block);
+      },{passive:false});
+      wrap.appendChild(proxy);
+
+      claimedRightEdge = chipDrawn ? (chipLeft+chipW) : (x+visualW+padR);
+    } else {
+      claimedRightEdge = x+visualW;
+    }
   });
 
   if(totalEl){
@@ -6341,14 +6453,38 @@ function rhythmBlockPx(i){
   for(let j=0;j<i;j++){ if(isMarker(seq[j])) mc++; }
   return starts[i]*RHYTHM_UNIT_PX + mc*RHYTHM_MARKER_GUTTER_PX;
 }
+// Same visual-width formula renderRhythmTab's own block loop and repositionRhythmBlockEl
+// both use — pulled out here too so the short-block gap math (which needs a NEIGHBOR's
+// width, not just this chord's own) doesn't have to duplicate the arithmetic a fourth time.
+function rhythmBlockWidthPx(i){
+  const s=seq[i]; if(!s||isMarker(s)) return 0;
+  const durUnits=DUR_UNITS[getChordDur(s)]||12;
+  return Math.max(durUnits*RHYTHM_UNIT_PX-4,20);
+}
 function repositionRhythmBlockEl(i){
   const s=seq[i]; if(!s||isMarker(s)) return;
   const el=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
   if(!el) return;
   const durUnits=DUR_UNITS[getChordDur(s)]||12;
   const w=durUnits*RHYTHM_UNIT_PX;
-  el.style.left=rhythmBlockPx(i)+'px';
-  el.style.width=Math.max(w-4,20)+'px';
+  const newLeft=rhythmBlockPx(i);
+  const newWidth=Math.max(w-4,20);
+  el.style.left=newLeft+'px';
+  el.style.width=newWidth+'px';
+  // Short-block touch model: if this chord currently has a touch proxy/resize chip, keep
+  // them tracking the block during a live move/resize tick too — otherwise a visible chip
+  // would visually detach from a block sliding or growing away from it mid-gesture. This
+  // only repositions existing elements; it never re-decides whether they should exist at
+  // all (that stays renderRhythmTab's job, on the one authoritative render after the
+  // gesture ends, same boundary as everything else in this fix).
+  const proxy=document.querySelector(`.rhythm-block-touch-proxy[data-idx="${i}"]`);
+  if(proxy){
+    const padL=parseFloat(proxy.dataset.padl||'0'), padR=parseFloat(proxy.dataset.padr||'0');
+    proxy.style.left=(newLeft-padL)+'px';
+    proxy.style.width=(newWidth+padL+padR)+'px';
+  }
+  const chip=document.querySelector(`.rhythm-resize-chip[data-idx="${i}"]`);
+  if(chip) chip.style.left=(newLeft+newWidth+2)+'px';
 }
 function startRhythmDrag(ev,i,block){
   ev.preventDefault();

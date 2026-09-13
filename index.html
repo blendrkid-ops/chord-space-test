@@ -6328,6 +6328,28 @@ function toggleChordDurMod(i,kind){
 // chord's start (or the grid end, if there's no next chord) — it can shrink an unpinned
 // neighbor's effective room by pushing into its auto-flow position, but can never cross a
 // pinned wall or the grid boundary.
+// Item 7 fix (mobile touch-input pass — reopened after real-device Rhythm failure):
+// mirrors the pattern already proven for Lines (see repositionLinesNoteEl). Recomputes
+// the SAME left/width math renderRhythmTab()'s own local px()/width formulas use, so a
+// live drag tick can update the existing DOM node directly instead of triggering a full
+// renderRhythmTab() rebuild — which was the actual root cause of the "nothing happens"
+// failure: destroying and recreating the exact node a touch is bound to stops iOS Safari
+// from delivering any further touchmove/touchend for that touch at all.
+function rhythmBlockPx(i){
+  const {starts}=unitLayout();
+  let mc=0;
+  for(let j=0;j<i;j++){ if(isMarker(seq[j])) mc++; }
+  return starts[i]*RHYTHM_UNIT_PX + mc*RHYTHM_MARKER_GUTTER_PX;
+}
+function repositionRhythmBlockEl(i){
+  const s=seq[i]; if(!s||isMarker(s)) return;
+  const el=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
+  if(!el) return;
+  const durUnits=DUR_UNITS[getChordDur(s)]||12;
+  const w=durUnits*RHYTHM_UNIT_PX;
+  el.style.left=rhythmBlockPx(i)+'px';
+  el.style.width=Math.max(w-4,20)+'px';
+}
 function startRhythmDrag(ev,i,block){
   ev.preventDefault();
   const s=seq[i]; if(!s||isMarker(s)) return;
@@ -6343,29 +6365,40 @@ function startRhythmDrag(ev,i,block){
     const ceilingUnits=Math.max(MIN_UNITS,wallUnits-myStart);
     s.dur=unitsToNearestDurCapped(raw,ceilingUnits);
   };
-  const liveRender=()=>{
-    renderRhythmTab();
-    const liveBlock=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
-    if(liveBlock) liveBlock.classList.add('dragging');
-  };
+  const liveBlock0=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
+  if(liveBlock0) liveBlock0.classList.add('dragging');
   rhythmDrag={i};
-  liveRender();
   const move=e=>{
     if(!rhythmDrag) return;
     const x=(e.touches?e.touches[0].clientX:e.clientX);
     applyFor(x);
-    liveRender();
+    repositionRhythmBlockEl(i);
     if(e.cancelable) e.preventDefault();
+  };
+  const cleanup=()=>{
+    document.removeEventListener('mousemove',move);
+    document.removeEventListener('mouseup',up);
+    document.removeEventListener('touchmove',move);
+    document.removeEventListener('touchend',up);
+    document.removeEventListener('touchcancel',cancel);
   };
   const up=e=>{
     if(!rhythmDrag) return;
     const x=(e.changedTouches?e.changedTouches[0].clientX:e.clientX);
     applyFor(x);
     rhythmDrag=null;
-    document.removeEventListener('mousemove',move);
-    document.removeEventListener('mouseup',up);
-    document.removeEventListener('touchmove',move);
-    document.removeEventListener('touchend',up);
+    cleanup();
+    pushHistory();
+    renderAll();
+  };
+  const cancel=()=>{
+    // A cancelled gesture (browser took over, OS interruption, etc.) still needs whatever
+    // the last successful move tick already committed to s.dur flushed to a real render —
+    // that data mutation already happened via applyFor(); only the DOM is left mid-
+    // reposition without this.
+    if(!rhythmDrag) return;
+    rhythmDrag=null;
+    cleanup();
     pushHistory();
     renderAll();
   };
@@ -6373,6 +6406,7 @@ function startRhythmDrag(ev,i,block){
   document.addEventListener('mouseup',up);
   document.addEventListener('touchmove',move,{passive:false});
   document.addEventListener('touchend',up);
+  document.addEventListener('touchcancel',cancel);
 }
 // Drag-to-reposition a Rhythm block (grabbing its body, not the resize handle). PINS this
 // chord to an exact grid position — from this point on it's a fixed wall itself, immune
@@ -6429,28 +6463,43 @@ function startRhythmMove(ev,i,block){
       }
     }
   };
-  const liveRender=()=>{
-    renderRhythmTab();
-    const liveBlock=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
-    if(liveBlock) liveBlock.classList.add('dragging');
+  // Item 7 fix (mobile touch-input pass — reopened after real-device failure): no
+  // renderRhythmTab() during the gesture, for mouse or touch — same root cause/fix as
+  // startRhythmDrag above and Lines' own startLinesGroupMove. Repositions the SAME block
+  // node(s) directly (this chord, and its trimmed predecessor if any); the one
+  // authoritative renderAll() happens once, in up()/cancel(), after the gesture is over.
+  const liveReposition=()=>{
+    repositionRhythmBlockEl(i);
+    if(prevI>=0) repositionRhythmBlockEl(prevI);
   };
-  // Item 8 (tap-to-audition, touch only): mouse arms immediately, exactly as before this
-  // change — `armed` starts true and liveRender() fires on the same tick it always did, so
-  // mouse behavior is unchanged. Touch starts UNarmed instead: nothing moves or re-renders
-  // until real horizontal movement is seen, so a stationary tap never touches s.startUnit
-  // and can fall through cleanly to an audition on release.
+  const armVisual=()=>{
+    const el=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
+    if(el) el.classList.add('dragging');
+  };
+  // Item 8 (tap-to-audition, touch only): mouse arms immediately, exactly as before —
+  // `armed` starts true and the block picks up its 'dragging' state on the same tick it
+  // always did, so mouse behavior is unchanged. Touch starts UNarmed instead: nothing
+  // moves or repositions until real horizontal movement is seen, so a stationary tap never
+  // touches s.startUnit and can fall through cleanly to an audition on release.
   let armed=!isTouch;
-  if(armed){ rhythmMoveDrag={i}; liveRender(); }
+  if(armed){ rhythmMoveDrag={i}; armVisual(); }
   const move=e=>{
     const x=(e.touches?e.touches[0].clientX:e.clientX);
     if(!armed){
       if(Math.abs(x-startX)<=RHYTHM_TOUCH_TAP_THRESH) return;
-      armed=true; rhythmMoveDrag={i}; // arm on this tick; the shared applyFor+liveRender below runs once, not twice
+      armed=true; rhythmMoveDrag={i}; armVisual(); // arm on this tick; shared applyFor+liveReposition below runs once, not twice
     }
     if(!rhythmMoveDrag) return;
     applyFor(x);
-    liveRender();
+    liveReposition();
     if(e.cancelable) e.preventDefault();
+  };
+  const cleanup=()=>{
+    document.removeEventListener('mousemove',move);
+    document.removeEventListener('mouseup',up);
+    document.removeEventListener('touchmove',move);
+    document.removeEventListener('touchend',up);
+    document.removeEventListener('touchcancel',cancel);
   };
   const up=e=>{
     const x=(e.changedTouches?e.changedTouches[0].clientX:e.clientX);
@@ -6458,10 +6507,7 @@ function startRhythmMove(ev,i,block){
       // Never crossed the threshold: a tap, not a move. Audition the chord instead of
       // committing any position change — same call the Build-tab chord chip's own tap
       // already uses (Tone.start/ensureSynth/triggerAttackRelease), for consistency.
-      document.removeEventListener('mousemove',move);
-      document.removeEventListener('mouseup',up);
-      document.removeEventListener('touchmove',move);
-      document.removeEventListener('touchend',up);
+      cleanup();
       const v=(window._voicings||[])[i];
       if(v){ Tone.start(); ensureSynth(); const d=durToSeconds(getChordDur(s)); synth.triggerAttackRelease(v.map(midiToNote),d); }
       return;
@@ -6469,17 +6515,26 @@ function startRhythmMove(ev,i,block){
     if(!rhythmMoveDrag) return;
     applyFor(x);
     rhythmMoveDrag=null;
-    document.removeEventListener('mousemove',move);
-    document.removeEventListener('mouseup',up);
-    document.removeEventListener('touchmove',move);
-    document.removeEventListener('touchend',up);
+    cleanup();
     pushHistory();
     renderAll();
+  };
+  const cancel=()=>{
+    // A cancelled gesture never completes as a tap (no audition — the touch didn't
+    // resolve cleanly, so it shouldn't sound like it did) and never pretends a half-
+    // finished drag was deliberate. But if it WAS already armed, the last successful move
+    // tick already mutated real seq data (s.startUnit / the trimmed predecessor's dur) via
+    // applyFor — that needs flushing to a proper render rather than left mid-reposition.
+    cleanup();
+    const wasArmed=!!rhythmMoveDrag;
+    rhythmMoveDrag=null;
+    if(wasArmed){ pushHistory(); renderAll(); }
   };
   document.addEventListener('mousemove',move);
   document.addEventListener('mouseup',up);
   document.addEventListener('touchmove',move,{passive:false});
   document.addEventListener('touchend',up);
+  document.addEventListener('touchcancel',cancel);
 }
 
 // =====================================================================================

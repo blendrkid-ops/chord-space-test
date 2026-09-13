@@ -11903,5 +11903,167 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   };
 })();
 </script>
+<script>
+(function(){
+  // ITEM 1 DIAGNOSTIC — investigation-only, added for the Build-tab chord-names-
+  // disappearing bug. Purpose: distinguish (a) state/DOM rebuild — seq itself losing
+  // chord data, (b) CSS/visibility — names still in the DOM but invisible, or
+  // (c) Safari repaint-on-resume — correct DOM+CSS but the compositor doesn't repaint
+  // until something forces it. "Leaving and returning to the tab" is ambiguous between
+  // the in-app tabbar and Safari backgrounding/app-switching, so this captures both.
+  // Purely observational: wraps renderStrip without altering its logic or return value,
+  // adds new listeners rather than touching the existing tab-wiring code, and changes
+  // no rendering/behavior. No protected function touched. Remove once root cause is
+  // established and the real fix replaces it.
+  const DIAG_MAX = 300;
+  const diagLog = [];
+
+  function snapshot(event, extra){
+    let entry;
+    try{
+      const buildPanel = document.getElementById('tab-build');
+      const nameEls = buildPanel ? Array.from(buildPanel.querySelectorAll('.chord-card-name')) : [];
+      let firstStyle = null;
+      if(nameEls[0]){
+        const cs = getComputedStyle(nameEls[0]);
+        firstStyle = {color:cs.color, opacity:cs.opacity, display:cs.display, visibility:cs.visibility};
+      }
+      entry = {
+        t: new Date().toISOString(),
+        event: event,
+        seqLen: (typeof seq!=='undefined' && seq) ? seq.length : null,
+        seqIdxs: (typeof seq!=='undefined' && seq) ? seq.map(function(s){ return (typeof isMarker==='function' && isMarker(s)) ? 'marker' : s.idx; }) : null,
+        chipCount: nameEls.length,
+        chipNames: nameEls.map(function(el){ return el.textContent; }),
+        firstChipStyle: firstStyle,
+        buildHidden: buildPanel ? buildPanel.hidden : null,
+        buildRect: buildPanel ? {w: buildPanel.offsetWidth, h: buildPanel.offsetHeight} : null,
+        docHidden: document.hidden,
+        extra: extra || null
+      };
+    }catch(err){
+      entry = {t:new Date().toISOString(), event:event, error:String(err && err.message || err)};
+    }
+    diagLog.push(entry);
+    if(diagLog.length > DIAG_MAX) diagLog.shift();
+    render();
+  }
+
+  // --- panel UI, built entirely at runtime — no existing markup touched ---
+  const panel = document.createElement('div');
+  panel.id = 'item1-diag-panel';
+  panel.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:50vh;overflow:auto;'+
+    'background:rgba(8,8,12,0.97);color:#8fe6a0;font:11px/1.45 "JetBrains Mono",monospace;'+
+    'z-index:99999;display:none;border-top:2px solid #8fe6a0;box-sizing:border-box;';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:sticky;top:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;'+
+    'padding:8px 10px;background:rgba(8,8,12,0.97);border-bottom:1px solid #2a2a2a;';
+  const title = document.createElement('strong');
+  title.textContent = 'Item 1 diagnostic';
+  title.style.cssText = 'color:#fff;font-size:11px;margin-right:4px;';
+  bar.appendChild(title);
+  function mkBtn(label){
+    const b=document.createElement('button');
+    b.textContent=label;
+    b.type='button';
+    b.style.cssText='font:11px "JetBrains Mono",monospace;background:#1c1c22;color:#8fe6a0;'+
+      'border:1px solid #3a3a3a;border-radius:4px;padding:4px 8px;cursor:pointer;';
+    return b;
+  }
+  const snapBtn = mkBtn('Snapshot now');
+  const copyBtn = mkBtn('Copy log');
+  const clearBtn = mkBtn('Clear');
+  const closeBtn = mkBtn('Close');
+  bar.appendChild(snapBtn); bar.appendChild(copyBtn); bar.appendChild(clearBtn); bar.appendChild(closeBtn);
+  const body = document.createElement('div');
+  body.style.cssText = 'padding:8px 10px 16px;white-space:pre-wrap;word-break:break-word;';
+  panel.appendChild(bar); panel.appendChild(body);
+  document.body.appendChild(panel);
+
+  function render(){
+    if(panel.style.display==='none') return;
+    body.textContent = diagLog.map(function(e){ return JSON.stringify(e); }).join('\n\n');
+    panel.scrollTop = panel.scrollHeight;
+  }
+  snapBtn.onclick = function(){ snapshot('manual-snapshot'); };
+  clearBtn.onclick = function(){ diagLog.length=0; render(); };
+  closeBtn.onclick = function(){ panel.style.display='none'; };
+  copyBtn.onclick = function(){
+    const text = diagLog.map(function(e){ return JSON.stringify(e); }).join('\n\n');
+    function fallbackCopy(){
+      const ta=document.createElement('textarea');
+      ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); }catch(e){}
+      document.body.removeChild(ta);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        copyBtn.textContent='Copied';
+        setTimeout(function(){ copyBtn.textContent='Copy log'; },1200);
+      }).catch(fallbackCopy);
+    } else { fallbackCopy(); }
+  };
+
+  // Reveal gesture: tap the version label 5x within 2s. Doesn't change its
+  // existing appearance or behavior otherwise.
+  const verLabel = document.getElementById('app-version-label');
+  let taps=0, tapTimer=null;
+  if(verLabel){
+    verLabel.addEventListener('click', function(){
+      taps++;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(function(){ taps=0; }, 2000);
+      if(taps>=5){
+        taps=0;
+        panel.style.display = (panel.style.display==='none') ? 'block' : 'none';
+        render();
+      }
+    });
+  }
+
+  // --- capture points ---
+
+  // In-app tab switches. Capturing-phase listener on document fires before the
+  // existing bubble-phase tab-click handler, so this snapshot is genuinely "before."
+  document.addEventListener('click', function(e){
+    const btn = e.target && e.target.closest && e.target.closest('.tabbar .tab');
+    if(!btn) return;
+    const name = btn.dataset.tab;
+    snapshot('tab-click-before:'+name);
+    setTimeout(function(){ snapshot('tab-click-after:'+name); }, 60);
+  }, true);
+
+  // Browser-level visibility/focus changes — covers Safari app-switcher
+  // backgrounding, which "leaving and returning to the tab" may also mean.
+  document.addEventListener('visibilitychange', function(){
+    snapshot('visibilitychange:'+(document.hidden?'hidden':'visible'));
+    if(!document.hidden){
+      setTimeout(function(){ snapshot('visibility-visible-settled'); }, 300);
+    }
+  });
+  window.addEventListener('pageshow', function(e){ snapshot('pageshow', {persisted:e.persisted}); });
+  window.addEventListener('focus', function(){ snapshot('window-focus'); });
+
+  // Wrap renderStrip (unprotected function) purely to observe — original logic,
+  // return value, and thrown errors are all preserved exactly.
+  if(typeof renderStrip === 'function'){
+    const _origRenderStrip = renderStrip;
+    window.renderStrip = function(voicings){
+      let threw = null;
+      try{
+        return _origRenderStrip(voicings);
+      }catch(err){
+        threw = err;
+        throw err;
+      }finally{
+        snapshot('renderStrip-called', threw ? {threw:String(threw && threw.message || threw)} : null);
+      }
+    };
+  }
+
+  snapshot('diag-init');
+})();
+</script>
 </body>
 </html>

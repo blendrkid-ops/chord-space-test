@@ -1651,6 +1651,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .rhythm-resize-handle:hover::after, .rhythm-block.dragging .rhythm-resize-handle::after { background: var(--accent); }
 .rhythm-resize-handle:hover::before { opacity: 0.9; }
+@media (pointer: coarse) {
+  /* Item 7/mobile touch-input pass: widens only the invisible touch-catchable hit zone.
+     `right` stays pinned at -8px (unchanged from the base rule above), so the box grows
+     LEFTWARD into the block body rather than shifting its right edge — and since ::before/
+     ::after are positioned via `right:` offsets FROM that same right edge, they land at the
+     exact same pixel position they always did. Visuals unchanged; only the grabbable area
+     changes. 34px is a starting value per design-lock, pending on-device validation that it
+     doesn't eat too much of a short block's own move/tap zone at low zoom — retune this one
+     value if the real test calls for it, nothing else here needs to change.
+  */
+  .rhythm-resize-handle { width: 34px; }
+}
 .rhythm-barline {
   position: absolute;
   top: -18px;
@@ -6041,6 +6053,12 @@ function renderMarkerEditor(){
 // new editor surface for fields that already exist (s.dur, s.startUnit, marker.meter) —
 // no protected function touched.
 let RHYTHM_UNIT_PX=14;            // pixel width of one grid unit — adjustable via the zoom slider
+// Item 8 (mobile touch-input pass): touch-only tap-vs-drag threshold for a Rhythm block's
+// move zone (see startRhythmMove) — a separate named constant from Cylinder's own
+// TOUCH_TAP_THRESH (that one lives inside the Cylinder Map's own module closure and isn't
+// reachable from here), started at the same numeric value for consistency but tunable
+// independently after on-device testing.
+const RHYTHM_TOUCH_TAP_THRESH=10; // px, horizontal-only, cumulative from touchstart
 const RHYTHM_UNIT_PX_MIN=4, RHYTHM_UNIT_PX_MAX=32;
 const RHYTHM_MARKER_GUTTER_PX=14; // extra visual spacing reserved around a marker divider
 let rhythmDrag=null;     // {i} while a resize (duration) drag is in progress
@@ -6369,6 +6387,7 @@ function startRhythmDrag(ev,i,block){
 function startRhythmMove(ev,i,block){
   ev.preventDefault();
   const s=seq[i]; if(!s||isMarker(s)) return;
+  const isTouch=!!ev.touches;
   const startX=(ev.touches?ev.touches[0].clientX:ev.clientX);
   const {starts}=unitLayout();
   const startPos=starts[i];
@@ -6415,18 +6434,39 @@ function startRhythmMove(ev,i,block){
     const liveBlock=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
     if(liveBlock) liveBlock.classList.add('dragging');
   };
-  rhythmMoveDrag={i};
-  liveRender();
+  // Item 8 (tap-to-audition, touch only): mouse arms immediately, exactly as before this
+  // change — `armed` starts true and liveRender() fires on the same tick it always did, so
+  // mouse behavior is unchanged. Touch starts UNarmed instead: nothing moves or re-renders
+  // until real horizontal movement is seen, so a stationary tap never touches s.startUnit
+  // and can fall through cleanly to an audition on release.
+  let armed=!isTouch;
+  if(armed){ rhythmMoveDrag={i}; liveRender(); }
   const move=e=>{
-    if(!rhythmMoveDrag) return;
     const x=(e.touches?e.touches[0].clientX:e.clientX);
+    if(!armed){
+      if(Math.abs(x-startX)<=RHYTHM_TOUCH_TAP_THRESH) return;
+      armed=true; rhythmMoveDrag={i}; // arm on this tick; the shared applyFor+liveRender below runs once, not twice
+    }
+    if(!rhythmMoveDrag) return;
     applyFor(x);
     liveRender();
     if(e.cancelable) e.preventDefault();
   };
   const up=e=>{
-    if(!rhythmMoveDrag) return;
     const x=(e.changedTouches?e.changedTouches[0].clientX:e.clientX);
+    if(isTouch && !armed){
+      // Never crossed the threshold: a tap, not a move. Audition the chord instead of
+      // committing any position change — same call the Build-tab chord chip's own tap
+      // already uses (Tone.start/ensureSynth/triggerAttackRelease), for consistency.
+      document.removeEventListener('mousemove',move);
+      document.removeEventListener('mouseup',up);
+      document.removeEventListener('touchmove',move);
+      document.removeEventListener('touchend',up);
+      const v=(window._voicings||[])[i];
+      if(v){ Tone.start(); ensureSynth(); const d=durToSeconds(getChordDur(s)); synth.triggerAttackRelease(v.map(midiToNote),d); }
+      return;
+    }
+    if(!rhythmMoveDrag) return;
     applyFor(x);
     rhythmMoveDrag=null;
     document.removeEventListener('mousemove',move);
@@ -10948,12 +10988,24 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   let az=DEF_AZ, el=DEF_EL, camDist=DEF_DIST, target=null, autoRotate=false;
   let focus={x:0,y:0,z:0};
   let running=false, raf=null, dragging=false, activePointerId=null, lastX=0, lastY=0, movedWhileDown=false;
+  // Item 7 (mobile touch-input pass): the original per-tick sticky 2px check above stays
+  // exactly as-is and drives mouse. downX/downY/downIsTouch are new state used only by the
+  // touch branch below — a cumulative-from-pointerdown distance check, separate from and not
+  // read by the mouse path.
+  let downX=0, downY=0, downIsTouch=false;
+  const TOUCH_TAP_THRESH=10; // px, cumulative from pointerdown — touch only, tune after on-device test
   let angleMode='chromatic';
   let playingMesh=null;
   let pulse=null, rings=[];
   let sceneData={constellation:[],progression:[],segments:[],regions:[],rootGuides:[]};
   let THREE=null, renderer=null, scene3=null, camera=null, rootGroup=null, wireGroup=null, chordGroup=null, pathGroup=null, fxGroup=null;
   let raycaster=null, pointer=null, interactive=[];
+  // Item 7: touch-only invisible hit-proxy spheres for chord orbs (~2x visible radius),
+  // mirroring the established makeHitTube/redirectTo pattern already used for segments.
+  // Deliberately kept OUT of `interactive` — mouse raycasting's target list is therefore
+  // byte-for-byte what it was before this change. Only concatenated in for touch, inside
+  // hitTest(), when explicitly asked.
+  let orbTouchProxies=[];
   let pulseMesh=null;
   let pulseTail=[]; // v60: trailing fade meshes so the playback tracer reads as riding the path, not a floating dot
   let overlayItems=[];
@@ -11327,6 +11379,16 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     d.mesh=mesh;
     // No persistent tonic ring / halo: tonic already reads through larger size and placement,
     // and the brief explicitly rules out persistent decorative rings.
+    // Item 7: touch-only hit proxy — fully invisible (opacity 0, no depth/color write, never
+    // rendered), redirects back to `mesh` via userData.redirectTo the same way makeHitTube's
+    // segment proxies already do. Lives in chordGroup so the existing clearGroup/disposeObject
+    // cleanup on rebuild disposes it too; lives in orbTouchProxies, never in `interactive`,
+    // so it can never become independently selectable or show up in a mouse raycast.
+    const proxyMat=new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false});
+    const proxy=new THREE.Mesh(new THREE.SphereGeometry(radius*2,12,8),proxyMat);
+    proxy.position.copy(mesh.position);
+    proxy.userData={redirectTo:mesh};
+    chordGroup.add(proxy); orbTouchProxies.push(proxy);
   }
   function addRegionMarker(region){
     const p=sceneData.progression[region.startProgIndex]; if(!p) return;
@@ -11372,7 +11434,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   }
   function rebuildScene(){
     if(!THREE)return;
-    clearGroup(chordGroup); clearGroup(pathGroup); clearGroup(fxGroup); interactive=[]; pulseMesh=null; pulseTail=[]; playingMesh=null; overlayItems=[]; rings=[]; pulse=null;
+    clearGroup(chordGroup); clearGroup(pathGroup); clearGroup(fxGroup); interactive=[]; orbTouchProxies=[]; pulseMesh=null; pulseTail=[]; playingMesh=null; overlayItems=[]; rings=[]; pulse=null;
     buildWireframe();
     sceneData.constellation.forEach(d=>addNode(d,false));
     sceneData.progression.forEach(d=>addNode(d,true));
@@ -11527,14 +11589,21 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     });
   }
 
-  function hitTest(clientX,clientY){
+  function hitTest(clientX,clientY,useTouchProxies){
     if(!raycaster||!camera)return null;
     const r=canvas.getBoundingClientRect(); pointer.x=((clientX-r.left)/r.width)*2-1; pointer.y=-((clientY-r.top)/r.height)*2+1;
-    raycaster.setFromCamera(pointer,camera); const hits=raycaster.intersectObjects(interactive,false);
+    raycaster.setFromCamera(pointer,camera);
+    // Item 7 (mobile touch-input pass): touch callers pass useTouchProxies=true, which adds
+    // the invisible enlarged orb-hit spheres (orbTouchProxies) to the raycast target list.
+    // Every other caller (mouse) omits it, so `interactive` alone — same array, same objects,
+    // same order as before this change — is exactly what mouse raycasts against.
+    const targets = useTouchProxies ? interactive.concat(orbTouchProxies) : interactive;
+    const hits=raycaster.intersectObjects(targets,false);
     const obj=hits[0]?.object||null;
-    // Item 7: a hit on a segment's invisible wider hit-tube (see makeHitTube) redirects to
-    // its paired VISIBLE tube here — the single point every consumer of hitTest() (hoverAt,
-    // commitHit, the dblclick handler) goes through, so nothing downstream needed to change.
+    // Item 7: a hit on a segment's invisible wider hit-tube (see makeHitTube), or on a touch
+    // orb-hit proxy above, redirects to its paired VISIBLE object here — the single point
+    // every consumer of hitTest() (hoverAt, commitHit, the dblclick handler) goes through, so
+    // nothing downstream needed to change.
     return (obj && obj.userData.redirectTo) ? obj.userData.redirectTo : obj;
   }
   function hoverAt(clientX,clientY){
@@ -11629,11 +11698,21 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     canvas.addEventListener('pointerdown',e=>{
       if(activePointerId!==null)return;
       activePointerId=e.pointerId; dragging=true; movedWhileDown=false; lastX=e.clientX; lastY=e.clientY;
+      downX=e.clientX; downY=e.clientY; downIsTouch=(e.pointerType==='touch');
       target=null; canvas.classList.add('dragging'); canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove',e=>{
       if(dragging&&e.pointerId===activePointerId){
-        const dx=e.clientX-lastX,dy=e.clientY-lastY; if(Math.abs(dx)+Math.abs(dy)>2)movedWhileDown=true;
+        const dx=e.clientX-lastX,dy=e.clientY-lastY;
+        if(downIsTouch){
+          // Item 7: touch gets its own cumulative-from-pointerdown check instead of the
+          // mouse path's per-tick one below — natural touch jitter per tick was tripping
+          // the mouse threshold almost every time, misreading a real tap as an orbit-drag.
+          const cdx=e.clientX-downX, cdy=e.clientY-downY;
+          if(Math.abs(cdx)+Math.abs(cdy)>TOUCH_TAP_THRESH) movedWhileDown=true;
+        } else {
+          if(Math.abs(dx)+Math.abs(dy)>2)movedWhileDown=true;
+        }
         az-=dx*.007; el=Math.max(-1.25,Math.min(1.25,el+dy*.0055)); lastX=e.clientX; lastY=e.clientY;
       } else hoverAt(e.clientX,e.clientY);
     });
@@ -11641,7 +11720,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
       if(e.pointerId!==activePointerId)return;
       activePointerId=null; dragging=false; canvas.classList.remove('dragging');
       try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
-      if(!movedWhileDown){ const hit=hitTest(e.clientX,e.clientY); commitHit(hit); }
+      if(!movedWhileDown){ const hit=hitTest(e.clientX,e.clientY,downIsTouch); commitHit(hit); }
     }
     canvas.addEventListener('pointerup',end);
     canvas.addEventListener('pointercancel',end);
@@ -11901,168 +11980,6 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     midEl.style.transform  = `translate(${(sx*4 + Math.sin(t*0.95)*1.4).toFixed(2)}%, ${(-e*3 + Math.cos(t*0.7)*1.1).toFixed(2)}%)`;
     nearEl.style.transform = `translate(${(sx*8 + Math.sin(t*1.3)*2.2).toFixed(2)}%, ${(-e*6 + Math.cos(t*1.0)*1.5).toFixed(2)}%)`;
   };
-})();
-</script>
-<script>
-(function(){
-  // ITEM 1 DIAGNOSTIC — investigation-only, added for the Build-tab chord-names-
-  // disappearing bug. Purpose: distinguish (a) state/DOM rebuild — seq itself losing
-  // chord data, (b) CSS/visibility — names still in the DOM but invisible, or
-  // (c) Safari repaint-on-resume — correct DOM+CSS but the compositor doesn't repaint
-  // until something forces it. "Leaving and returning to the tab" is ambiguous between
-  // the in-app tabbar and Safari backgrounding/app-switching, so this captures both.
-  // Purely observational: wraps renderStrip without altering its logic or return value,
-  // adds new listeners rather than touching the existing tab-wiring code, and changes
-  // no rendering/behavior. No protected function touched. Remove once root cause is
-  // established and the real fix replaces it.
-  const DIAG_MAX = 300;
-  const diagLog = [];
-
-  function snapshot(event, extra){
-    let entry;
-    try{
-      const buildPanel = document.getElementById('tab-build');
-      const nameEls = buildPanel ? Array.from(buildPanel.querySelectorAll('.chord-card-name')) : [];
-      let firstStyle = null;
-      if(nameEls[0]){
-        const cs = getComputedStyle(nameEls[0]);
-        firstStyle = {color:cs.color, opacity:cs.opacity, display:cs.display, visibility:cs.visibility};
-      }
-      entry = {
-        t: new Date().toISOString(),
-        event: event,
-        seqLen: (typeof seq!=='undefined' && seq) ? seq.length : null,
-        seqIdxs: (typeof seq!=='undefined' && seq) ? seq.map(function(s){ return (typeof isMarker==='function' && isMarker(s)) ? 'marker' : s.idx; }) : null,
-        chipCount: nameEls.length,
-        chipNames: nameEls.map(function(el){ return el.textContent; }),
-        firstChipStyle: firstStyle,
-        buildHidden: buildPanel ? buildPanel.hidden : null,
-        buildRect: buildPanel ? {w: buildPanel.offsetWidth, h: buildPanel.offsetHeight} : null,
-        docHidden: document.hidden,
-        extra: extra || null
-      };
-    }catch(err){
-      entry = {t:new Date().toISOString(), event:event, error:String(err && err.message || err)};
-    }
-    diagLog.push(entry);
-    if(diagLog.length > DIAG_MAX) diagLog.shift();
-    render();
-  }
-
-  // --- panel UI, built entirely at runtime — no existing markup touched ---
-  const panel = document.createElement('div');
-  panel.id = 'item1-diag-panel';
-  panel.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:50vh;overflow:auto;'+
-    'background:rgba(8,8,12,0.97);color:#8fe6a0;font:11px/1.45 "JetBrains Mono",monospace;'+
-    'z-index:99999;display:none;border-top:2px solid #8fe6a0;box-sizing:border-box;';
-  const bar = document.createElement('div');
-  bar.style.cssText = 'position:sticky;top:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;'+
-    'padding:8px 10px;background:rgba(8,8,12,0.97);border-bottom:1px solid #2a2a2a;';
-  const title = document.createElement('strong');
-  title.textContent = 'Item 1 diagnostic';
-  title.style.cssText = 'color:#fff;font-size:11px;margin-right:4px;';
-  bar.appendChild(title);
-  function mkBtn(label){
-    const b=document.createElement('button');
-    b.textContent=label;
-    b.type='button';
-    b.style.cssText='font:11px "JetBrains Mono",monospace;background:#1c1c22;color:#8fe6a0;'+
-      'border:1px solid #3a3a3a;border-radius:4px;padding:4px 8px;cursor:pointer;';
-    return b;
-  }
-  const snapBtn = mkBtn('Snapshot now');
-  const copyBtn = mkBtn('Copy log');
-  const clearBtn = mkBtn('Clear');
-  const closeBtn = mkBtn('Close');
-  bar.appendChild(snapBtn); bar.appendChild(copyBtn); bar.appendChild(clearBtn); bar.appendChild(closeBtn);
-  const body = document.createElement('div');
-  body.style.cssText = 'padding:8px 10px 16px;white-space:pre-wrap;word-break:break-word;';
-  panel.appendChild(bar); panel.appendChild(body);
-  document.body.appendChild(panel);
-
-  function render(){
-    if(panel.style.display==='none') return;
-    body.textContent = diagLog.map(function(e){ return JSON.stringify(e); }).join('\n\n');
-    panel.scrollTop = panel.scrollHeight;
-  }
-  snapBtn.onclick = function(){ snapshot('manual-snapshot'); };
-  clearBtn.onclick = function(){ diagLog.length=0; render(); };
-  closeBtn.onclick = function(){ panel.style.display='none'; };
-  copyBtn.onclick = function(){
-    const text = diagLog.map(function(e){ return JSON.stringify(e); }).join('\n\n');
-    function fallbackCopy(){
-      const ta=document.createElement('textarea');
-      ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
-      document.body.appendChild(ta); ta.select();
-      try{ document.execCommand('copy'); }catch(e){}
-      document.body.removeChild(ta);
-    }
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(function(){
-        copyBtn.textContent='Copied';
-        setTimeout(function(){ copyBtn.textContent='Copy log'; },1200);
-      }).catch(fallbackCopy);
-    } else { fallbackCopy(); }
-  };
-
-  // Reveal gesture: tap the version label 5x within 2s. Doesn't change its
-  // existing appearance or behavior otherwise.
-  const verLabel = document.getElementById('app-version-label');
-  let taps=0, tapTimer=null;
-  if(verLabel){
-    verLabel.addEventListener('click', function(){
-      taps++;
-      clearTimeout(tapTimer);
-      tapTimer = setTimeout(function(){ taps=0; }, 2000);
-      if(taps>=5){
-        taps=0;
-        panel.style.display = (panel.style.display==='none') ? 'block' : 'none';
-        render();
-      }
-    });
-  }
-
-  // --- capture points ---
-
-  // In-app tab switches. Capturing-phase listener on document fires before the
-  // existing bubble-phase tab-click handler, so this snapshot is genuinely "before."
-  document.addEventListener('click', function(e){
-    const btn = e.target && e.target.closest && e.target.closest('.tabbar .tab');
-    if(!btn) return;
-    const name = btn.dataset.tab;
-    snapshot('tab-click-before:'+name);
-    setTimeout(function(){ snapshot('tab-click-after:'+name); }, 60);
-  }, true);
-
-  // Browser-level visibility/focus changes — covers Safari app-switcher
-  // backgrounding, which "leaving and returning to the tab" may also mean.
-  document.addEventListener('visibilitychange', function(){
-    snapshot('visibilitychange:'+(document.hidden?'hidden':'visible'));
-    if(!document.hidden){
-      setTimeout(function(){ snapshot('visibility-visible-settled'); }, 300);
-    }
-  });
-  window.addEventListener('pageshow', function(e){ snapshot('pageshow', {persisted:e.persisted}); });
-  window.addEventListener('focus', function(){ snapshot('window-focus'); });
-
-  // Wrap renderStrip (unprotected function) purely to observe — original logic,
-  // return value, and thrown errors are all preserved exactly.
-  if(typeof renderStrip === 'function'){
-    const _origRenderStrip = renderStrip;
-    window.renderStrip = function(voicings){
-      let threw = null;
-      try{
-        return _origRenderStrip(voicings);
-      }catch(err){
-        threw = err;
-        throw err;
-      }finally{
-        snapshot('renderStrip-called', threw ? {threw:String(threw && threw.message || threw)} : null);
-      }
-    };
-  }
-
-  snapshot('diag-init');
 })();
 </script>
 </body>

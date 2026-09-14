@@ -3056,12 +3056,71 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v65";
+const APP_VERSION = "v71";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
+// Generic, mode-less pitch-class name: picks one enharmonic per pitch class from its own
+// preference, with no tonal context. As of v69 no caller remains — the Key selectors (Build,
+// Session, marker editor) moved to the contextual authority (tonicLabel -> keySpell). Kept as a
+// context-free spelling primitive should a genuinely mode-less pitch label ever be needed again.
 function selfSpell(pc){return useFlatsTable[pc]?flatNames[pc]:sharpNames[pc];}
-function keySpell(pc,kr,km){const ref=parentMajorRoot(kr,km);return useFlatsTable[ref]?flatNames[pc]:sharpNames[pc];}
+
+// --- Degree-aware contextual spelling (single authority) ---
+// Musical alphabet + each letter's natural pitch class. A heptatonic scale uses each letter
+// exactly once, in order from the tonic's letter, which is what lets a note be named by its
+// scale DEGREE (so a raised 7th reads B# not C, a b6 reads Cb not B).
+const LETTER_ORDER=['C','D','E','F','G','A','B'];
+const LETTER_NATURAL_PC={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+// Accidental needed to spell pitch class `pc` on a given letter: the signed distance from the
+// letter's natural pitch class, reduced to its nearest representation, rendered in the same
+// ASCII #/b convention as sharpNames/flatNames (so double accidentals read ## / bb, and
+// existing string ops like the filename #->sharp replace keep working). Represents any depth
+// faithfully rather than silently simplifying — the validation battery proves supported
+// key/modes never exceed a double accidental.
+function accidentalFor(pc,letter){
+  let d=(((pc%12)+12)%12)-LETTER_NATURAL_PC[letter];
+  while(d>6)d-=12; while(d<-6)d+=12;
+  return d>0 ? '#'.repeat(d) : (d<0 ? 'b'.repeat(-d) : '');
+}
+// The existing tonic-enharmonic preference, extracted verbatim into one internal helper so the
+// degree-aware keySpell can seed its letter cascade WITHOUT calling itself. Dependency runs one
+// way: tonic-preference policy -> keySpell. This is policy, not a second spelling authority —
+// it just answers "what do we call the tonic here" using the same parentMajorRoot/useFlatsTable
+// pick keySpell used before it became degree-aware.
+function tonicSpellingSeed(kr,km){
+  const ref=parentMajorRoot(kr,km);
+  return useFlatsTable[ref]?flatNames[kr]:sharpNames[kr];
+}
+// Name a pitch class IN the context of key (kr,km). A pitch class that is one of the mode's 7
+// scale degrees is spelled by that degree's letter (degree-aware, correct for altered 6ths/7ths
+// and flat-side degrees). Anything else — a chromatic/borrowed tone, or an unknown mode — falls
+// back to the pre-existing pitch-class preference, unchanged, so this pass touches diatonic
+// spelling only and leaves chromatic spelling (item 51) exactly as it was.
+function keySpell(pc,kr,km){
+  pc=(((pc%12)+12)%12);
+  const degs=modeDegrees[km];
+  if(degs){
+    const seedLetter=tonicSpellingSeed(kr,km)[0];
+    const L0=LETTER_ORDER.indexOf(seedLetter);
+    if(L0>=0){
+      for(let i=0;i<degs.length;i++){
+        if(((kr+degs[i].off)%12)===pc){
+          const letter=LETTER_ORDER[(L0+i)%7];
+          return letter+accidentalFor(pc,letter);
+        }
+      }
+    }
+  }
+  const ref=parentMajorRoot(kr,km);
+  return useFlatsTable[ref]?flatNames[pc]:sharpNames[pc];
+}
+// Contextual tonic name for a pitch class used AS a key tonic in mode `km`. The tonic is
+// scale-degree 1, so this is exactly keySpell of the tonic against itself — no separate
+// dropdown spelling table. Key selectors (Build / Session / marker editor) label their 12
+// options with this so the control can never disagree with the resulting tonal context
+// (pc 8 + Aeolian -> G#, pc 3 + Aeolian -> Eb).
+function tonicLabel(pc,km){ pc=(((pc%12)+12)%12); return keySpell(pc,pc,km); }
 
 const intervalMap={"major":[0,4,7],"minor":[0,3,7],"diminished":[0,3,6],"augmented":[0,4,8],"major 7":[0,4,7,11],"dominant 7":[0,4,7,10],"minor 7":[0,3,7,10],"half-diminished":[0,3,6,10],"diminished 7":[0,3,6,9],"minor major 7":[0,3,7,11],"sus2":[0,2,7],"sus4":[0,5,7],"add9":[0,4,7,14],"power chord":[0,7],"9th":[0,4,7,10,14],
   // --- Backlog item 10: curated upper-extension / altered-chord set. Locked via
@@ -3079,7 +3138,11 @@ const intervalMap={"major":[0,4,7],"minor":[0,3,7],"diminished":[0,3,6],"augment
   // precedent as add9/9th/sus2/sus4 (EXTENSION_LADDER only resolves the four base
   // 7th-chord families and never reaches these six).
   "6":[0,4,7,9], "6/9":[0,4,7,9,14], "minor 6/9":[0,3,7,9,14],
-  "9sus4":[0,5,7,10,14], "13sus4":[0,5,7,10,14,21], "dominant 7 #5 #9":[0,4,8,10,15]
+  "9sus4":[0,5,7,10,14], "13sus4":[0,5,7,10,14,21], "dominant 7 #5 #9":[0,4,8,10,15],
+  // --- Item 11: the one seventh quality Harmonic/Melodic Minor introduce that wasn't
+  // already present — the III+ chord (maj7 with a raised 5th). Registered in the four
+  // in-sync tables (intervalMap, lib, qualitySymbol, TRIAD_QUALITY_FAMILY) plus QUALITY_PREF.
+  "augmented major 7":[0,4,8,11]
 };
 const lib=[{n:"major",x:0.82,y:0.85,col:[237,161,0]},{n:"minor",x:-0.75,y:0.8,col:[42,120,214]},{n:"diminished",x:-0.55,y:-0.65,col:[227,73,72]},{n:"augmented",x:0.35,y:-0.55,col:[232,123,164]},{n:"major 7",x:0.85,y:0.55,col:[237,161,0]},{n:"dominant 7",x:0.55,y:-0.3,col:[235,104,52]},{n:"minor 7",x:-0.65,y:0.5,col:[42,120,214]},{n:"half-diminished",x:-0.55,y:-0.45,col:[74,58,167]},{n:"diminished 7",x:-0.35,y:-0.85,col:[227,73,72]},{n:"minor major 7",x:-0.25,y:-0.35,col:[74,58,167]},{n:"sus2",x:0.05,y:0.35,col:[27,175,122]},{n:"sus4",x:0.1,y:-0.1,col:[27,175,122]},{n:"add9",x:0.55,y:0.55,col:[237,161,0]},{n:"power chord",x:0,y:0.5,col:[137,135,129]},{n:"9th",x:0.6,y:0.25,col:[235,104,52]},
   // Item 10 extended-chord placements. Each inherits its base family's color so the
@@ -3114,7 +3177,10 @@ const lib=[{n:"major",x:0.82,y:0.85,col:[237,161,0]},{n:"minor",x:-0.75,y:0.8,co
   {n:"minor 6/9",x:-0.60,y:0.70,col:[42,120,214]},
   {n:"9sus4",x:0.30,y:0.20,col:[27,175,122]},
   {n:"13sus4",x:0.38,y:0.30,col:[27,175,122]},
-  {n:"dominant 7 #5 #9",x:0.55,y:-0.70,col:[235,104,52]}
+  {n:"dominant 7 #5 #9",x:0.55,y:-0.70,col:[235,104,52]},
+  // Item 11: III+ maj7. Tense/dark-bright corner near the augmented triad; inherits the
+  // augmented triad's color so the family still reads as color-grouped on the map.
+  {n:"augmented major 7",x:0.30,y:-0.68,col:[232,123,164]}
 ];
 const rootMotionScore={0:0,1:1,2:1,3:1,4:1,5:2,6:1,7:2,8:1,9:1,10:1,11:1};
 // Mode-specific cadence bonuses: how strongly does a chord at [offset from tonic] pull to the tonic?
@@ -3126,11 +3192,31 @@ const modeCadences = {
   Lydian:     {7:2, 2:2},             // V, II (characteristic)
   Mixolydian: {10:3, 5:1},            // bVII (characteristic), IV
   Aeolian:    {10:2, 5:1, 8:1},       // bVII, iv, bVI
-  Locrian:    {1:1}                   // bII (str 1, below CADENCE_STRONG: Locrian produces no pull event)
+  Locrian:    {1:1},                   // bII (str 1, below CADENCE_STRONG: Locrian produces no pull event)
+  // Item 11 minor scales (not modes of a major scale; separate selectable contexts).
+  // Harmonic Minor: raised 7th restores a real leading tone -> V and vii°7 are strong tonal
+  // pulls to i; iv is a weaker plagal relationship. Melodic Minor: V is the strong tonal pull;
+  // viiø is a weaker leading-tone pull. IV7 is NOT a cadence here — it is the signature COLOUR
+  // (marked via the degree's char flag), deliberately not given a tonic-pull value.
+  "Harmonic Minor": {7:2, 11:2, 5:1},  // V (strong), vii°7 (strong), iv (weak plagal)
+  "Melodic Minor":  {7:2, 11:1}        // V (strong), viiø (weaker); IV7 is signature colour, not a cadence
 };
 
 const modeOrder = ["Ionian","Dorian","Phrygian","Lydian","Mixolydian","Aeolian","Locrian"];
-const modeShort = {Ionian:"major",Dorian:"Dor",Phrygian:"Phr",Lydian:"Lyd",Mixolydian:"Mix",Aeolian:"minor",Locrian:"Loc"};
+// Item 11: selectable minor SCALES — NOT modes of a major scale, and deliberately NOT added to
+// modeOrder / modeOffsetFromParent / the modal-brightness ladder / the interchange source loop.
+// They are their own selectable tonal contexts. modeOrder stays the seven-church-mode universe
+// (modal interchange + MIDI detectKey inversion). SELECTABLE_CONTEXTS is the UI + load-validation
+// authority; the church modes and the minor scales are presented as separate groups, never as
+// "nine modes".
+const MINOR_SCALES = ["Harmonic Minor","Melodic Minor"];
+const SELECTABLE_CONTEXTS = [...modeOrder, ...MINOR_SCALES];
+// Builds grouped option-group HTML for a context dropdown, with the given context pre-selected.
+function modeOptionsHtml(selected){
+  const grp=(label,list)=>`<optgroup label="${label}">`+list.map(m=>`<option value="${m}"${m===selected?' selected':''}>${m}</option>`).join('')+`</optgroup>`;
+  return grp('Modes',modeOrder)+grp('Minor scales',MINOR_SCALES);
+}
+const modeShort = {Ionian:"major",Dorian:"Dor",Phrygian:"Phr",Lydian:"Lyd",Mixolydian:"Mix",Aeolian:"minor",Locrian:"Loc","Harmonic Minor":"harm min","Melodic Minor":"mel min"};
 // offset from parent major tonic: e.g. D Dorian's parent is C, offset 2
 const modeOffsetFromParent = {Ionian:0,Dorian:2,Phrygian:4,Lydian:5,Mixolydian:7,Aeolian:9,Locrian:11};
 const modeCharacter = {
@@ -3140,7 +3226,9 @@ const modeCharacter = {
   Lydian:"Major with a raised 4th. Signature is the #iv° chord and the dreamy II.",
   Mixolydian:"Major with a flat 7th. Signature move is the major bVII chord.",
   Aeolian:"Natural minor. No signature chord, the baseline minor sound.",
-  Locrian:"Diminished tonic, unstable. Rarely used as a full key; the tonic itself is the signature."
+  Locrian:"Diminished tonic, unstable. Rarely used as a full key; the tonic itself is the signature.",
+  "Harmonic Minor":"Minor with a raised 7th. The leading tone gives a strong dominant V7\u2192i pull; vii\u00B07 is a strong leading-tone chord too.",
+  "Melodic Minor":"Minor with a raised 6th and 7th. The major/dominant IV is its clearest colour; V drives strongly to i."
 };
 const modeDegrees = {
   Ionian: [{off:0,q:"major 7",num:"I"},{off:2,q:"minor 7",num:"ii"},{off:4,q:"minor 7",num:"iii"},{off:5,q:"major 7",num:"IV"},{off:7,q:"dominant 7",num:"V"},{off:9,q:"minor 7",num:"vi"},{off:11,q:"half-diminished",num:"vii°"}],
@@ -3149,9 +3237,25 @@ const modeDegrees = {
   Lydian: [{off:0,q:"major 7",num:"I"},{off:2,q:"dominant 7",num:"II",char:true},{off:4,q:"minor 7",num:"iii"},{off:6,q:"half-diminished",num:"#iv°",char:true},{off:7,q:"major 7",num:"V"},{off:9,q:"minor 7",num:"vi"},{off:11,q:"minor 7",num:"vii"}],
   Mixolydian: [{off:0,q:"dominant 7",num:"I"},{off:2,q:"minor 7",num:"ii"},{off:4,q:"half-diminished",num:"iii°"},{off:5,q:"major 7",num:"IV"},{off:7,q:"minor 7",num:"v"},{off:9,q:"minor 7",num:"vi"},{off:10,q:"major 7",num:"bVII",char:true}],
   Aeolian: [{off:0,q:"minor 7",num:"i"},{off:2,q:"half-diminished",num:"ii°"},{off:3,q:"major 7",num:"bIII"},{off:5,q:"minor 7",num:"iv"},{off:7,q:"minor 7",num:"v"},{off:8,q:"major 7",num:"bVI"},{off:10,q:"dominant 7",num:"bVII"}],
-  Locrian: [{off:0,q:"half-diminished",num:"i°",char:true},{off:1,q:"major 7",num:"bII"},{off:3,q:"minor 7",num:"biii"},{off:5,q:"minor 7",num:"iv"},{off:6,q:"major 7",num:"bV"},{off:8,q:"dominant 7",num:"bVI"},{off:10,q:"minor 7",num:"bvii"}]
+  Locrian: [{off:0,q:"half-diminished",num:"i°",char:true},{off:1,q:"major 7",num:"bII"},{off:3,q:"minor 7",num:"biii"},{off:5,q:"minor 7",num:"iv"},{off:6,q:"major 7",num:"bV"},{off:8,q:"dominant 7",num:"bVI"},{off:10,q:"minor 7",num:"bvii"}],
+  // Item 11 — Harmonic Minor [0,2,3,5,7,8,11]. Degree-relative numerals (NOT bIII/bVI major-reference
+  // labels). Signature degree is V (char) — the raised-7th leading tone that defines the scale.
+  "Harmonic Minor": [{off:0,q:"minor major 7",num:"i"},{off:2,q:"half-diminished",num:"ii°"},{off:3,q:"augmented major 7",num:"III+"},{off:5,q:"minor 7",num:"iv"},{off:7,q:"dominant 7",num:"V",char:true},{off:8,q:"major 7",num:"VI"},{off:11,q:"diminished 7",num:"vii°"}],
+  // Item 11 — Melodic Minor (ascending/jazz) [0,2,3,5,7,9,11]. Signature degree is IV (char) — the
+  // raised 6th makes IV a dominant chord (the melodic-minor colour). V is the strong tonal cadence.
+  "Melodic Minor": [{off:0,q:"minor major 7",num:"i"},{off:2,q:"minor 7",num:"ii"},{off:3,q:"augmented major 7",num:"III+"},{off:5,q:"dominant 7",num:"IV",char:true},{off:7,q:"dominant 7",num:"V"},{off:9,q:"half-diminished",num:"vi°"},{off:11,q:"half-diminished",num:"vii°"}]
 };
-function parentMajorRoot(kr,mode){ return (kr - modeOffsetFromParent[mode] + 12) % 12; }
+// Item 11: spelling-only parent offset for contexts that are NOT modes of a major scale.
+// modeOffsetFromParent stays seven-mode-only (it is also the MIDI detectKey inversion set);
+// Harmonic/Melodic Minor borrow their parallel natural minor's relative-major offset (9, same as
+// Aeolian) purely so keySpell/tonicSpellingSeed pick the correct sharp/flat tonic seed. This does
+// NOT give them a modal-rotation meaning.
+const SPELLING_PARENT_OFFSET = {"Harmonic Minor":9,"Melodic Minor":9};
+function parentMajorRoot(kr,mode){
+  const off = (mode in modeOffsetFromParent) ? modeOffsetFromParent[mode]
+            : (mode in SPELLING_PARENT_OFFSET ? SPELLING_PARENT_OFFSET[mode] : 0);
+  return (kr - off + 12) % 12;
+}
 function diatonicChords(kr,km){ const degs=modeDegrees[km]||modeDegrees.Ionian; return degs.map(d=>({root:(kr+d.off)%12,quality:d.q,num:d.num,characteristic:!!d.char})); }
 
 // --- Chord-function tiers (teaching layer): tonic / signature / diatonic / chromatic ---
@@ -3170,13 +3274,15 @@ function signatureOffsets(km){
 }
 // Key-independent teaching reason for each signature offset — the transferable "why".
 const signatureReason={
-  Ionian:     {7:"the dominant V — pulls home (authentic cadence)", 11:"vii° — dominant function, a rootless V"},
+  Ionian:     {7:"the dominant V — gives a strong tonal pull toward home", 11:"vii° — dominant function, a rootless V"},
   Dorian:     {5:"raised 6th — the major IV is the Dorian signature"},
   Phrygian:   {1:"flat 2nd — the major ♭II is the Phrygian signature"},
   Lydian:     {2:"raised 4th — the major II is a Lydian signature", 6:"raised 4th — the ♯iv° is a Lydian signature"},
   Mixolydian: {10:"flat 7th — the major ♭VII is the Mixolydian signature"},
   Aeolian:    {10:"♭VII — the natural-minor cadence (no raised leading tone)"},
-  Locrian:    {0:"the diminished tonic itself — Locrian's unstable signature"}
+  Locrian:    {0:"the diminished tonic itself — Locrian's unstable signature"},
+  "Harmonic Minor": {7:"raised 7th creates the leading tone — V7 gives a strong tonal pull toward i"},
+  "Melodic Minor":  {5:"raised 6th makes IV a major/dominant chord — the clearest melodic-minor colour"}
 };
 // Tier + reason for a pitch-class root in the current key. Root-only by default (roots carry
 // one degree each) — pass the candidate's actual played quality as `cq` (backlog item 48) to also
@@ -3216,7 +3322,11 @@ const TRIAD_QUALITY_FAMILY = {
     "dominant 13","dominant 7 #11","dominant 7 b9","dominant 7 #9","dominant 7 b13",
     "6","6/9","dominant 7 #5 #9"],
   "minor": ["minor 7","minor major 7","minor 7 b9","minor 9","minor 11","minor 13","minor 6/9"],
-  "diminished": ["half-diminished","diminished 7","half-diminished 9","half-diminished 11"]
+  "diminished": ["half-diminished","diminished 7","half-diminished 9","half-diminished 11"],
+  // Item 11: the augmented triad is the base of the III+ maj7 chord. New family, so the
+  // Triad/7th toggle can offer the plain augmented triad form of augmented-major-7. Does not
+  // touch the major/minor/diminished families, and no existing seven-mode degree is augmented.
+  "augmented": ["augmented major 7"]
   // 9sus4/13sus4 deliberately unregistered — sus-family chords (sus2/sus4) have never
   // been registered here either, so this keeps the new sus extensions consistent with
   // that existing precedent rather than introducing a new rule just for them.
@@ -3328,7 +3438,10 @@ function findBorrowedFrom(chordRoot, chordQuality, kr, currentMode){
       const dRoot = (kr+d.off)%12;
       if(dRoot===chordRoot && functionMatchesDegree(chordQuality, d.q)){
         const pcs = pitchContentStatus(chordRoot, chordQuality, kr, m);
-        results.push({mode:m, num:d.num, characteristic:!!d.char, pitchFits:pcs.native});
+        // off:d.off added for Craft VL Phase B (tendencyInfoAt) — the source-mode degree
+        // offset, needed to test whether THAT degree is itself tonal in its source mode
+        // (cadencePullClass[mode][off]). Purely additive: no existing caller reads it.
+        results.push({mode:m, num:d.num, characteristic:!!d.char, pitchFits:pcs.native, off:d.off});
       }
     });
   });
@@ -3341,6 +3454,16 @@ function findBorrowedFrom(chordRoot, chordQuality, kr, currentMode){
 // nearest first, so the lead source is always the smallest modal departure rather than
 // simply the brightest mode or raw array order.
 const MODE_BRIGHTNESS_RANK = {Lydian:0, Ionian:1, Mixolydian:2, Dorian:3, Aeolian:4, Phrygian:5, Locrian:6};
+// Item 11: home-context brightness rank for borrowed-source ORDERING only. The seven church modes
+// use the literal ladder above. Harmonic/Melodic Minor are NOT ladder members (deliberately not
+// inserted as ordinary brightness modes); for distance ordering they anchor to their parallel
+// natural minor (Aeolian). Anything unrecognized falls back to Ionian's rank, preserving the old
+// default. Sources scanned by findBorrowedFrom are always church modes, so only the HOME needs this.
+function homeBrightnessRank(mode){
+  if(MODE_BRIGHTNESS_RANK[mode]!==undefined) return MODE_BRIGHTNESS_RANK[mode];
+  if(mode==="Harmonic Minor"||mode==="Melodic Minor") return MODE_BRIGHTNESS_RANK.Aeolian;
+  return 1;
+}
 
 // The single shared authority for "is this chord borrowed, and if so from where." Every
 // visible surface (strip chip, live detail panel, analysis export, Cylinder Map) calls this
@@ -3364,7 +3487,7 @@ function borrowedStatusAt(i){
   if(dm) return {isBorrowed:false, sources:[], chromatic:false, native:dm};
 
   const homeMode=kc.keyMode;
-  const homeRank=(MODE_BRIGHTNESS_RANK[homeMode]!==undefined)?MODE_BRIGHTNESS_RANK[homeMode]:1;
+  const homeRank=homeBrightnessRank(homeMode);
   const candidates=findBorrowedFrom(s.root,ch.n,kc.keyRoot,homeMode);
   const fitting=candidates.filter(c=>c.pitchFits);
   if(!fitting.length) return {isBorrowed:false, sources:[], chromatic:true};
@@ -3421,12 +3544,29 @@ function secondaryDominants(kr, km){
 // Native classification always takes precedence — every call site below checks its own `dm`
 // (native-function match) first and only calls this when that comes back empty, preserving the
 // existing native > secdom > borrowed > passing > chromatic cascade order unchanged.
+//
+// Craft VL Phase B design-lock: quality matching broadened from exact-string
+// (c.quality==="dominant 7") to a guide-tone family test, via dominantSevenPresent()
+// below. The exact-string version missed EVERY quality except the literal "dominant 7"
+// string — not just item-10 altered dominants, but the plain "9th" (dominant 9) quality
+// too, despite secondaryDominants() itself only ever generating "dominant 7" reference
+// candidates (quality there is a fixed label, not a whitelist). dominantSevenPresent
+// deliberately does NOT require a major 3rd — a dominant-sus chord (9sus4/13sus4, no
+// 3rd, minor 7th present) still functions as a secondary dominant by root/seventh
+// relationship even with no leading tone voiced; Craft VL Phase B is the layer that
+// decides whether a leading-tone tendency applies (checks the 3rd itself, independently,
+// at the point it builds its own tendency descriptor) — that is a Phase-B-only question,
+// deliberately kept out of this shared classification authority.
+function dominantSevenPresent(quality){
+  const g=chordGuideTones(quality);
+  return !!g && g.seventh==='m7' && g.third!=='m';
+}
 function secDomStatusAt(i){
   const s=seq[i]; if(!s||isMarker(s)) return {isSecDom:false, label:null, target:null, targetNum:null};
   const ch=lib[s.idx];
   const kc=keyContextAt(i);
   const candidates=secondaryDominants(kc.keyRoot,kc.keyMode);
-  const match=candidates.find(c=>c.root===s.root && c.quality===ch.n);
+  const match=candidates.find(c=>c.root===s.root && dominantSevenPresent(ch.n));
   if(!match) return {isSecDom:false, label:null, target:null, targetNum:null};
   return {isSecDom:true, label:match.label, target:match.target, targetNum:match.targetNum};
 }
@@ -3602,14 +3742,78 @@ function geometricDistance(prevVoicing,pcs){
 // becomes the new local home for the chords that follow it, rather than being fought.
 // Not exposed as a control on purpose: a set-once engine correction, not a performance dial.
 const REGISTER_PULL = 0.5;
-function computeVoicings(seq){
+// --- Item 42 Phase 1: core/color tiered voicing for 5+ voice extended chords ---------
+// Design-locked architecture: the automatic voicing engine keeps every chord's full
+// defined pitch content (Lock 1 — no automatic omission or doubling, ever). For
+// qualities with 5+ real voices AND at least one raw intervalMap offset >=12 semitones,
+// the engine treats the interval list as two layers instead of one undifferentiated
+// ascending stack: CORE (every raw offset <12 — root/3rd/5th/7th, 6ths, sus tones) and
+// COLOR (9th/11th/13th-type extensions, raw offset >=12). Only the core participates in
+// inversion/rotation search and Open/Spread transforms; color always preserves its true
+// compound interval relationship to the voiced root and rides as one block above the
+// styled core. Derived directly from intervalMap on every call — no hand-maintained
+// core/color table to drift out of sync as new qualities get added.
+function coreColorSplit(qualityName){
+  const ivs=intervalMap[qualityName];
+  const core=[], color=[];
+  ivs.forEach(iv=>{ (iv<12?core:color).push(iv); });
+  return {core,color};
+}
+// Gate: only qualities this architecture is meant for. add9 (4 voices, one raw offset
+// >=12) is deliberately excluded by the color.length-independent voice-count floor — its
+// single color tone was never the muddy-5+-voice problem this item solves, and items
+// 45/46/49's existing add9 classification/display behavior must stay untouched.
+function qualifiesForTiered(qualityName){
+  const {core,color}=coreColorSplit(qualityName);
+  return (core.length+color.length)>=5 && color.length>=1;
+}
+// Explicit-inversion picker bound: color tones never become inversion/bass candidates,
+// consistent with the automatic-search rule. Matches the old min(numVoices,4) cap exactly
+// for every quality whose core is 4 tones (every current quality except dominant 7 b13,
+// whose 3-tone core now correctly caps at 3 rather than exposing a color-tone bass).
+function coreInversionCount(qualityName){
+  return Math.min(coreColorSplit(qualityName).core.length, 4);
+}
+// Builds the ascending MIDI-offset shape (shape[0]===0 — same contract styleVoicing
+// already guarantees, so every downstream step in computeVoicings needs no changes) for
+// a qualifying chord: rotate ONLY the core offsets by coreRotationIndex, style just the
+// core via the untouched styleVoicing() (called on the core subset only), then
+// reconstruct the color layer from its raw intervalMap offset relative to the voiced
+// root's actual stack position — preserving the true compound interval a 9th/11th/13th
+// was authored with — and block-shift the whole color layer up by whole octaves only if
+// needed to clear the top of the styled core. coreRotationIndex is defensively clamped
+// here as a guardrail only; the primary correction for stale saved state is the explicit
+// load-migration in the project loader, not this clamp.
+function buildTieredShape(root, qualityName, coreRotationIndex, style){
+  const {core,color}=coreColorSplit(qualityName);
+  const rot=Math.max(0, Math.min(coreRotationIndex||0, core.length-1));
+  const rotatedCore=core.slice(rot).concat(core.slice(0,rot).map(iv=>iv+12));
+  const rootSlot=rotatedCore.findIndex(iv=>((iv%12)+12)%12===0);
+  const corePCs=rotatedCore.map(iv=>((root+iv)%12+12)%12);
+  const coreStack=styleVoicing(corePCs, style); // untouched — called on the core subset only
+  const rootStackOffset=coreStack[rootSlot];
+  const coreTop=Math.max(...coreStack);
+  let colorOffsets=color.map(iv=>rootStackOffset+iv); // true compound interval from the voiced root
+  const colorMin=Math.min(...colorOffsets);
+  if(colorMin<=coreTop){
+    const lift=12*Math.ceil((coreTop-colorMin+1)/12);
+    colorOffsets=colorOffsets.map(o=>o+lift);
+  }
+  return coreStack.concat(colorOffsets);
+}
+function computeVoicings(seq, tendencyInfo){
   let vs=[],prev=null,caveats=[];
   // Register-drift home anchor (v26). Seeded by the first chord's realised mean, so the
   // pull targets "the register the progression actually started in." force=true re-seeds it
   // to a hand-voiced chord's mean, making a deliberate manual placement the new local home.
   let homeMean=null;
   const seedHome=(v,force)=>{ if(!v||!v.length) return; const m=v.reduce((a,b)=>a+b,0)/v.length; if(homeMean===null||force) homeMean=m; };
-  seq.forEach(s=>{
+  // Craft VL Phase B: tendencyInfo is optional (old call sites that don't pass it are
+  // completely unaffected — ci is unused elsewhere and this branch only ever feeds the
+  // one new smoothestCloseVoicing argument below). tendencyInfo[ci-1] is the PREVIOUS
+  // chord's descriptor — the tendency tone resolves FROM the previous chord INTO the
+  // candidate being chosen for the current one.
+  seq.forEach((s,ci)=>{
     const cav={collision:false,spreadExpanded:null}; // fork-4/fork-5 honesty findings (side channel)
     const q=lib[s.idx].n;
     let intervals=intervalMap[q].slice();
@@ -3648,7 +3852,16 @@ function computeVoicings(seq){
 
     // 1) Build the styled spacing skeleton above the bass, at a neutral register (bass=0).
     //    Everything downstream is octave assignment; style sets the internal intervals.
-    let shape=styleVoicing(orderedPCs, voicingStyle); // ascending MIDI offsets, shape[0]===0
+    // Item 42 Phase 1: a qualifying 5+-voice extended chord routes through the core/color
+    // tiered builder instead of a flat ascending stack over every tone. Non-qualifying
+    // qualities — fewer than 5 real tones, or no compound extension (no raw intervalMap
+    // offset >=12) — take the untouched original call, byte-identical behavior. This is a
+    // rule, not a chord-family list: 6/9, minor 6/9, 9sus4, and 13sus4 all have 5+ tones
+    // AND a compound extension, so they correctly qualify and use the tiered path below;
+    // add9 is deliberately excluded because it has only 4 tones.
+    let shape = qualifiesForTiered(q)
+      ? buildTieredShape(s.root, q, inv, voicingStyle)
+      : styleVoicing(orderedPCs, voicingStyle); // ascending MIDI offsets, shape[0]===0
 
     // 2) Position the skeleton in register.
     //    preferCloseVL + a previous chord + no user-fixed bass (inversion/slash):
@@ -3665,17 +3878,22 @@ function computeVoicings(seq){
     const bassFixed = s.invLocked || (s.bass!==null && s.bass!==undefined);
     let notes;
     if(preferCloseVL && prev && !bassFixed && voicingStyle==='close'){
-      notes = smoothestCloseVoicing(orderedPCs, prev, homeMean);
+      notes = smoothestCloseVoicing(orderedPCs, prev, homeMean, tendencyInfo?tendencyInfo[ci-1]:null, s.root, q);
     } else {
       let baseBass = bassPC + 12*Math.round((anchor-bassPC)/12); // nearest octave of bassPC to anchor
       notes = shape.map(off=>baseBass+off);
       if(preferCloseVL && prev && !bassFixed){
-        // open/spread: preserve spacing, shift whole chord to minimize per-voice motion
+        // open/spread: preserve spacing, shift whole chord to minimize per-voice motion.
+        // Item 42 Phase 1: for a qualifying chord this cost is scored on the CORE voices
+        // only (Lock C) — the color layer already rides above the core as one block from
+        // `shape`, and moves with it here, but never influences which octave wins.
+        const coreLenForCost = qualifiesForTiered(q) ? coreColorSplit(q).core.length : notes.length;
         let best=notes, bestCost=Infinity;
         for(let oct=-1; oct<=1; oct++){
           const cand=notes.map(n=>n+oct*12);
-          let cost=0; cand.forEach(n2=>{let b=Infinity;prev.forEach(n1=>{b=Math.min(b,Math.abs(n1-n2));});cost+=b;});
-          if(homeMean!=null){ const meanC=cand.reduce((a,b)=>a+b,0)/cand.length; cost+=REGISTER_PULL*Math.abs(meanC-homeMean); } // v26 gentle register pull
+          const candForCost=cand.slice(0,coreLenForCost);
+          let cost=0; candForCost.forEach(n2=>{let b=Infinity;prev.forEach(n1=>{b=Math.min(b,Math.abs(n1-n2));});cost+=b;});
+          if(homeMean!=null){ const meanC=candForCost.reduce((a,b)=>a+b,0)/candForCost.length; cost+=REGISTER_PULL*Math.abs(meanC-homeMean); } // v26 gentle register pull
           if(cost<bestCost){bestCost=cost;best=cand;}
         }
         notes=best;
@@ -3814,10 +4032,105 @@ function craftVLPenalty(cand, prev){
   // (see header). No term.
   return pen;
 }
-function smoothestCloseVoicing(orderedPCs, prev, homeMean){
+// --- Craft VL Phase B: tendency-tone scoring (leading-tone / chordal-7th) ------
+// New sibling to craftVLPenalty, not a modification of it — Phase A's already-verified
+// logic above is untouched. Same register-order voice pairing, same gating (the caller
+// only invokes this when craftVoiceLeading is on and voice counts match, identical to
+// craftVLPenalty). `prevTendency` is the descriptor tendencyInfoAt() computed for the
+// PREVIOUS chord's position, threaded in from voicingsForSeq() before the marker swap.
+// null/undefined prevTendency (old call sites that don't pass tendencyInfo at all, or a
+// previous chord that genuinely isn't dominant-functioning) makes this a pure no-op —
+// zero behavior change for every existing caller and every non-dominant transition.
+//
+// Design-lock common-tone/tendency policy: gated on whether the CANDIDATE already
+// legitimately contains the tendency tone's own original pitch class (e.g. Cmaj7's own
+// 7th is the same B that G7's 3rd/leading-tone is).
+//   - destination does NOT contain the original PC: normal resolve reward; a penalty
+//     if the resolution was reachable (target pc present somewhere in the candidate)
+//     but this specific voice didn't take it.
+//   - destination DOES contain the original PC: holding gets NO penalty (Phase A's
+//     commonTone reward governs that choice on its own, unchanged) — but a genuine
+//     stepwise resolution still gets a reward, at reduced strength, so a real B->C line
+//     in a V7->Imaj7 progression still reads as the more idiomatic choice on a close tie,
+//     without penalizing the legitimate common-tone alternative.
+const CRAFT_TENDENCY_W = {
+  resolve:      2,    // reward: tendency tone resolves correctly; destination doesn't
+                       // already legitimately contain the tendency tone's own PC
+  resolveHeld:  0.8,  // reduced reward: same resolution, but destination ALSO legitimately
+                       // contains the original PC (holding was an equally valid option)
+  unresolved:   1     // penalty: resolution was reachable but this voice didn't take it
+};
+function craftTendencyBonus(cand, prev, prevTendency){
+  if(!prevTendency) return 0;
+  const a=prev.slice().sort((x,y)=>x-y);
+  const b=cand.slice().sort((x,y)=>x-y);
+  if(a.length!==b.length) return 0;
+  const candPCs=new Set(b.map(n=>((n%12)+12)%12));
+  let cost=0;
+  const scoreOne=(tonePC,resolvesTo,expectedDelta)=>{
+    if(tonePC==null||resolvesTo==null) return;
+    const idx=a.findIndex(n=>((n%12)+12)%12===tonePC);
+    if(idx<0) return; // the previous voicing didn't actually voice this tendency tone
+    const destinationHoldsOriginal=candPCs.has(tonePC);
+    const mv=b[idx]-a[idx];
+    const resolvedHere=(((b[idx]%12)+12)%12)===resolvesTo && mv===expectedDelta;
+    if(resolvedHere){
+      cost -= destinationHoldsOriginal ? CRAFT_TENDENCY_W.resolveHeld : CRAFT_TENDENCY_W.resolve;
+    } else if(!destinationHoldsOriginal && candPCs.has(resolvesTo)){
+      cost += CRAFT_TENDENCY_W.unresolved;
+    }
+  };
+  if(prevTendency.ltPC!=null){
+    // Leading-tone resolution is always exactly +1 semitone by construction (that is
+    // the definition of a leading tone relative to its tonic) — computed generically
+    // rather than hardcoded, in case a future branch ever relaxes that guarantee.
+    const delta=((prevTendency.ltResolvesTo-prevTendency.ltPC+12)%12);
+    scoreOne(prevTendency.ltPC, prevTendency.ltResolvesTo, delta);
+  }
+  if(prevTendency.sevenPC!=null){
+    // Chordal-7th resolution is a downward step whose exact size (1 or 2 semitones)
+    // depends on which specific scale degree it lands on — derived generically from
+    // the actual target pitch classes, never hardcoded to "always a whole step."
+    const delta=-(((prevTendency.sevenPC-prevTendency.sevenResolvesTo)+12)%12);
+    scoreOne(prevTendency.sevenPC, prevTendency.sevenResolvesTo, delta);
+  }
+  return cost;
+}
+// Item 42 Phase 1: two new OPTIONAL trailing parameters, root and qualityName. Any call
+// site that omits them (none currently do outside this file's own call, but a test
+// harness might) falls straight through to the untouched legacy path below — byte-
+// identical rotation-over-every-tone search, unchanged since Craft VL Phase A/B.
+function smoothestCloseVoicing(orderedPCs, prev, homeMean, prevTendency, root, qualityName){
   const prevMean = prev.reduce((a,b)=>a+b,0)/prev.length;
   const nearestSum=cand=>{let c=0;cand.forEach(n2=>{let b=Infinity;prev.forEach(n1=>{b=Math.min(b,Math.abs(n1-n2));});c+=b;});return c;};
   let best=null, bestCost=Infinity;
+  const tiered = (root!=null) && qualityName!=null && qualifiesForTiered(qualityName);
+  if(tiered){
+    // Core-only rotation search (Lock A): the color layer never enters the rotation pool
+    // and never becomes an accidental bass candidate. Cost (Lock C) is scored on the
+    // CORE notes of each candidate only — nearestSum, the register-pull term, and both
+    // Craft terms all read candCore, never the full core+color candidate — so extension
+    // placement cannot influence which rotation/octave wins through array length,
+    // slicing, register pairing, or the Craft/tendency scoring, regardless of how many
+    // color tones a given quality carries.
+    const {core}=coreColorSplit(qualityName);
+    const coreLen=core.length;
+    for(let rot=0; rot<coreLen; rot++){
+      const shapeFull=buildTieredShape(root, qualityName, rot, 'close'); // core first, color appended
+      const bassPC=(root+core[rot])%12;
+      const baseBass = bassPC + 12*Math.round((prevMean - bassPC)/12);
+      for(let oct=-1; oct<=1; oct++){
+        const candFull=shapeFull.map(off=>baseBass+oct*12+off);
+        const candCore=candFull.slice(0,coreLen);
+        let cost=nearestSum(candCore);
+        if(homeMean!=null){ const meanC=candCore.reduce((a,b)=>a+b,0)/candCore.length; cost+=REGISTER_PULL*Math.abs(meanC-homeMean); }
+        if(craftVoiceLeading && prev.length===candCore.length) cost+=craftVLPenalty(candCore, prev)+craftTendencyBonus(candCore, prev, prevTendency);
+        if(cost<bestCost){bestCost=cost;best=candFull;}
+      }
+    }
+    return best;
+  }
+  // --- Legacy path — byte-identical to pre-item-42, unchanged since Craft VL Phase B ---
   for(let rot=0; rot<orderedPCs.length; rot++){
     const rotated=orderedPCs.slice(rot).concat(orderedPCs.slice(0,rot));
     const shape=styleVoicing(rotated,'close');
@@ -3830,7 +4143,7 @@ function smoothestCloseVoicing(orderedPCs, prev, homeMean){
       // to a no-op, preserving byte-for-byte behaviour when no anchor has been seeded.
       let cost=nearestSum(cand);
       if(homeMean!=null){ const meanC=cand.reduce((a,b)=>a+b,0)/cand.length; cost+=REGISTER_PULL*Math.abs(meanC-homeMean); }
-      if(craftVoiceLeading && prev.length===cand.length) cost+=craftVLPenalty(cand, prev); // item 24: craft-rule weighting; false-gated so OFF is byte-identical to pre-item-24
+      if(craftVoiceLeading && prev.length===cand.length) cost+=craftVLPenalty(cand, prev)+craftTendencyBonus(cand, prev, prevTendency); // item 24 + Craft VL Phase B: craft-rule + tendency-tone weighting; both false-gated so OFF is byte-identical to pre-item-24, and prevTendency null/absent makes the Phase B term a pure no-op
       if(cost<bestCost){bestCost=cost;best=cand;}
     }
   }
@@ -4242,11 +4555,132 @@ const cadencePullClass = {
   Mixolydian: {10:'modal'},            // bVII (characteristic)
   Aeolian:    {10:'modal'},            // bVII
   Locrian:    {}                       // only pull (bII, str 1) is sub-threshold: no event
+  ,
+  // Item 11: raised-7th leading tone makes these tonal, not modal. HM: V and vii°7 both tonal.
+  // MM: V and viiø tonal (viiø weaker via modeCadences strength). IV7 is signature colour and is
+  // deliberately absent here — it is not a tonic-directed cadence.
+  "Harmonic Minor": {7:'tonal', 11:'tonal'},
+  "Melodic Minor":  {7:'tonal', 11:'tonal'}
 };
 function cadencePullKind(root,kr,km){
   const off=((root-kr)%12+12)%12;
   return (cadencePullClass[km]||{})[off] || 'modal';
 }
+
+// --- Craft VL Phase B: tendency-tone (leading-tone / chordal-7th) detection ---
+// tendencyInfoAt(i) determines, for the chord at real seq index i, whether it is
+// genuinely dominant-functioning in its local key context, and if so which pitch
+// classes carry leading-tone and/or chordal-7th tendency and what each resolves to.
+// Reuses only existing harmonic authorities (nativeDegreeByFunction, cadencePullClass,
+// secDomStatusAt/secondaryDominants — item 50, broadened — and borrowedStatusAt —
+// item 46); no parallel theory table. Called from voicingsForSeq() (see below), never
+// from inside computeVoicings itself — computeVoicings only receives the seq-swap-safe
+// array this produces (see the marker-swap note at voicingsForSeq).
+//
+// dominantChordRole classifies a chord's OWN played guide tones (not a reference/table
+// quality) into a role:
+//   'V'   — major-3rd-or-absent + minor-7th (covers plain/altered dominant-7 chords AND
+//           dominant-sus chords like 9sus4/13sus4, which have no 3rd to carry a leading
+//           tone but still carry the resolving b7 — Craft VL Phase B design-lock: no
+//           fabricated leading tone when the 3rd isn't actually voiced).
+//   'vii' — diminished-5th + (minor-7th or diminished-7th): the half-diminished/
+//           diminished-7 vii° shape, where the ROOT itself is the leading tone.
+//   null  — anything else (major-7/minor-7/etc. family — no dominant guide tones).
+function dominantChordRole(g){
+  if(!g) return null;
+  if(g.seventh==='m7' && g.third!=='m') return 'V';
+  if(g.dimFifth && (g.seventh==='m7'||g.seventh==='d7')) return 'vii';
+  return null;
+}
+// Generic chordal-7th resolution target: the third of the target chord, derived from
+// that chord's OWN diatonic quality (major or minor third) rather than assumed — so a
+// minor-key resolution target (e.g. Aeolian's native i, minor 7) is handled the same
+// generic way a major-key one is, no per-mode special-casing.
+function targetThirdPC(targetRoot, targetQuality){
+  const g=chordGuideTones(targetQuality);
+  const interval=(g && g.third==='m') ? 3 : 4;
+  return (targetRoot+interval)%12;
+}
+function tendencyInfoAt(i){
+  const s=seq[i]; if(!s||isMarker(s)) return null;
+  const ch=lib[s.idx];
+  const kc=keyContextAt(i);
+  const ds=diatonicChords(kc.keyRoot,kc.keyMode);
+  const dm=nativeDegreeByFunction(s.root,ch.n,ds);
+  const g=chordGuideTones(ch.n);
+  const role=dominantChordRole(g);
+  if(!role) return null; // this chord's own guide tones aren't dominant-family at all
+
+  let targetRoot=null, targetQuality=null, origin=null;
+
+  // Native classification always takes precedence — matches the native > secdom >
+  // borrowed cascade used everywhere else in the app (item 50's own comment on
+  // secDomStatusAt states this explicitly). Critically, this means a chord native to
+  // its own root position NEVER falls through to the secondary-dominant or borrowed
+  // branches below, even when it isn't tonal — a native MODAL degree (e.g. Aeolian's
+  // bVII, which has dominant-7 guide tones) must not be reclassified as a secondary
+  // dominant of some OTHER degree just because its root happens to coincide with what
+  // a non-native chord at that root could otherwise be read as. Without this gate,
+  // Aeolian's native bVII (root = tonic+10) would incorrectly match as V/bIII (since
+  // a non-tonic Aeolian degree's own dominant root can coincide with bVII's root),
+  // reintroducing exactly the modal-pull-misread-as-tonal-pull trap this whole design
+  // exists to avoid.
+  if(dm){
+    // Branch 1 — native tonal dominant (Ionian V/vii°, Lydian V, etc.). Gated on
+    // cadencePullClass being 'tonal' at this offset — this is what correctly excludes
+    // Lydian's native V (major 7, no dominant guide tones despite being 'tonal'-
+    // classified — role would be null there anyway) and Aeolian's native bVII
+    // (dominant-7 guide tones, role WOULD be 'V', but bVII's offset is 'modal' — root
+    // motion by a whole step, not a leading-tone semitone pull).
+    if(cadencePullKind(s.root,kc.keyRoot,kc.keyMode)==='tonal'){
+      targetRoot=kc.keyRoot; targetQuality=ds.find(d=>d.root===kc.keyRoot).quality;
+      origin='nativeTonal';
+    }
+  } else {
+    // Branch 2 — secondary dominant, via the shared, now-broadened secDomStatusAt()
+    // (item 50). No Phase-B-local classifier — consumes the authority directly.
+    const sd=secDomStatusAt(i);
+    if(sd.isSecDom){
+      targetRoot=sd.target; targetQuality=ds.find(d=>d.root===sd.target).quality;
+      origin='secondaryDominant';
+    } else {
+      // Branch 3 — borrowed tonal dominant (the minor-key raised-leading-tone case,
+      // e.g. E7 -> Am in A Aeolian). Detection reuses borrowedStatusAt()/
+      // findBorrowedFrom()'s modal-interchange machinery — a chord borrowed from a
+      // source mode where THIS SAME degree offset is itself 'tonal' in that source
+      // mode's own cadencePullClass entry. Design-lock: the origin tag is
+      // 'minorRaisedTendency', not a borrowed-chord label — any future explanation
+      // text must read from this tag, never from bs.sources' mode name, so the
+      // musical reason stays "minor-key dominant / raised leading tone," never
+      // "borrowed from Ionian."
+      const bs=borrowedStatusAt(i);
+      if(bs.isBorrowed){
+        const tonalSrc=bs.sources.find(src=>(cadencePullClass[src.mode]||{})[src.off]==='tonal');
+        if(tonalSrc){
+          targetRoot=kc.keyRoot; targetQuality=ds.find(d=>d.root===kc.keyRoot).quality;
+          origin='minorRaisedTendency';
+        }
+      }
+    }
+  }
+  if(!origin) return null;
+
+  const out={origin, targetRoot};
+  if(role==='V'){
+    // Design-lock: leading tone ONLY when the 3rd is actually voiced (major 3rd present).
+    // A dominant-sus chord (g.third===null) still gets the chordal-7th tendency below,
+    // just never a fabricated leading-tone resolution.
+    if(g.third==='M'){ out.ltPC=(s.root+4)%12; out.ltResolvesTo=targetRoot; }
+    out.sevenPC=(s.root+10)%12; out.sevenResolvesTo=targetThirdPC(targetRoot,targetQuality);
+  } else if(role==='vii'){
+    // v1 scope (design-lock): only the root-as-leading-tone rule for vii°-type chords —
+    // no chordal-7th rule here (that chord's own 7th resolution is a separate, less
+    // universally-agreed four-part-writing convention, deliberately out of scope).
+    out.ltPC=s.root; out.ltResolvesTo=targetRoot;
+  }
+  return out;
+}
+
 // chordRoots: array of pitch-class roots in sequence order. Returns cadence events,
 // each {at, type}: 'at' is the 0-indexed position of the strong-pull chord involved.
 // 'type' encodes BOTH the pull's tonal/modal class and its resolution outcome — the
@@ -4299,7 +4733,9 @@ const qualitySymbol={major:'',minor:'m','diminished':'\u00B0',augmented:'+','maj
   'half-diminished 9':'m9\u266D5','half-diminished 11':'m11\u266D5',
   // Keyboard-grip color chords.
   '6':'6','6/9':'6/9','minor 6/9':'m6/9','9sus4':'9sus4','13sus4':'13sus4',
-  'dominant 7 #5 #9':'7\u266F5\u266F9'};
+  'dominant 7 #5 #9':'7\u266F5\u266F9',
+  // Item 11: maj7 with raised 5th.
+  'augmented major 7':'maj7\u266F5'};
 function fifthsIdx(pc){ return (((pc%12)+12)%12)*7%12; }
 function posAtAngleDeg(angleDeg,cx,cy,R){
   const a=angleDeg*Math.PI/180;
@@ -4317,7 +4753,10 @@ function fifthsBandStart(keyRoot,keyMode){
       if(ok) return s;
     }
   }
-  return 0;
+  // Item 11: no contiguous 7-position fifths run (Harmonic/Melodic Minor are not a rotation of a
+  // major scale). Return -1 so the caller suppresses the misleading band rather than drawing a
+  // false one anchored at position 0. The seven church modes always find a run and never reach here.
+  return -1;
 }
 // Renders one ring: the key's diatonic band, 12 reference dots, and the given chords'
 // root motion. Adjacent-fifths edges (delta 1) draw as a curved arc hugging the rim;
@@ -4328,10 +4767,15 @@ function renderFifthsCircle(chordMetas,labels,keyRoot,keyMode,cx,cy,R,rotOffsetD
   posOffset=posOffset||0;
   let svg='';
   const bStart=fifthsBandStart(keyRoot,keyMode);
-  const bandAngleStart=rotOffsetDeg+bStart*30-15;
-  const bp1=posAtAngleDeg(bandAngleStart,cx,cy,R+R*0.27);
-  const bp2=posAtAngleDeg(bandAngleStart+210,cx,cy,R+R*0.27);
-  svg+=`<path d="M${bp1.x.toFixed(1)},${bp1.y.toFixed(1)} A${(R+R*0.27).toFixed(1)},${(R+R*0.27).toFixed(1)} 0 1,1 ${bp2.x.toFixed(1)},${bp2.y.toFixed(1)}" fill="none" stroke="${bandColor}" stroke-width="${(R*0.24).toFixed(1)}" stroke-linecap="round" opacity="0.35"/>`;
+  // Item 11: draw the contiguous diatonic band only when one genuinely exists (the seven church
+  // modes). Harmonic/Melodic Minor return -1 and get no band — the reference dots, chord nodes, and
+  // root-motion edges below still render; only the misleading contiguous arc is omitted.
+  if(bStart>=0){
+    const bandAngleStart=rotOffsetDeg+bStart*30-15;
+    const bp1=posAtAngleDeg(bandAngleStart,cx,cy,R+R*0.27);
+    const bp2=posAtAngleDeg(bandAngleStart+210,cx,cy,R+R*0.27);
+    svg+=`<path d="M${bp1.x.toFixed(1)},${bp1.y.toFixed(1)} A${(R+R*0.27).toFixed(1)},${(R+R*0.27).toFixed(1)} 0 1,1 ${bp2.x.toFixed(1)},${bp2.y.toFixed(1)}" fill="none" stroke="${bandColor}" stroke-width="${(R*0.24).toFixed(1)}" stroke-linecap="round" opacity="0.35"/>`;
+  }
   svg+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--bdr)" stroke-width="0.5"/>`;
   for(let idx=0;idx<12;idx++){
     const p=circleFifthsPos(idx,cx,cy,R,rotOffsetDeg);
@@ -4501,7 +4945,7 @@ function exportTheory(){
 
     return {i:ci+1, label, fn, fnDisplay, fnClass, region, chromaticColorNote, borrowDisclosure, pitchNative:pcStatus.native,
             notes, dur:durLabels[dur]+(isOverride?' \u25CF':''),
-            voicingNames, col:ch.col, kr:lkr, km:lkm, keyName:selfSpell(lkr)+' '+lkm};
+            voicingNames, col:ch.col, kr:lkr, km:lkm, keyName:keySpell(lkr,lkr,lkm)+' '+lkm};
   });
 
   // Voice-leading stats — chords only, so a modulation doesn't break the VL chain.
@@ -4628,7 +5072,7 @@ function exportTheory(){
       const segKr=chordEntries[segStart].kr, segKm=chordEntries[segStart].km;
       let segEnd=segStart;
       while(segEnd+1<chordEntries.length && chordEntries[segEnd+1].kr===segKr && chordEntries[segEnd+1].km===segKm) segEnd++;
-      segsText.push({name:selfSpell(segKr)+' '+segKm, from:segStart+1, to:segEnd+1});
+      segsText.push({name:keySpell(segKr,segKr,segKm)+' '+segKm, from:segStart+1, to:segEnd+1});
       segStart=segEnd+1;
     }
     keyRegionsHtml=`<h2>Key regions</h2><div class="chain">${segsText.map(sg=>
@@ -4694,7 +5138,7 @@ function exportTheory(){
     const sx=A.x+15*ux,sy=A.y+15*uy,ex=B.x-15*ux,ey=B.y-15*uy;
     const connFamKey=connCls.fam==='none'?'step':connCls.fam;
     const connSvg=`<line x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="${connColor}" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#fcArrow-${connFamKey})"/>`;
-    const keyLegendHtml=`<div class="fc-legend" style="margin-top:0;"><span><i class="fc-sw" style="background:${col1}"></i>${selfSpell(seg1.kr)} ${seg1.km}</span><span><i class="fc-sw" style="background:${col2}"></i>${selfSpell(seg2.kr)} ${seg2.km}</span></div>`;
+    const keyLegendHtml=`<div class="fc-legend" style="margin-top:0;"><span><i class="fc-sw" style="background:${col1}"></i>${keySpell(seg1.kr,seg1.kr,seg1.km)} ${seg1.km}</span><span><i class="fc-sw" style="background:${col2}"></i>${keySpell(seg2.kr,seg2.kr,seg2.km)} ${seg2.km}</span></div>`;
     motionDiagramHtml=`<h2>Root motion &amp; key change</h2><svg viewBox="0 0 680 640" width="100%" style="max-width:520px;display:block;margin:0 auto;">${fcArrowDefs}${c1.svg}${c2.svg}${connSvg}</svg>${repeatsDetailHtml([...(c1.repeats||[]),...(c2.repeats||[])])}${keyLegendHtml}${relLegendHtml}`;
   } else if(chordMeta.length>1 && segs.length>=3){
     // Backlog item (baked-in modulation toggle): 2+ modulations means 3+ key segments,
@@ -4728,7 +5172,7 @@ function exportTheory(){
       const pairSvg=`<svg viewBox="0 0 680 640" width="100%" style="max-width:520px;display:block;margin:0 auto;">${fcArrowDefs}${c1.svg}${c2.svg}${connSvg}</svg>${repeatsDetailHtml([...(c1.repeats||[]),...(c2.repeats||[])])}`;
       pairBlocks.push({
         id:`modpair-${k}`,
-        optionLabel:`${selfSpell(seg1.kr)} ${seg1.km} \u2192 ${selfSpell(seg2.kr)} ${seg2.km} (chords ${seg1.from+1}\u2013${seg2.to+1})`,
+        optionLabel:`${keySpell(seg1.kr,seg1.kr,seg1.km)} ${seg1.km} \u2192 ${keySpell(seg2.kr,seg2.kr,seg2.km)} ${seg2.km} (chords ${seg1.from+1}\u2013${seg2.to+1})`,
         svg:pairSvg
       });
     }
@@ -4741,10 +5185,15 @@ function exportTheory(){
     // whole progression with its stable color, shown once above the diagrams rather than
     // re-derived per pair — this is the visible half of the color-continuity fix.
     const distinctKeyLegendHtml=`<div class="fc-legend" style="margin-top:0;">${segs.map(s=>
-      `<span><i class="fc-sw" style="background:${keyColors[s.kr+'|'+s.km]}"></i>${selfSpell(s.kr)} ${s.km}</span>`
+      `<span><i class="fc-sw" style="background:${keyColors[s.kr+'|'+s.km]}"></i>${keySpell(s.kr,s.kr,s.km)} ${s.km}</span>`
       // de-dupe: only first occurrence of each key id contributes a legend entry
       ).filter((html,idx)=>{ const id=segs[idx].kr+'|'+segs[idx].km; return segs.findIndex(s2=>s2.kr+'|'+s2.km===id)===idx; }).join('')}</div>`;
     motionDiagramHtml=`<h2>Root motion &amp; key change</h2>${modToggleHtml}${distinctKeyLegendHtml}${pairDivsHtml}${relLegendHtml}`;
+  }
+  // Item 11: when any rendered segment is a minor SCALE (Harmonic/Melodic Minor), note why the
+  // contiguous fifths band is absent — the diagram still shows real roots/chords/root-motion.
+  if(motionDiagramHtml && segs.some(sg=>MINOR_SCALES.includes(sg.km))){
+    motionDiagramHtml+=`<p class="section-note" style="max-width:640px;margin:6px auto 0;">The contiguous diatonic fifths band is omitted for Harmonic Minor and Melodic Minor: these scales do not form the same seven consecutive fifths as the seven church modes. The roots, chords, and root motion shown are unaffected.</p>`;
   }
   const transRows=transitions.map((t,k)=>`
     <tr>
@@ -4880,7 +5329,7 @@ ${motionDiagramHtml?motionDiagramHtml:(transitions.length?`<h2>Motion &amp; voic
     <dt>VL \u0394</dt>
     <dd>Exact optimal voice-leading minimum per transition \u2014 bijective assignment, smaller chord doubles a tone when sizes differ. Same figure the summary above averages.</dd>
     <dt>Other marks</dt>
-    <dd>\u25CF = per-chord duration override. Note-spelling follows the key signature and may render flat-side tones with sharps \u2014 enharmonic respelling is a known limitation.</dd>${hasModulation?`
+    <dd>\u25CF = per-chord duration override. Diatonic scale-degree spelling is key-aware. Some chromatic or borrowed tones may still use a generic enharmonic spelling.</dd>${hasModulation?`
     <dt>Key changes</dt>
     <dd>This progression modulates. Every function label, Roman numeral, region, and cadence above is read in the key active at that point \u2014 the "Key regions" section lists where each key starts. Voice-leading motion is measured straight across a key change, since the notes move continuously even when the key label doesn't.</dd>`:''}
   </dl>
@@ -4999,7 +5448,13 @@ let seq=[
   {idx:6,  root:0, startUnit:96,  dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cm7    — i
   {idx:4,  root:10,startUnit:108, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Bbmaj7 — bVII, goes to bVI -> Modal pull does not resolve to tonic
   {idx:4,  root:8, startUnit:120, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Abmaj7 — bVI (sub-threshold, no event)
-  {idx:4,  root:10,startUnit:132, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Bbmaj7 — bVII, final chord of segment -> Unresolved modal pull
+  {idx:4,  root:10,startUnit:132, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Bbmaj7 — bVII, final chord of segment -> Unresolved modal pull
+  {marker:true, keyRoot:0, keyMode:'Harmonic Minor', meter:null},                                                              // Item 11 demo: home becomes C Harmonic Minor from here on
+  {idx:9,  root:0, startUnit:144, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cm(maj7) — i (Harmonic Minor tonic; the minor-major-7)
+  {idx:35, root:3, startUnit:156, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Eb+maj7  — III+ (augmented major 7, the Item 11 colour chord)
+  {idx:6,  root:5, startUnit:168, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Fm7      — iv (weak/plagal)
+  {idx:5,  root:7, startUnit:180, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // G7       — V7, raised-7th leading tone -> strong TONAL pull to i
+  {idx:9,  root:0, startUnit:192, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Cm(maj7) — i (strong tonal pull resolves)
 ];
 // Whole-progression register bias, in octaves (each unit = ±12 semitones). Applied as a
 // post-process in voicingsForSeq() — never touches computeVoicings (protected) or the
@@ -5285,25 +5740,32 @@ function meterRegions(){
 }
 // Total beats/bars ACTUALLY OCCUPIED by the progression (not the full grid length, which
 // may have deliberate empty room at the end) — bars are summed separately within each
-// contiguous run of the same time signature rather than a flat ÷4 that would silently
-// assume 4/4 throughout. Shared by the analysis export and the Rhythm tab's running total
-// so the two figures can never drift.
+// contiguous meter REGION (via meterRegions(), positioned by real chord/marker start
+// beats) rather than a flat ÷4 that would silently assume 4/4 throughout. Shared by the
+// analysis export and the Rhythm tab's running total so the two figures can never drift.
+// v71 fix: totalBars now derives from the same full timeline SPAN as totalBeats (region
+// end minus region start, in real beats) instead of summing each chord's own sounding
+// duration — the old approach silently dropped any gap/rest between chords from the bar
+// count while totalBeats correctly included it, so a progression with a rest could report
+// a beat count and a bar count that described two different span lengths (e.g. "20 beats"
+// alongside a bar figure computed from only 19.5 sounding beats). A region with no rests
+// still gets the same answer either way, since summed durations then equal the span.
 function progressionBarsBeats(){
   const {starts}=beatLayout();
-  const sigToMeter=sig=>{const [n,d]=sig.split('/').map(Number);return {num:n,den:d};};
-  let totalBeats=0, totalBars=0, runBeats=0, runSig=null, lastEnd=0;
+  let lastEnd=0;
   seq.forEach((s,i)=>{
     if(isMarker(s)) return;
     const dur=DUR_BEATS[getChordDur(s)]||2;
-    const end=starts[i]+dur;
-    lastEnd=Math.max(lastEnd,end);
-    const mt=meterContextAt(i);
-    const sig=mt.num+'/'+mt.den;
-    if(runSig!==null && sig!==runSig){ totalBars+=runBeats/barQuarters(sigToMeter(runSig)); runBeats=0; }
-    runSig=sig; runBeats+=dur;
+    lastEnd=Math.max(lastEnd,starts[i]+dur);
   });
-  totalBeats=lastEnd;
-  if(runSig!==null) totalBars+=runBeats/barQuarters(sigToMeter(runSig));
+  const totalBeats=lastEnd;
+  const regions=meterRegions(); // chronological [{startBeat,meter}, ...], first entry always startBeat:0
+  let totalBars=0;
+  for(let r=0;r<regions.length;r++){
+    const regionStart=regions[r].startBeat;
+    const regionEnd=(r+1<regions.length)?regions[r+1].startBeat:totalBeats;
+    if(regionEnd>regionStart) totalBars+=(regionEnd-regionStart)/barQuarters(regions[r].meter);
+  }
   return {totalBeats, totalBars};
 }
 // seq with markers stripped, plus a map from chord-only index -> real seq index, so a
@@ -5318,7 +5780,12 @@ function chordView(){
 // alignment every renderer depends on. computeVoicings itself is never touched.
 function voicingsForSeq(){
   const {chords,map}=chordView();
-  const cv=computeVoicings(chords);
+  // Craft VL Phase B: tendency context computed HERE, against REAL seq indices (map[ci]),
+  // BEFORE the marker-stripped array is handed to computeVoicings — the same seq-swap
+  // fix pattern already established for buildMidi/downloadMidi (item 28). computeVoicings
+  // never calls keyContextAt() itself; it only ever receives this already-resolved array.
+  const tendencyInfo=map.map(seqIdx=>tendencyInfoAt(seqIdx));
+  const cv=computeVoicings(chords, tendencyInfo);
   const full=new Array(seq.length).fill(null);
   map.forEach((seqIdx,ci)=>{ full[seqIdx]=cv[ci]; });
   if(cv._caveats){ // preserve the side-channel caveats, re-indexed to full seq positions
@@ -5443,12 +5910,17 @@ function setSuggMode(m){
   syncSessionKeyControls();
 }
 
+// Populate a Key-root dropdown with the 12 pitch classes, each labelled through the contextual
+// tonic authority for mode `km`, preserving the numeric selection. Shared by every control that
+// selects a KEY (Build, Session, marker editor) so their labels track the current mode. Changing
+// the control still emits only the pitch class; the mode is unchanged.
+function fillKeyRootSelect(sel,km,selectedPc){
+  sel.innerHTML=Array.from({length:12},(_,i)=>`<option value="${i}"${i===selectedPc?' selected':''}>${tonicLabel(i,km)}</option>`).join('');
+  sel.value=String(selectedPc);
+}
 function buildKeyRoots(){
-  if(keyRootsWrap.options.length===0){
-    keyRootsWrap.innerHTML=sharpNames.map((_,i)=>`<option value="${i}">${selfSpell(i)}</option>`).join('');
-    keyRootsWrap.onchange=()=>selectKeyRoot(parseInt(keyRootsWrap.value,10));
-  }
-  keyRootsWrap.value=String(keyRoot);
+  fillKeyRootSelect(keyRootsWrap,keyMode,keyRoot);
+  if(!keyRootsWrap.onchange) keyRootsWrap.onchange=()=>selectKeyRoot(parseInt(keyRootsWrap.value,10));
 }
 
 // Shared selector: called by the Build tab's key dropdown AND the Session
@@ -5466,7 +5938,7 @@ function selectKeyRoot(i){
 const modesWrap=document.getElementById('build-keymode');
 function buildModes(){
   if(modesWrap.options.length===0){
-    modesWrap.innerHTML=modeOrder.map(m=>`<option value="${m}">${m}</option>`).join('');
+    modesWrap.innerHTML=modeOptionsHtml(keyMode);
     modesWrap.onchange=()=>selectKeyMode(modesWrap.value);
   }
   modesWrap.value=keyMode;
@@ -5476,7 +5948,7 @@ function buildModes(){
 // tab's mode dropdown.
 function selectKeyMode(m){
   keyMode=m;currentRoot=keyRoot;borrowMode=null;
-  buildModes();buildRoots();renderDots();renderAll();
+  buildModes();buildKeyRoots();buildRoots();renderDots();renderAll();
   updateModeNote();populateRandStart();renderBorrowedModes();renderBorrowedChords();
   syncSessionKeyControls();
 }
@@ -5488,8 +5960,8 @@ function populateSessionKeyControls(){
         kmEl=document.getElementById('sess-keymode'),
         smEl=document.getElementById('sess-suggmode');
   if(!krEl||!kmEl||!smEl) return;
-  krEl.innerHTML=sharpNames.map((_,i)=>`<option value="${i}">${selfSpell(i)}</option>`).join('');
-  kmEl.innerHTML=modeOrder.map(m=>`<option value="${m}">${m}</option>`).join('');
+  fillKeyRootSelect(krEl,keyMode,keyRoot);
+  kmEl.innerHTML=modeOptionsHtml(keyMode);
   const suggLabels={atonal:'atonal · common tones',functional:'functional · root motion',geometric:'geometric · least motion'};
   smEl.innerHTML=Object.keys(suggLabels).map(k=>`<option value="${k}">${suggLabels[k]}</option>`).join('');
   krEl.onchange=()=>selectKeyRoot(parseInt(krEl.value,10));
@@ -5505,7 +5977,7 @@ function syncSessionKeyControls(){
   const krEl=document.getElementById('sess-keyroot'),
         kmEl=document.getElementById('sess-keymode'),
         smEl=document.getElementById('sess-suggmode');
-  if(krEl) krEl.value=String(keyRoot);
+  if(krEl) fillKeyRootSelect(krEl,keyMode,keyRoot);
   if(kmEl) kmEl.value=keyMode;
   if(smEl) smEl.value=mode;
 }
@@ -5993,7 +6465,7 @@ function updateInsertNote(){
     const at=insertAt<=0?0:insertAt-1;
     const kc=keyContextAt(at);
     if(kc.keyRoot!==keyRoot||kc.keyMode!==keyMode){
-      regionNote=` This spot is in the <strong>${selfSpell(kc.keyRoot)} ${kc.keyMode}</strong> region, so the map below has switched to that key for this insert.`;
+      regionNote=` This spot is in the <strong>${keySpell(kc.keyRoot,kc.keyRoot,kc.keyMode)} ${kc.keyMode}</strong> region, so the map below has switched to that key for this insert.`;
     }
   }
   el.innerHTML = `<span class="insert-note-msg">Insert mode: the next chord you click on the map (or secondary dominant) will be placed ${pos}.${regionNote} You can also drop a key change here with <strong>+ key change</strong> below.</span> <strong id="cancel-insert" class="insert-note-cancel" style="cursor:pointer;">cancel</strong>`;
@@ -6049,8 +6521,8 @@ function renderPassingSuggestions(){
 function renderMarkerEditorInto(el,i,m){
   if(!el) return;
   const mMeter=m.meter||timeSignature;
-  const rootOpts=sharpNames.map((_,k)=>`<option value="${k}"${k===m.keyRoot?' selected':''}>${selfSpell(k)}</option>`).join('');
-  const modeOpts=modeOrder.map(mm=>`<option value="${mm}"${mm===m.keyMode?' selected':''}>${mm}</option>`).join('');
+  const rootOpts=Array.from({length:12},(_,k)=>`<option value="${k}"${k===m.keyRoot?' selected':''}>${tonicLabel(k,m.keyMode)}</option>`).join('');
+  const modeOpts=modeOptionsHtml(m.keyMode);
   const meterOpts=TIME_SIGNATURES.map(([n,d])=>`<option value="${n}/${d}"${n===mMeter.num&&d===mMeter.den?' selected':''}>${n}/${d}</option>`).join('');
   el.style.display='block';
   el.innerHTML=`<div class="marker-editor-inner">
@@ -6061,7 +6533,7 @@ function renderMarkerEditorInto(el,i,m){
     <select class="marker-select marker-meter-select">${meterOpts}</select>
     <button class="marker-done-btn marker-done-select">done</button>
   </div>
-  <p class="section-note" style="margin:6px 0 0;">Everything from this point on reads in ${selfSpell(m.keyRoot)} ${m.keyMode}${mMeter.num&&mMeter.den?`, in ${mMeter.num}/${mMeter.den}`:''}. Chords before it are unchanged.</p>`;
+  <p class="section-note" style="margin:6px 0 0;">Everything from this point on reads in ${keySpell(m.keyRoot,m.keyRoot,m.keyMode)} ${m.keyMode}${mMeter.num&&mMeter.den?`, in ${mMeter.num}/${mMeter.den}`:''}. Chords before it are unchanged.</p>`;
   el.querySelector('.marker-root-select').onchange=e=>setMarkerKey(i,parseInt(e.target.value,10));
   el.querySelector('.marker-mode-select').onchange=e=>setMarkerMode(i,e.target.value);
   el.querySelector('.marker-meter-select').onchange=e=>{const [n,d]=e.target.value.split('/').map(Number);setMarkerMeter(i,n,d);};
@@ -6199,7 +6671,7 @@ function renderRhythmTab(){
     wrap.appendChild(div);
     const lbl=document.createElement('span');
     lbl.className='rhythm-marker-label'; lbl.style.left=x+'px';
-    lbl.textContent='\u2192 '+selfSpell(s.keyRoot)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
+    lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     lbl.onclick=openEditor;
     wrap.appendChild(lbl);
   });
@@ -7717,7 +8189,7 @@ function renderStrip(voicings){
       mg.className='chip-group key-marker-group';
       const pill=document.createElement('div');
       pill.className='key-marker-chip'+(editingMarkerIndex===i?' editing':'');
-      pill.innerHTML=`\u2192 key: <strong>${selfSpell(s.keyRoot)} ${s.keyMode}</strong>`;
+      pill.innerHTML=`\u2192 key: <strong>${keySpell(s.keyRoot,s.keyRoot,s.keyMode)} ${s.keyMode}</strong>`;
       pill.title='Click to change this key. Everything from here on reads in it.';
       pill.style.cursor='pointer';
       pill.onclick=()=>{editingMarkerIndex=(editingMarkerIndex===i)?null:i;renderStrip(window._voicings||[]);renderMarkerEditor();};
@@ -8007,7 +8479,11 @@ function renderMelodyPanel(voicings){
 // immediately. Applied everywhere this row appears — Ricky's call, one consistent
 // behavior rather than two different rules depending on which panel you're in.
 function buildInvOptionsRow(s, ch){
-  const numVoices=intervalMap[ch.n].length;
+  // Item 42 Phase 1: for a qualifying 5+-voice extended chord, only the core tones are
+  // legal inversion/bass candidates — a color tone (9th/11th/13th) never appears as an
+  // option here, matching the automatic-search rule. For every other quality this is
+  // exactly the prior min(numVoices,4) cap, unchanged.
+  const numVoices = qualifiesForTiered(ch.n) ? coreInversionCount(ch.n) : intervalMap[ch.n].length;
   const invLabels=['root','1st','2nd','3rd'];
   const mvSet=Array.isArray(s.manualVoicing)&&s.manualVoicing.length>0;
   const row=document.createElement('div');
@@ -8379,7 +8855,7 @@ function renderRoll(voicings){
       stroke:'var(--secdom)','stroke-width':1.5,'stroke-dasharray':'4 3',opacity:0.85}));
     const lbl=mk('text',{x:x,y:padTop-8,'text-anchor':'middle',fill:'var(--secdom)',
       'font-family':'var(--font-mono)','font-size':'10','font-weight':'600'});
-    lbl.textContent='\u2192 '+selfSpell(s.keyRoot)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
+    lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     roll.appendChild(lbl);
   });
   // Dots + key-aware note labels. Every dot gets a <title> (native hover tooltip) so the
@@ -8698,7 +9174,7 @@ function renderNotesRoll(voicings){
     content.appendChild(div);
     const lbl=document.createElement('div');
     lbl.className='notes-key-marker-label'; lbl.style.left=x+'px';
-    lbl.textContent='\u2192 '+selfSpell(s.keyRoot)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
+    lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     labelInner.appendChild(lbl);
   });
 
@@ -10223,7 +10699,10 @@ function loadState(file){
       }
       // Validate seq entries. A v6 key marker ({marker:true,keyRoot,keyMode}) is validated on
       // its own terms; chord entries validate exactly as before. Older files have no markers.
-      const validMode=km=>modeOrder.includes(km);
+      // Item 11: markers may carry HM/MM now, so validate against the full selectable-context
+      // authority (the same list the UI offers), not modeOrder. Old seven-mode saves still pass;
+      // global keyMode is any string (applied below), HM/MM included.
+      const validMode=km=>SELECTABLE_CONTEXTS.includes(km);
       const validMeter=mt=>!mt || (typeof mt.num==='number' && mt.num>0 && typeof mt.den==='number' && mt.den>0);
       for(const s of state.seq){
         if(s&&s.marker){
@@ -10295,7 +10774,25 @@ function loadState(file){
         root:s.root,
         bass:s.bass??null,
         melody:s.melody??null,
-        inv:s.inv??0,
+        // Item 42 Phase 1 migration: a color tone (9th/11th/13th) can no longer be an
+        // explicit inversion/bass candidate for a qualifying 5+-voice extended chord. A
+        // file saved before this shipped could carry an inv value that reached into color
+        // territory under the old unrestricted picker — currently only possible on
+        // dominant 7 b13's 3-tone core, whose old 4-option picker exposed a "3rd inversion"
+        // that put its color 9th in the bass. Rather than grandfather that one case in
+        // (which would keep a live architectural exception around indefinitely), migrate
+        // down to the highest still-legal core inversion — inv=2 for that chord today —
+        // and preserve invLocked as-is below; only the numeric inv value is corrected.
+        // Deliberate compatibility change, not a bug: see chord_space_changelog.md.
+        inv:(function(){
+          const rawInv=s.inv??0;
+          const qn=(lib[s.idx]&&lib[s.idx].n)||null;
+          if(qn && qualifiesForTiered(qn)){
+            const maxInv=coreInversionCount(qn)-1;
+            if(rawInv>maxInv) return maxInv;
+          }
+          return rawInv;
+        })(),
         // invLocked (item 30): explicit "the bass is user-locked" flag. Files saved before
         // this flag existed carry no field → migrate by locking iff a non-root inversion was
         // set (inv>0), which is exactly the pre-flag behavior; pre-flag root position was
@@ -10687,7 +11184,10 @@ const QUALITY_PREF = {
   // to minor 7's tier 1), and "6/9" is pitch-identical to a "9sus4" a 4th below
   // (tier 3 loses to 9sus4's tier 2). "13sus4"/"minor 6/9" grouped with their nearest
   // sibling; the combined altered dominant joins the other item-10 altered/extended set.
-  "6":2,"9sus4":2,"13sus4":2,"6/9":3,"minor 6/9":3,"dominant 7 #5 #9":5
+  "6":2,"9sus4":2,"13sus4":2,"6/9":3,"minor 6/9":3,"dominant 7 #5 #9":5,
+  // Item 11: unique pitch-class set [0,4,8,11], no reverse-match ambiguity; grouped with
+  // the other specific/rare quality (minor major 7).
+  "augmented major 7":4
 };
 function matchChordQuality(pcSet, bassPC, intervalMap){
   let best=null;

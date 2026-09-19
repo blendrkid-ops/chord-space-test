@@ -1699,6 +1699,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .dur-mod-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-secondary); }
 .dur-mod-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .dur-mod-btn:disabled { opacity: 0.35; cursor: default; }
+/* Item 76 (v80): Ripple toggle (Build progression header + Rhythm toolbar, one shared state)
+   and the one-line feedback note shown after a note-value edit. */
+.ripple-toggle {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ripple-toggle:hover { border-color: var(--accent); color: var(--text-secondary); }
+.ripple-toggle[aria-pressed="true"] { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.ripple-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dur-edit-note {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  border-left: 2px solid var(--accent);
+  padding: 4px 0 4px 10px;
+  margin: 12px 0 0;
+}
 .chip-dur {
   font-size: 10px;
   padding: 2px 6px;
@@ -2025,7 +2050,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .lines-roll-grid {
   display: grid;
   grid-template-columns: 34px 1fr;
-  grid-template-rows: 168px 26px 140px; /* melody lane viewport / chord reference strip / bass lane viewport */
+  grid-template-rows: 168px 46px 140px; /* melody lane viewport / middle row = chord reference strip (36px, carries the bar numbers) + advisory flags strip (10px) / bass lane viewport. Before v81 this row was 26px while the scroll column stacked 26px + 10px, so the bass keys sat 10px above the bass lane rows. */
   border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
   background: var(--surface-1);
 }
@@ -2040,7 +2065,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .lines-lane-viewport { position: relative; height: 168px; overflow-y: auto; overflow-x: hidden; border-bottom: 1px solid var(--border); background: var(--surface-1); }
 .lines-lane-viewport.lines-lane-viewport-bass { height: 140px; border-bottom: none; }
 .lines-lane-grid { position: relative; } /* height set dynamically to match the current row-zoom content */
-.lines-chord-strip-inner { position: relative; height: 26px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.lines-chord-strip-inner { position: relative; height: 36px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
 
 .lines-lasso {
   position: fixed; border: 1px dashed var(--accent); background: rgba(224,172,74,0.12);
@@ -2063,6 +2088,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .lines-tick { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--border-strong); opacity: 0.4; pointer-events: none; }
 .lines-tick.lines-tick-major { border-left-color: var(--text-muted); opacity: 0.7; }
 .lines-tick.lines-tick-triplet { border-left: 1px dotted var(--border); opacity: 0.35; }
+/* Item 79 (v81): bar lines are their own thing now, not a slightly brighter beat line. Amber
+   to match the Rhythm tab's bar numbers, twice the beat-line width, drawn above the ticks
+   (appended after them). Numerals live only in the chord strip between the lanes, the one
+   row that does not scroll vertically with pitch. */
+.lines-tick.lines-bar { border-left: 2px solid var(--accent); opacity: 0.55; }
+.lines-bar-label {
+  position: absolute; top: 1px; z-index: 2; pointer-events: none;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; line-height: 10px;
+  color: var(--accent); transform: translateX(3px);
+}
 .lines-grid-end { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--text-secondary); pointer-events: none; }
 
 .lines-note {
@@ -2540,6 +2575,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .cyl-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #1a1408; }
 select.cyl-btn { -webkit-appearance: none; appearance: none; }
 select.cyl-btn option { background: var(--surface-2); color: var(--text-primary); }
+/* v78: Key + Mode pulldowns in the Cylinder header (replace the old static "C Ionian" text).
+   Same .cyl-btn look as the other header controls, plus a CSS-only chevron so they read as
+   pulldowns (appearance:none removes the native arrow) and a 40px minimum height for touch. */
+.cyl-keyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+select.cyl-keysel {
+  --cyl-chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23b0a898' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  min-height: 40px; padding-right: 32px; color: var(--text-primary); border-color: var(--border-strong);
+}
+/* The base .cyl-btn:hover rule sets the `background` shorthand, which would reset background-image
+   and drop the chevron on hover — so the chevron is re-asserted on :hover at higher specificity. */
+select.cyl-keysel, select.cyl-keysel:hover {
+  background-image: var(--cyl-chev); background-repeat: no-repeat; background-position: right 12px center;
+}
+select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 .cyl-stage {
   position: relative; width: 100%; aspect-ratio: 16 / 10; min-height: 360px;
   background: radial-gradient(ellipse at 50% 42%, var(--surface-1) 0%, var(--bg) 78%);
@@ -2567,16 +2616,42 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
   padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
   pointer-events: none; letter-spacing: 0.01em; max-width: max-content;
 }
-.cyl-legend {
-  display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 14px;
-  font-size: 12.5px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
-}
-.cyl-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .cyl-swatch { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; display: inline-block; }
 .cyl-sw-radius { background: linear-gradient(90deg, #2a2620, var(--accent)); }
 .cyl-sw-height { background: linear-gradient(0deg, #e34948, #2a78d6); }
 .cyl-sw-angle { border-radius: 50%; border: 1.5px solid var(--text-secondary); background: transparent; }
-.cyl-sw-sat { background: linear-gradient(90deg, rgba(224,172,74,0.28), var(--accent)); }
+/* v79: the three chord-colour states, drawn to match how the scene actually renders them:
+   full = the chord's own colour; muted = half-strength desaturation at ~0.8 opacity ("borrowed
+   color", right root / wrong quality); faded = full desaturation at 0.58 opacity (out of key). */
+.cyl-sw-full  { background: var(--accent); }
+.cyl-sw-muted { background: color-mix(in srgb, var(--accent) 62%, var(--text-muted)); opacity: 0.8; }
+.cyl-sw-faded { background: color-mix(in srgb, var(--accent) 22%, var(--text-muted)); opacity: 0.58; }
+
+/* v79: the old four-line inline legend (12.5px muted mono, hard to read) became one button that
+   opens a large popover. Same click-anchored popover machinery as every other info block
+   (wireInfoPopover, prefix 'cyllegend'); only the size and type scale are bigger here. The
+   trigger is bordered like the other header controls, with a 40px minimum height for touch. */
+.cyl-legend-wrap { margin-top: 14px; }
+.info-pop-trigger.cyl-legend-trigger {
+  font-size: 13px; color: var(--text-secondary); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; min-height: 40px;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.info-pop-trigger.cyl-legend-trigger:hover { background: var(--surface-1); border-color: var(--border-strong); color: var(--text-primary); }
+.info-pop-trigger.cyl-legend-trigger[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.info-pop-panel.info-pop-panel-lg { width: min(760px, 94vw); max-height: min(680px, 84dvh); padding: 30px 34px; }
+.info-pop-panel-lg .info-pop-close { top: 14px; right: 14px; width: 34px; height: 34px; font-size: 20px; }
+.info-pop-panel-lg .cyl-legend-title { margin: 0 0 6px; padding-right: 44px; font-size: 14px; }
+.info-pop-panel-lg .note-terms dt {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 16px; color: var(--text-primary); margin-top: 22px;
+}
+.info-pop-panel-lg .note-terms dt:first-of-type { margin-top: 14px; }
+.info-pop-panel-lg .note-terms dd {
+  font-size: 16px; line-height: 1.6; color: var(--text-secondary); margin: 6px 0 0 32px;
+}
+.info-pop-panel-lg .cyl-swatch { width: 20px; height: 20px; border-radius: 5px; }
+.info-pop-panel-lg .cyl-sw-angle { border-radius: 50%; }
 .cyl-overlay {
   position: absolute; inset: 0; z-index: 2; pointer-events: none;
   font-family: 'JetBrains Mono', monospace;
@@ -2847,7 +2922,10 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
   <div class="section section-progression">
     <div class="progression-header">
       <p class="section-label" style="margin-bottom:0;">Progression</p>
-      <span id="progression-count" class="progression-count"></span>
+      <span class="progression-header-tools" style="display:flex;align-items:center;gap:14px;">
+        <button type="button" class="ripple-toggle" id="build-ripple-toggle" aria-pressed="true"></button>
+        <span id="progression-count" class="progression-count"></span>
+      </span>
     </div>
     <div class="strip-region">
       <div class="info-pop-wrap" style="margin-top:0;margin-bottom:8px;">
@@ -2862,7 +2940,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
             <dt>Exact voicings</dt>
             <dd>Hand-place notes by dragging them on the Voice Leading tab.</dd>
             <dt>Durations</dt>
-            <dd>Pick one from the <strong style="color:var(--text-secondary);">dur</strong> dropdown on the chip, or shape it precisely (including triplets and dotted values) on the Rhythm tab.</dd>
+            <dd>Pick one from the <strong style="color:var(--text-secondary);">dur</strong> dropdown on the chip, or shape it precisely (including triplets and dotted values) on the Rhythm tab. With <strong style="color:var(--text-secondary);">Ripple</strong> on, a longer note pushes the chords after it later and a shorter one pulls them in.</dd>
           </dl>
         </div>
       </div>
@@ -2885,6 +2963,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       <div id="marker-editor" style="display:none;"></div>
       <div id="passing-section" style="display:none;"></div>
       <div id="strip" class="strip"></div>
+      <div id="dur-edit-note-build" class="dur-edit-note" role="status" aria-live="polite" hidden></div>
       <div id="invpanel"></div>
       <div id="basspanel"></div>
       <div id="melodypanel"></div>
@@ -3054,7 +3133,11 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
     <div class="cyl-head">
       <div>
         <p class="section-label" style="margin-bottom:2px;">Cylinder map — the key as a space</p>
-        <p class="cyl-sub" id="cyl-sub"></p>
+        <div class="cyl-keyrow">
+          <select id="cyl-keyroot" class="cyl-btn cyl-keysel" aria-label="Key (tonic)" title="Key. This is the same key as Build's Key selector, so changing it here changes it everywhere."></select>
+          <select id="cyl-keymode" class="cyl-btn cyl-keysel" aria-label="Mode" title="Mode. This is the same mode as Build's Mode selector, so changing it here changes it everywhere."></select>
+          <p class="cyl-sub" id="cyl-sub"></p>
+        </div>
       </div>
       <div class="cyl-controls">
         <select id="cyl-angle-mode" class="cyl-btn" title="How roots are arranged around the rim">
@@ -3078,11 +3161,26 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       <div class="cyl-readout" id="cyl-readout">Drag to orbit · wheel to zoom · click a chord to audition · double-click a path to focus</div>
     </div>
 
-    <div class="cyl-legend">
-      <span><i class="cyl-swatch cyl-sw-radius"></i> radius = brightness (dark near the axis, bright at the rim)</span>
-      <span><i class="cyl-swatch cyl-sw-height"></i> height = stability (tense low, stable high)</span>
-      <span><i class="cyl-swatch cyl-sw-angle"></i> <span id="cyl-angle-legend">angle around the rim = root (B sits next to C — no seam)</span></span>
-      <span><i class="cyl-swatch cyl-sw-sat"></i> full colour = in key · muted = right root, wrong quality (borrowed color) · faded = borrowed / chromatic root</span>
+    <div class="info-pop-wrap cyl-legend-wrap">
+      <button type="button" class="info-pop-trigger cyl-legend-trigger" id="cyllegend-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="cyllegend-info-panel">&#9432; How to read this map</button>
+      <div class="info-pop-panel info-pop-panel-lg" id="cyllegend-info-panel" role="dialog" aria-label="How to read the Cylinder Map" hidden>
+        <button type="button" class="info-pop-close" id="cyllegend-info-close" aria-label="Close">&times;</button>
+        <p class="section-label cyl-legend-title">How to read this map</p>
+        <dl class="note-terms">
+          <dt><i class="cyl-swatch cyl-sw-radius"></i> Radius = brightness</dt>
+          <dd>Dark chords sit near the center axis. Bright chords sit out at the rim.</dd>
+          <dt><i class="cyl-swatch cyl-sw-height"></i> Height = stability</dt>
+          <dd>Tense chords sit low. Stable chords sit high.</dd>
+          <dt><i class="cyl-swatch cyl-sw-angle"></i> Angle around the rim = root</dt>
+          <dd><span id="cyl-angle-legend">Roots run in chromatic order, so B sits next to C and the ring has no seam.</span> Switch between the two orderings with the rim-order dropdown at the top of this tab.</dd>
+          <dt><i class="cyl-swatch cyl-sw-full"></i> Full colour = in key</dt>
+          <dd>The chord carries its degree's actual harmonic function.</dd>
+          <dt><i class="cyl-swatch cyl-sw-muted"></i> Muted = right root, wrong quality (borrowed color)</dt>
+          <dd>The root belongs to the key, but the chord is played with a quality that isn't native to it, like a minor 7th chord on the tonic root.</dd>
+          <dt><i class="cyl-swatch cyl-sw-faded"></i> Faded = borrowed or chromatic root</dt>
+          <dd>The chord is genuinely outside the key: a chromatic root, or a chord drawn from a parallel mode.</dd>
+        </dl>
+      </div>
     </div>
 
     <div class="cyl-region-strip" id="cyl-region-strip" hidden></div>
@@ -3150,11 +3248,16 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
         <label for="rhythm-zoom">Timeline width</label>
         <input type="range" id="rhythm-zoom" class="tempo-slider" min="4" max="32" step="1" value="14">
       </div>
+      <div class="context-field">
+        <label for="rhythm-ripple-toggle">Ripple</label>
+        <button type="button" class="ripple-toggle" id="rhythm-ripple-toggle" aria-pressed="true"></button>
+      </div>
     </div>
     <div id="marker-editor-rhythm" class="marker-editor-box" style="display:none;"></div>
     <div id="rhythm-timeline-wrap" class="rhythm-timeline-wrap">
       <div id="rhythm-timeline" class="rhythm-timeline"></div>
     </div>
+    <div id="dur-edit-note-rhythm" class="dur-edit-note" role="status" aria-live="polite" hidden></div>
     <div class="info-pop-wrap">
       <button type="button" class="info-pop-trigger" id="rhythm-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="rhythm-info-panel">ⓘ How this works &amp; honest caveats</button>
       <div class="info-pop-panel" id="rhythm-info-panel" role="dialog" aria-label="How this works &amp; honest caveats" hidden>
@@ -3167,11 +3270,15 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
           <dt>The grid is fixed</dt>
           <dd>Its length is a setting (the "Grid length" control above), not something that grows or shrinks as a side effect of an edit — matching Logic's Step Sequencer length dropdown rather than an elastic timeline. "Auto" sizes it to whatever the progression currently needs, rounded up to a full bar; picking a bar count locks it there.</dd>
           <dt>Every chord has a real position</dt>
-          <dd>Same as a note in a DAW piano roll — a chord is always sitting somewhere specific, never "following" a neighbor. Moving one chord is completely independent of every other chord: nothing you do elsewhere in the progression can ever move it again, only dragging it yourself.</dd>
+          <dd>Same as a note in a DAW piano roll: a chord is always sitting somewhere specific, never "following" a neighbor. Dragging a block moves only that block. With Ripple off, nothing else can ever move it. With Ripple on, changing a neighbor's note value can push or pull it (see Ripple below).</dd>
+          <dt>Ripple</dt>
+          <dd>One switch, shared with the Build tab. On (the default): making a chord longer pushes the chords in its way later, and making it shorter pulls the chords touching its end in. It stops at the first gap, so gaps you placed on purpose survive. Melody and bass notes that start inside a moved chord move with it. Off: exactly the older behavior below.</dd>
           <dt>Shortening a chord</dt>
-          <dd>Never ripples the rest of the progression — nothing else moves, a gap just opens up.</dd>
+          <dd>Ripple on: the chords touching its end slide left to close the space, stopping at the first gap. Ripple off: nothing else moves, a gap just opens up.</dd>
           <dt>Lengthening a chord</dt>
-          <dd>Capped hard at the next chord's start, or the grid's end if there's no next chord — it can never push or cross another chord.</dd>
+          <dd>Ripple on: chords in the way are pushed later, stopping at the first gap. On a locked grid length, a push that would run past the end is refused with a message, never trimmed. Ripple off: capped at the next chord's start, and the app tells you when that cap changed your pick.</dd>
+          <dt>What Ripple does not cover yet</dt>
+          <dd>Ripple applies to the note-value dropdown on Build and to the −/+, triplet and dotted buttons here. Dragging a block's right edge is not rippled yet: it still stops at the next chord. A long melody or bass note that starts before a pushed chord keeps its own start and length, so it can overlap the pushed chord differently than before.</dd>
           <dt>Moving a chord</dt>
           <dd>Dragging left closes any gap in front of the previous chord, then trims that chord's own duration to keep making room — down to a one-sixteenth-note floor, or a key/meter marker, whichever it hits first. Dragging right is capped the same way lengthening is — it stops at the next chord or the grid's end, never crosses it. It never reorders the harmony itself.</dd>
           <dt>Bar lines</dt>
@@ -3250,6 +3357,8 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
           <dd>The <strong style="color:var(--text-secondary);">−/+</strong> buttons in the melody/bass groups above zoom each lane's pitch rows independently — taller rows are easier to grab, at the cost of needing to scroll vertically to reach the rest of the 3-octave range. Horizontal zoom is shared with the Rhythm tab's own "Timeline width" control above.</dd>
           <dt>Snapping</dt>
           <dd>Notes snap to the same sixteenth-note grid as the Rhythm tab. That grid will get finer once triplets and dotted values ship there — these lines will follow along.</dd>
+          <dt>Bar lines and numbers</dt>
+          <dd>The amber lines mark where each bar starts, in both lanes. The numbers sit in the strip between the lanes and match the Rhythm tab's bar numbers, so bar 3 here is bar 3 there. A meter change restarts the bar length from that point but the numbering keeps counting.</dd>
           <dt>Pitch is free</dt>
           <dd>Nothing restricts which notes you can place — passing tones, chromatic motion, and leaps outside the chord are all allowed on purpose.</dd>
           <dt>Tone coloring</dt>
@@ -3363,7 +3472,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v77";
+const APP_VERSION = "v81";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -6176,8 +6285,8 @@ const TIME_SIGNATURES=[[4,4],[3,4],[2,4],[6,8],[9,8],[12,8],[5,4],[7,8]];
 const DUR_ORDER=['1n','2n','4n','8n','16n'];
 const DUR_BEATS={'1n':4,'2n':2,'4n':1,'8n':0.5,'16n':0.25,
   '1n_d':6,'2n_d':3,'4n_d':1.5,'8n_d':0.75, '8n_t':1/3,'4n_t':2/3,'16n_t':1/6};
-const DUR_SYMBOLS={'1n':'\u{1D15D}','2n':'\u{1D15E}','4n':'\u2669','8n':'\u266A','16n':'\u266C',
-  '1n_d':'\u{1D15D}\u00B7','2n_d':'\u{1D15E}\u00B7','4n_d':'\u2669\u00B7','8n_d':'\u266A\u00B7',
+const DUR_SYMBOLS={'1n':'\u25CB','2n':'\u25D0','4n':'\u2669','8n':'\u266A','16n':'\u266C',
+  '1n_d':'\u25CB\u00B7','2n_d':'\u25D0\u00B7','4n_d':'\u2669\u00B7','8n_d':'\u266A\u00B7',
   '8n_t':'\u266A\u00B3','4n_t':'\u2669\u00B3','16n_t':'\u266C\u00B3'};
 const DUR_NAMES={'1n':'whole','2n':'half','4n':'quarter','8n':'eighth','16n':'sixteenth',
   '1n_d':'dotted whole','2n_d':'dotted half','4n_d':'dotted quarter','8n_d':'dotted eighth',
@@ -6353,6 +6462,10 @@ function barQuarters(meter){ return (meter&&meter.num&&meter.den) ? meter.num*(4
 // dragging it again. Markers occupy zero units (non-sounding dividers, never part of the
 // real timeline length) and don't have a startUnit of their own — they render at whatever
 // position the chord immediately after them sits at.
+// Item 76 (v80): the "nothing can move it again" guarantee above holds with Ripple OFF. With
+// Ripple ON, a note-value change on a neighbor can shift this chord (and its Lines notes)
+// through applyChordShifts — an explicit, user-chosen edit and one undo step, still not a
+// reflow: positions stay stored, never derived.
 function beatLayout(){
   const starts=[];
   seq.forEach((s,i)=>{
@@ -8338,7 +8451,7 @@ function wireInfoPopover(prefix){
   trigger.addEventListener('click',()=>{ panel.hidden ? openPanel() : closePanel(); });
   if(closeBtn) closeBtn.addEventListener('click',closePanel);
 }
-['keymode','map','sugglist','chipstrip','mv','vl','cyl','rhythm','lines','howread'].forEach(wireInfoPopover);
+['keymode','map','sugglist','chipstrip','mv','vl','cyl','cyllegend','rhythm','lines','howread'].forEach(wireInfoPopover);
 // Playhead highlighting during playback — mirrors highlightChord's approach (a CSS class
 // toggled on the actual DOM element) but per-note rather than "clear all, light one,"
 // since melody and bass notes can genuinely sound at the same time.
@@ -8358,7 +8471,30 @@ function unhighlightLinesNote(trackName,id){
 // triplet-sixteenth grid point (LINES_SNAP_UNITS, 2 units) fills in the positions the
 // plain sixteenth grid (3 units) doesn't cover — visual guidance for where a triplet
 // note can now land, without cluttering the main sixteenth/beat ticks.
-function renderLinesTicksAndBars(container,drawUnits,gridUnits){
+// Item 79 (v81): the bar list for the Lines lanes — [{units, number}], bar 1 at unit 0 first.
+// Mirrors the walk the Rhythm tab uses for its bar labels (meter regions in order, a line every
+// barQuarters from each region's start, the count restarting its own bars at a meter change but
+// the NUMBER continuing), so a bar carries the same number on both tabs. Rhythm's own drawing
+// code is deliberately left as it is.
+function barMarkers(drawUnits){
+  const out=[{units:0,number:1}];
+  let regionBar=1;
+  const regions=meterRegions().map(r=>({startUnits:Math.round(r.startBeat*GRID_UNITS_PER_QUARTER),meter:r.meter}));
+  regions.push({startUnits:Infinity,meter:timeSignature});
+  for(let r=0;r<regions.length-1;r++){
+    const bqUnits=barQuarters(regions[r].meter)*GRID_UNITS_PER_QUARTER;
+    const regionEnd=Math.min(regions[r+1].startUnits,drawUnits);
+    let barLine=regions[r].startUnits+bqUnits, barCount=1;
+    while(barLine<regionEnd-1e-6){
+      barCount++;
+      out.push({units:barLine,number:regionBar+barCount-1});
+      barLine+=bqUnits;
+    }
+    regionBar+=barCount;
+  }
+  return out;
+}
+function renderLinesTicksAndBars(container,drawUnits,gridUnits,withNumbers){
   const SIXTEENTH_UNITS=DUR_UNITS['16n'], QUARTER_UNITS=DUR_UNITS['4n'];
   for(let u=0;u<=drawUnits;u+=LINES_SNAP_UNITS){
     if(u%SIXTEENTH_UNITS===0) continue; // already drawn as a real sixteenth/beat tick below
@@ -8374,21 +8510,21 @@ function renderLinesTicksAndBars(container,drawUnits,gridUnits){
     tick.style.left=linesUnitsToPx(u)+'px';
     container.appendChild(tick);
   }
-  const regions=meterRegions().map(r=>({startUnits:Math.round(r.startBeat*GRID_UNITS_PER_QUARTER),meter:r.meter}));
-  regions.push({startUnits:Infinity,meter:timeSignature});
-  for(let r=0;r<regions.length-1;r++){
-    const bqUnits=barQuarters(regions[r].meter)*GRID_UNITS_PER_QUARTER;
-    const regionEnd=Math.min(regions[r+1].startUnits,drawUnits);
-    let barLine=regions[r].startUnits+bqUnits;
-    while(barLine<regionEnd-1e-6){
+  barMarkers(drawUnits).forEach(b=>{
+    if(b.units>0){ // bar 1 starts at the lane's left edge: no line needed there
       const line=document.createElement('div');
-      line.className='lines-tick lines-tick-major';
-      line.style.left=linesUnitsToPx(barLine)+'px';
-      line.style.opacity='0.9';
+      line.className='lines-tick lines-bar';
+      line.style.left=linesUnitsToPx(b.units)+'px';
       container.appendChild(line);
-      barLine+=bqUnits;
     }
-  }
+    if(withNumbers){
+      const lbl=document.createElement('span');
+      lbl.className='lines-bar-label';
+      lbl.style.left=linesUnitsToPx(b.units)+'px';
+      lbl.textContent=b.number;
+      container.appendChild(lbl);
+    }
+  });
   const endLine=document.createElement('div');
   endLine.className='lines-grid-end';
   endLine.style.left=linesUnitsToPx(gridUnits)+'px';
@@ -9018,7 +9154,7 @@ function renderLinesRoll(){
   renderLinesKeyboard(bassKeys,LINES_BASS_MIN,LINES_BASS_MAX,linesBassRowPx,'bass');
   renderLinesLaneBackdrop(melLane,LINES_MELODY_MIN,LINES_MELODY_MAX,linesMelodyRowPx,drawUnits,gridUnits);
   renderLinesLaneBackdrop(bassLane,LINES_BASS_MIN,LINES_BASS_MAX,linesBassRowPx,drawUnits,gridUnits);
-  renderLinesTicksAndBars(chordStrip,drawUnits,gridUnits);
+  renderLinesTicksAndBars(chordStrip,drawUnits,gridUnits,true); // the strip between the lanes also carries the bar numbers
 
   seq.forEach((s,i)=>{
     if(isMarker(s)){
@@ -9365,7 +9501,7 @@ function renderStrip(voicings){
       durBtn.appendChild(opt);
     });
     durBtn.value=durBaseKey(curDur);
-    durBtn.title='Pick this chord\'s note value. Drag a block\'s edge, or use its −/+ steppers, triplet, and dotted toggles on the Rhythm tab for full control (including triplets and dotted values, not offered here).';
+    durBtn.title='Pick this chord\'s note value. The Ripple switch decides whether the chords after it move. Drag a block\'s edge, or use its −/+ steppers, triplet, and dotted toggles on the Rhythm tab for full control (including triplets and dotted values, not offered here).';
     // Item fix: opening this dropdown was triggering the chip's own long-press handler
     // (attachLongPress on the whole card, listening for mousedown/touchstart to arm a
     // 550ms "play from here" timer) — a mousedown on the select bubbles up to the chip
@@ -10768,6 +10904,7 @@ function renderAll(){if(isPlaying)stopPlayback();buildRoots();renderDiatonicList
 // duration toggle, which doesn't route through renderAll). Dedup by string
 // compare means non-seq renders (key/mode changes) never create entries.
 let history=[], histIdx=-1, restoring=false;
+let durEditNote='', durNoteHistIdx=-1; // Item 76 feedback note + the history index it belongs to (see setDurEditNote)
 function pushHistory(){
   if(restoring) return;
   // v29→this session: snapshot widened from seq alone to {seq,melodyTrack,bassTrack} so
@@ -10778,6 +10915,7 @@ function pushHistory(){
   history=history.slice(0,histIdx+1);                  // a new edit drops the redo tail
   history.push(snap);
   histIdx=history.length-1;
+  if(durEditNote && histIdx>durNoteHistIdx) setDurEditNote(''); // any LATER edit retires the note; the edit it describes pushed exactly durNoteHistIdx
   updateUndoRedoButtons();
 }
 function restoreFrom(idx){
@@ -10787,6 +10925,7 @@ function restoreFrom(idx){
   melodyTrack=Array.isArray(state.melodyTrack)?state.melodyTrack:[];
   bassTrack=Array.isArray(state.bassTrack)?state.bassTrack:[];
   linesSelection=new Set(); // an undo/redo can restore a different set of note ids entirely — stale selection would be confusing, not just harmless
+  setDurEditNote(''); // Item 76: a Ripple/refusal note describes the edit that was just undone or redone; don't leave it up
   activeBassIndex=null;activeInvIndex=null;activeMelodyIndex=null;activeKeyboardIndex=null;insertAt=null;reviseAt=null;
   renderAll();
   restoring=false;
@@ -11156,20 +11295,154 @@ function setChordDuration(i,newDur){
 }
 // Set chord i's duration to EXACTLY newDur (a triplet/dotted key included), without
 // snapping to the nearest of the five plain DUR_ORDER values the way setChordDuration
-// does. Used by the triplet/dotted toggle buttons and by stepChordDur, both of which need
-// to land on a specific compound key, not "whichever plain value is closest to it." Same
-// wall/ceiling logic as setChordDuration — if the exact requested duration doesn't fit
-// under a pinned next-chord wall or the grid end, it falls back to whichever plain value
-// does fit (via unitsToNearestDurCapped), the same graceful degrade the ordinary stepper
-// already had, rather than forcing an oversized value into a space that can't hold it.
+// does. Used by the triplet/dotted toggle buttons, by stepChordDur, and by the Build
+// duration dropdown — the ONLY live path for click-based duration edits (setChordDuration
+// above has no callers left).
+//
+// Item 76 (v80): two behaviors, chosen by the shared Ripple switch.
+//   Ripple ON (default): a longer chord pushes the chords in its way later; a shorter one
+//   pulls the chords touching its end earlier. The chain stops at the first real gap, so
+//   deliberate gaps and syncopation survive. Melody/bass notes that START inside a moved
+//   chord move with it (applyChordShifts). On a LOCKED grid length, a push that would run
+//   past the end is refused with a message and nothing changes. Markers occupy no time and
+//   follow their next chord, so nothing extra is done for them.
+//   Ripple OFF: exactly the v79 behavior (growth clamps at the next chord's start, falling
+//   back to the largest plain value that fits) — plus, new in v80, a message whenever that
+//   clamp changed what the user asked for, so an edit is never silently reverted.
+// Every mutation happens inside this one call; callers do pushHistory() + renderAll() once,
+// so a whole ripple is a single undo step.
+let rippleEnabled=true; // session state only: not saved, no save-schema change
+function durLabel(d){ return (DUR_NAMES[d]||d)+(String(d).endsWith('_t')?'':' note'); }
+// "a half note" / "an eighth note": the article follows the first sound of the label.
+function durWithArticle(d){ const l=durLabel(d); return (/^[aeiou]/i.test(l)?'an ':'a ')+l; }
+function capFirst(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function fmtBeatsFromUnits(u){ const b=Math.round(Math.abs(u)/GRID_UNITS_PER_QUARTER*100)/100; return b+' beat'+(b===1?'':'s'); }
+// 1-based chord number of seq[i], counting chords only (markers don't count) — matches the
+// numbers shown on the Build cards.
+function chordNumberAt(i){ let n=0; for(let j=0;j<=i&&j<seq.length;j++){ if(!isMarker(seq[j])) n++; } return n; }
+// v80.1: the note no longer times out. It stays until the next edit of any kind (pushHistory
+// retires it), an undo or redo, or a Ripple flip. expectPush is true when the edit being
+// described will push one history entry right after this call (the callers always do), so
+// the note belongs to that entry; false for a refusal that changes nothing.
+function setDurEditNote(text,expectPush){
+  durEditNote=text||'';
+  durNoteHistIdx=histIdx+(expectPush?1:0);
+  renderDurEditNote();
+}
+function renderDurEditNote(){
+  ['dur-edit-note-build','dur-edit-note-rhythm'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.textContent=durEditNote; el.hidden=!durEditNote;
+  });
+}
+function syncRippleControls(){
+  document.querySelectorAll('.ripple-toggle').forEach(b=>{
+    b.setAttribute('aria-pressed',rippleEnabled?'true':'false');
+    b.textContent=rippleEnabled?'Ripple on':'Ripple off';
+    b.title=rippleEnabled
+      ? 'Ripple on: a longer chord pushes the chords after it later, a shorter one pulls them in. Stops at the first gap. Melody and bass notes inside moved chords go with them.'
+      : 'Ripple off: a chord can only grow into free space. Nothing else moves when you change a note value.';
+  });
+}
+function setRipple(on){ rippleEnabled=!!on; syncRippleControls(); setDurEditNote(''); }
+function wireRippleToggles(){
+  document.querySelectorAll('.ripple-toggle').forEach(b=>{ b.onclick=()=>setRipple(!rippleEnabled); });
+  syncRippleControls();
+}
+// SHARED SHIFT PRIMITIVE (item 76). shifts = [{i: seqIndex, delta: gridUnits}] with non-zero
+// deltas. Moves each listed chord's startUnit by its delta and, when followLines is true,
+// moves every melody/bass note whose START sits inside that chord's ORIGINAL window
+// [startUnit, startUnit + duration) by the same delta. Windows are captured before anything
+// moves, so a note is claimed at most once and never chases a chord that already moved. A
+// note starting in a gap (no chord under it) stays put. It never reorders anything, never
+// touches durations, and never renders or pushes history — the caller does that once.
+// Written as a standalone primitive so later group-move and blank-measure work can reuse it.
+function applyChordShifts(shifts,followLines){
+  const wins=shifts.map(sh=>{
+    const s=seq[sh.i], lo=s.startUnit||0;
+    return {i:sh.i, lo, hi:lo+(DUR_UNITS[getChordDur(s)]||12), delta:sh.delta};
+  });
+  let notes=0;
+  if(followLines){
+    [melodyTrack,bassTrack].forEach(track=>{
+      track.forEach(n=>{
+        const w=wins.find(w=>n.startUnit>=w.lo && n.startUnit<w.hi);
+        if(w){ n.startUnit+=w.delta; notes++; }
+      });
+    });
+  }
+  wins.forEach(w=>{ seq[w.i].startUnit=w.lo+w.delta; });
+  return {chords:wins.length, notes};
+}
+// Plan (without mutating) the chain of shifts that giving chord i the duration newDur causes
+// under Ripple. Returns {shifts, endUnit}: endUnit is where the last moved chord (or chord i
+// itself, if nothing had to move) ends afterwards.
+function planRippleShifts(i,newDur){
+  const s=seq[i];
+  const oldStart=s.startUnit||0, oldU=DUR_UNITS[getChordDur(s)]||12, newU=DUR_UNITS[newDur];
+  const later=[]; for(let j=i+1;j<seq.length;j++){ if(!isMarker(seq[j])) later.push(j); }
+  const shifts=[];
+  if(newU>oldU){
+    let running=oldStart+newU;
+    for(const j of later){
+      const cs=seq[j].startUnit||0;
+      if(cs>=running) break; // free space here absorbs the rest of the push
+      const d=running-cs;
+      shifts.push({i:j,delta:d});
+      running=cs+d+(DUR_UNITS[getChordDur(seq[j])]||12);
+    }
+    return {shifts,endUnit:running};
+  }
+  const delta=newU-oldU; // negative
+  let running=oldStart+oldU; // old end: only chords butted exactly against it follow
+  for(const j of later){
+    const cs=seq[j].startUnit||0;
+    if(cs!==running) break; // a real gap: the chain stops
+    shifts.push({i:j,delta});
+    running=cs+(DUR_UNITS[getChordDur(seq[j])]||12);
+  }
+  return {shifts,endUnit:oldStart+newU+(running-(oldStart+oldU))};
+}
 function setChordDurationExact(i,newDur){
   const s=seq[i]; if(!s||isMarker(s)||!DUR_UNITS[newDur]) return;
-  if(getChordDur(s)===newDur) return;
+  const oldDur=getChordDur(s);
+  if(oldDur===newDur) return;
+  setDurEditNote('');
+  const no=chordNumberAt(i);
+  if(rippleEnabled){
+    const plan=planRippleShifts(i,newDur);
+    if(plan.shifts.length && typeof gridLengthUnits==='number' && plan.endUnit>gridLengthUnits){
+      const bars=gridLengthUnits/(barQuarters(timeSignature)*GRID_UNITS_PER_QUARTER);
+      const gridWords=Number.isInteger(bars)?`the ${bars}-bar grid`:'the grid';
+      setDurEditNote(`Chord ${no} stays ${durWithArticle(oldDur)}. Making it ${durWithArticle(newDur)} would push the chords after it past the end of ${gridWords}. Lengthen Grid length first.`,false);
+      return;
+    }
+    const moved=plan.shifts.length?applyChordShifts(plan.shifts,true):{chords:0,notes:0};
+    s.dur=newDur;
+    if(moved.chords){
+      const amts=plan.shifts.map(x=>Math.abs(x.delta));
+      const allSame=amts.every(a=>a===amts[0]);
+      const dir=plan.shifts[0].delta>0?'later':'earlier';
+      const amount=allSame?fmtBeatsFromUnits(amts[0]):`up to ${fmtBeatsFromUnits(Math.max(...amts))}`;
+      const first=chordNumberAt(plan.shifts[0].i), last=chordNumberAt(plan.shifts[plan.shifts.length-1].i);
+      const who=first===last?`Chord ${first} moved`:`Chords ${first} to ${last} moved`;
+      const lines=moved.notes?` ${moved.notes} melody/bass note${moved.notes===1?'':'s'} went with ${moved.chords===1?'it':'them'}.`:'';
+      setDurEditNote(`Chord ${no} is now ${durWithArticle(newDur)}. ${who} ${amount} ${dir}.${lines}`,true);
+    }
+    return;
+  }
+  // Ripple OFF: the v79 rule, with feedback when it clamps.
   const {starts}=unitLayout();
   const ni=nextChordIndex(i);
   const ceilingUnits=(ni>=0) ? Math.max(MIN_UNITS, seq[ni].startUnit-starts[i]) : Infinity;
   if(DUR_UNITS[newDur]<=ceilingUnits){ s.dur=newDur; return; }
   s.dur=unitsToNearestDurCapped(DUR_UNITS[newDur],ceilingUnits);
+  const room=fmtBeatsFromUnits(ceilingUnits);
+  if(s.dur===oldDur){
+    setDurEditNote(`Chord ${no} stays ${durWithArticle(oldDur)}. ${capFirst(durWithArticle(newDur))} would run into the next chord, which starts ${room} after it. Turn Ripple on to push the next chord, or move it first.`,false);
+  } else {
+    setDurEditNote(`Chord ${no} became ${durWithArticle(s.dur)} instead of ${durWithArticle(newDur)}: only ${room} fit before the next chord. Turn Ripple on to push the next chord, or move it first.`,true);
+  }
 }
 
 
@@ -12644,7 +12917,7 @@ document.getElementById('midi-file').onchange=function(){
   this.value='';
 };
 
-buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();updateModeNote();updateSuggNote();populateRandStart();renderBorrowedModes();syncOctaveTransposeControls();populateTimeSignatureControl();populateGridLengthControl();populateRhythmZoomControl();renderAll();
+buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();updateModeNote();updateSuggNote();populateRandStart();renderBorrowedModes();syncOctaveTransposeControls();populateTimeSignatureControl();populateGridLengthControl();populateRhythmZoomControl();wireRippleToggles();renderAll();
 </script>
 <script>
 (function(){
@@ -12733,6 +13006,23 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   const readout = document.getElementById('cyl-readout');
   const subEl = document.getElementById('cyl-sub');
   const keyNameEl = document.getElementById('cyl-keyname');
+  // v78: header Key/Mode pulldowns. They drive the SAME global setters Build and Session use
+  // (selectKeyRoot / selectKeyMode), so there is exactly one source of truth for the key; this
+  // module only mirrors it back into its own two selects on every syncData() pass.
+  const keyRootSel = document.getElementById('cyl-keyroot');
+  const keyModeSel = document.getElementById('cyl-keymode');
+  if(keyRootSel) keyRootSel.onchange = ()=>selectKeyRoot(parseInt(keyRootSel.value,10));
+  if(keyModeSel) keyModeSel.onchange = ()=>selectKeyMode(keyModeSel.value);
+  // Mirrors the live global key into the two header pulldowns, using the same fill helper and
+  // option list Build uses (so root spelling and the 9 selectable contexts always match it).
+  // Called once right here so the pulldowns are correct even if the 3D scene never initialises
+  // (Three.js blocked/offline), and again from every syncData() pass.
+  function syncKeyPulldowns(){
+    if(typeof fillKeyRootSelect!=='function' || typeof modeOptionsHtml!=='function') return;
+    if(keyRootSel) fillKeyRootSelect(keyRootSel,keyMode,keyRoot);
+    if(keyModeSel){ keyModeSel.innerHTML=modeOptionsHtml(keyMode); keyModeSel.value=keyMode; }
+  }
+  syncKeyPulldowns();
   const stage = canvas.closest('.cyl-stage');
   const overlayEl = document.getElementById('cyl-overlay');
   const regionStripEl = document.getElementById('cyl-region-strip');
@@ -13013,7 +13303,8 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     }
 
     const label=`${rootName(kr,kr,km)} ${km}`, n=sceneData.progression.length;
-    if(subEl) subEl.textContent=`${label} · ${n} chord${n===1?'':'s'}${sceneData.regions.length>1?' · '+sceneData.regions.length+' key regions':''}`;
+    syncKeyPulldowns(); // v78: keep the header Key/Mode pulldowns mirroring the global key
+    if(subEl) subEl.textContent=`${n} chord${n===1?'':'s'}${sceneData.regions.length>1?' · '+sceneData.regions.length+' key regions':''}`;
     if(keyNameEl) keyNameEl.textContent=label;
     renderRegionStrip();
     renderModeBanner();
@@ -13505,7 +13796,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   const angleBtn=document.getElementById('cyl-angle-mode'), angleLegend=document.getElementById('cyl-angle-legend');
   function angleLabels(){
     if(angleBtn) angleBtn.value=angleMode;
-    if(angleLegend) angleLegend.textContent=angleMode==='fifths'?'angle around the rim = root by fifths (C sits next to G, not C#)':'angle around the rim = root (B sits next to C — no seam)';
+    if(angleLegend) angleLegend.textContent=angleMode==='fifths'?'Roots run by fifths, so C sits next to G, not C#.':'Roots run in chromatic order, so B sits next to C and the ring has no seam.';
   }
   if(angleBtn) angleBtn.addEventListener('change',()=>{ angleMode=angleBtn.value; angleLabels(); syncData(); });
   angleLabels();

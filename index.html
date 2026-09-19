@@ -345,69 +345,278 @@ header .subtitle .mono {
 .note-disclosure summary:hover { color: var(--text-primary); }
 .note-disclosure .note-terms { margin-top: 2px; padding-left: 2px; }
 
-/* Item 6 (v65a mobile repair): on mobile, both Rhythm-tab info disclosures ("How this
-   works & honest caveats" on the timeline, "How Lines works" on the Lines section) used
-   to expand inline in normal page flow — reachable in principle via page scroll, but a
-   long dt/dd list opening on a short mobile viewport (further shortened by iOS Safari's
-   collapsing URL bar) didn't read as scrollable, so the bottom felt cut off. Scoped to
-   #tab-session specifically (not every .note-disclosure app-wide — Build/Voice/Cylinder's
-   own disclosures are untouched, out of scope for this pass). 60dvh (dynamic viewport
-   height) rather than 60vh so the collapsing browser chrome can't reopen this same gap.
-   Desktop (above 760px, same breakpoint as item 5/item 32) is completely unaffected. */
-@media (max-width: 760px) {
-  #tab-session .note-disclosure[open] .note-terms {
-    max-height: 60dvh;
-    overflow-y: auto;
-  }
+/* Click-triggered anchored popover with larger type, replacing the small inline
+   .note-disclosure accordion app-wide (all ⓘ info blocks on Build, Voice Leading,
+   Cylinder Map, Rhythm/Lines, and Full Theory) for legibility. max-height uses dvh, not
+   vh, so iOS Safari's collapsing URL bar can't reopen the same cut-off-content gap the
+   old #tab-session-only fix below this block existed to patch (that fix is now retired —
+   every info block gets the same scrollable max-height, everywhere, via this one rule).
+   position:fixed with top/left set by wireInfoPopover's positionPanel() at open time
+   (flips above the trigger when there's no room below, and clamps both axes to the
+   viewport) rather than anchored via top:100%/left:0 off the wrap — a static anchor
+   guaranteed overflow for any trigger near the bottom or right edge of a tall page,
+   which is most of them once the page is scrolled. Starts at -9999px/-9999px off-screen
+   so positionPanel can measure its real rendered size before ever placing it on-screen,
+   avoiding a flash at the wrong spot. */
+.info-pop-wrap { position: relative; margin-top: 12px; }
+.info-pop-trigger {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  padding: 8px 0;
+  margin: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.info-pop-trigger:hover { color: var(--text-primary); }
+.info-pop-trigger[aria-expanded="true"] { color: var(--accent); font-weight: 600; }
+.info-pop-panel {
+  position: fixed; top: -9999px; left: -9999px; z-index: 70;
+  width: min(560px, 92vw); max-height: min(480px, 70dvh); overflow-y: auto;
+  background: var(--surface-2); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); padding: 20px 24px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+}
+.info-pop-panel[hidden] { display: none; }
+.info-pop-panel .note-terms { margin-top: 0; }
+.info-pop-panel .note-terms dt { font-size: 13px; }
+.info-pop-panel .note-terms dt:first-child { margin-top: 0; }
+.info-pop-panel .note-terms dd { font-size: 15px; line-height: 1.65; }
+.info-pop-close {
+  position: absolute; top: 10px; right: 10px;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: var(--surface-1);
+  color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.info-pop-close:hover { color: var(--text-primary); border-color: var(--accent); }
+
+/* --- Item 59 next iteration (Guided Listening) — badges on Build strip chips + the panel
+   below the strip. Deliberately small and quiet — a badge is an entry point into a
+   dismissable panel, not another permanent data field on the chip (that was the exact
+   problem this iteration exists to correct). Reuses existing design tokens only. */
+.gl-badge {
+  width: 14px; height: 14px; padding: 0; border: none; border-radius: 50%;
+  font-size: 10px; line-height: 14px; cursor: pointer; opacity: 0.75;
+  background: var(--surface-2); color: var(--text-muted);
+}
+.gl-badge:hover, .gl-badge.active { opacity: 1; }
+.gl-badge.active { box-shadow: 0 0 0 1.5px currentColor; }
+.gl-badge-secdom { color: var(--secdom); }
+.gl-badge-borrowed { color: var(--rootmove); }
+.gl-badge-pull-resolve { color: var(--accent); }
+.gl-badge-pull-away { color: var(--geom); }
+.gl-badge-pull-unresolved { color: var(--stale); }
+.gl-badge-key-change { color: var(--mv); }
+.gl-badge-inline { display: inline-block; margin-right: 4px; }
+
+.gl-section { margin-top: 4px; }
+.gl-empty { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+.gl-list { list-style: none; margin: 0; padding: 0; }
+.gl-list-item {
+  display: flex; align-items: baseline; gap: 8px; padding: 7px 8px;
+  border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; color: var(--text-secondary);
+}
+.gl-list-item:hover { background: var(--surface-2); }
+.gl-list-item.active { background: var(--accent-dim); color: var(--text-primary); }
+.gl-list-kind { font-size: 14px; flex-shrink: 0; }
+.gl-list-headline { line-height: 1.4; }
+
+.gl-detail {
+  margin-top: 10px; padding: 12px 14px; background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.gl-detail-headline { font-size: 14px; color: var(--text-primary); margin: 0 0 10px; line-height: 1.4; }
+.gl-hear-btn {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+  color: var(--accent); background: var(--accent-dim); border: 1px solid var(--accent-strong);
+  border-radius: var(--radius-sm); padding: 7px 14px; cursor: pointer;
+}
+.gl-hear-btn:hover { background: var(--accent-strong); }
+.gl-why { margin-top: 10px; }
+.gl-why summary { font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.gl-why-list { font-size: 12px; color: var(--text-muted); line-height: 1.7; margin: 6px 0 0; padding-left: 16px; }
+
+/* --- Item 59 Phase 1 (v74 visual-refinement pass): Analysis tab ------------------------
+   Timeline-first layout: a musical progression to read left-to-right, not a stack of data
+   cards. Dark warm palette, same design tokens as the rest of the app — no new color table.
+   One shared CSS Grid instance holds the region-label row, the chord/connector row, and the
+   tension-contour row, so column alignment is guaranteed by the browser's own layout engine
+   rather than by separately matched measurements across elements. */
+.an-empty { font-size: 13px; color: var(--text-muted); padding: 20px 0; }
+
+.an-timeline-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.an-timeline-grid {
+  display: grid;
+  grid-template-rows: auto auto 44px;
+  align-items: stretch;
+  row-gap: 6px;
+  min-width: 100%;
+  width: max-content;
 }
 
-/* Lines-only info-indicator + hover-preview variant. Keeps the underlying details-element
-   click/tap-to-open behavior fully intact (still the only way in on touch, which has no
-   hover) and layers a hover-triggered preview panel on top for desktop/mouse users, so a
-   quick check doesn't require actually opening (and later remembering to close) the
-   accordion. Scoped to Lines for now — .note-disclosure elsewhere is untouched. */
-.lines-info-wrap { position: relative; display: inline-block; }
-.lines-info-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 1.5px solid var(--text-muted); color: var(--text-muted);
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700; line-height: 1;
-  flex: none;
+/* Row 1 — key-region labels, each spanning exactly its group of chord+connector columns. */
+.an-region-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-/* [open] badge accent is a real open/closed state indicator, not a hover affordance —
-   stays unconditional, all devices. */
-.note-disclosure[open] .lines-info-badge { border-color: var(--accent); color: var(--accent); }
-.lines-info-popover {
-  position: absolute; top: 100%; left: 0; margin-top: 8px; z-index: 50;
-  width: min(420px, 80vw); max-height: 360px; overflow-y: auto;
-  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
-  padding: 14px 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  opacity: 0; visibility: hidden; transform: translateY(-4px);
-  transition: opacity .12s ease, transform .12s ease, visibility 0s linear .12s;
-  pointer-events: none;
+
+/* Row 2 — chord blocks. Class kept as .an-card so the v73 shared audition-glow mechanism
+   (flashAuditionGlow targeting .an-card[data-chord-idx]) needed zero changes this pass. */
+.an-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border);
+  cursor: pointer;
+  padding: 6px 4px;
+  transition: border-color .12s, background .12s;
 }
-/* Item 6 (v65a mobile repair, 2nd follow-up): (hover:hover)+(pointer:fine) detection did
-   NOT reliably suppress the popover on real iPhone hardware — real-device testing showed
-   it could still alternate into view on repeated taps. Rather than continue trusting
-   hover/pointer media-feature detection (apparently not consistently reliable across iOS
-   Safari versions for this purpose), the popover is now hard-suppressed outright below
-   the mobile breakpoint — display:none is an entirely different CSS property than the
-   opacity/visibility/transform the trigger rule below sets, so this wins unconditionally
-   regardless of any :hover state, real or stuck-emulated, with no specificity contest
-   needed. Badge hover-highlight and the popover's own desktop trigger/markup are
-   untouched — this is strictly an additive override, mobile-only. */
-@media (max-width: 760px) {
-  .lines-info-popover { display: none; }
+.an-block:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.an-block:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.an-block.auditioning, .an-block.an-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent) inset, 0 0 6px var(--accent-strong);
 }
-.note-disclosure summary:hover .lines-info-badge { border-color: var(--accent); color: var(--accent); }
-.note-disclosure:not([open]) summary:hover .lines-info-popover {
-  opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
-  transition: opacity .12s ease, transform .12s ease;
+.an-block-diatonic, .an-block-characteristic { border-top-color: var(--accent); }
+.an-block-secdom   { border-top-color: var(--secdom); }
+.an-block-borrowed { border-top-color: var(--rootmove); }
+.an-block-passing  { border-top-color: var(--geom); }
+.an-block-chromatic{ border-top-color: var(--text-muted); }
+.an-block-symbol {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
 }
-/* While the accordion is pinned open (clicked/tapped), suppress the hover popover instead
-   of stacking a duplicate copy of the same content directly on top of the open panel. */
-.note-disclosure[open] .lines-info-popover { display: none; }
-.lines-info-popover .note-terms { margin: 0; padding: 0; }
+.an-block-fn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Transition connector — a thin line + direction arrow + (if a strong pull exists) a small
+   dot. Deliberately narrow and quiet: dense findings live in the detail panel on selection,
+   not printed inline in the timeline itself. */
+.an-connector {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+}
+.an-connector:hover, .an-connector:focus-visible { background: var(--surface-2); }
+.an-connector:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.an-connector.an-selected { background: var(--accent-dim); }
+.an-connector-line { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--border-strong); }
+.an-connector-arrow { position: relative; font-size: 11px; color: var(--text-muted); background: var(--bg); padding: 0 2px; }
+.an-connector-pull-dot {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+
+/* Row 3 — chord-color tension contour. One continuous factual shape, drawn as per-column
+   dots + per-connector line segments sharing the SAME grid columns as row 2 above, so the
+   shape aligns with the timeline by construction, not by measurement. Not the Emotional Map
+   — no trajectory words, no interpretation, just the same tensionPct value from row 2's own
+   chord classification, plotted. */
+.an-contour-cell { position: relative; }
+.an-contour-dot {
+  position: absolute; left: 50%; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-secondary); transform: translate(-50%, 50%);
+}
+.an-contour-seg { position: relative; }
+.an-contour-seg svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.an-contour-seg svg line { stroke: var(--border-strong); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+
+/* Selected detail panel — dense per-chord/per-transition findings, shown on demand instead
+   of permanently on every timeline block (the core problem this pass corrects). */
+.an-detail {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-height: 40px;
+}
+.an-detail-hint { font-size: 13px; color: var(--text-muted); }
+.an-detail-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.an-detail-chord {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.an-fn-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.an-fn-diatonic, .an-fn-characteristic { color: var(--accent); background: var(--accent-dim); }
+.an-fn-secdom   { color: var(--secdom); background: var(--secdom-dim); }
+.an-fn-borrowed { color: var(--rootmove); background: var(--rootmove-dim); }
+.an-fn-passing  { color: var(--geom); background: var(--geom-dim); }
+.an-fn-chromatic{ color: var(--text-secondary); background: rgba(176,168,152,0.08); }
+.an-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.an-detail-note { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 4px; }
+.an-detail-tension { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; font-style: italic; }
+
+/* Progression findings — secondary, collapsed by default (reuses the standing
+   .note-disclosure dt/dd convention rather than a permanent analytics summary at the top). */
+.an-region-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.an-region-chip {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+}
+.an-region-span { color: var(--text-muted); margin-left: 4px; }
+.an-pull-list { list-style: none; font-size: 13px; color: var(--text-secondary); line-height: 1.9; }
+.an-pull-list li { padding-left: 14px; position: relative; }
+.an-pull-list li::before { content: "\2192"; position: absolute; left: 0; color: var(--secdom); }
+.an-empty-finding { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+@media (max-width: 640px) {
+  .an-block-symbol { font-size: 13px; }
+  .an-detail-meta { gap: 6px 10px; }
+}
+
 
 /* MIDI export options popover — small checkbox panel anchored under the MIDI ↓ button.
    Mirrors the app's surface/border palette; shown by toggling the .open class in JS. */
@@ -633,7 +842,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .strip { display: flex; gap: 10px; flex-wrap: wrap; min-height: 64px; align-items: flex-start; }
 .chip-group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.chord-card-arrow { align-self: center; color: var(--text-muted); font-size: 16px; margin: 0 -2px; }
 .chip {
   font-family: var(--font-mono);
   color: #fff;
@@ -645,26 +853,41 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .chord-card {
   min-width: 158px;
   max-width: 190px;
-  padding: 8px 9px;
+  padding: 7px 9px;
   display: flex;
   flex-direction: column;
   gap: 0;
 }
-.chord-card-top { display: flex; align-items: center; justify-content: space-between; }
+/* Name merges onto the same row as the chord number and delete button (was a separate
+   row above the name) — one fewer stacked row is most of where the shorter card height
+   comes from. align-items:flex-start (not center) so a chord name that wraps to two
+   lines doesn't drag the number/delete down to its vertical middle. */
+.chord-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.chord-card-top-right { display: flex; align-items: center; gap: 4px; flex: none; padding-top: 1px; }
 .chord-card-num { font-family: var(--font-mono); font-size: 9px; color: rgba(255,255,255,0.65); }
 .chord-card-del {
-  background: transparent;
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55);
   border: none;
-  color: rgba(255,255,255,0.55);
-  font-size: 10px;
-  padding: 2px 4px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 9px;
+  padding: 0;
   line-height: 1;
-  border-radius: 4px;
+  flex: none;
 }
-.chord-card-del:hover { background: rgba(0,0,0,0.25); color: #fff; }
-.chord-card-name { font-size: 13px; font-weight: 500; letter-spacing: -0.01em; margin: 3px 0 1px; white-space: normal; }
-.chord-card-roman { font-family: var(--font-mono); font-size: 9px; color: rgba(255,255,255,0.6); min-height: 11px; }
-.chord-card-buttons { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 6px; }
+.chord-card-del:hover { background: rgba(0,0,0,0.8); }
+.chord-card-name { font-size: 13px; font-weight: 500; letter-spacing: -0.01em; margin: 0; white-space: normal; flex: 1; min-width: 0; }
+.chord-card-roman { font-family: var(--font-mono); font-size: 9px; color: rgba(255,255,255,0.6); min-height: 11px; margin-top: 0; }
+.chord-card-buttons { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px; }
+/* Duration dropdown gets its own row below bass/melody/inv/revise/insert, rather than
+   sharing that row — a real, frequently-used control, not a rare-case badge, so it keeps
+   a real row rather than competing for space in one that's already often tight. Any
+   badges (borrowed/passing/guided-listening/voicing) share this row, pushed to the right
+   by justify-content — sitting inside the card's own bounds, never overlaid past its
+   edge (a correction from an earlier pass that let them hang off the corner). */
+.chord-card-dur-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; }
 .chord-card-buttons button {
   background: rgba(0,0,0,0.28);
   border: 1px solid rgba(255,255,255,0.18);
@@ -676,19 +899,32 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .chord-card-buttons button:hover { background: rgba(0,0,0,0.42); border-color: rgba(255,255,255,0.32); }
 .chord-card-buttons button.has-bass, .chord-card-buttons button.has-melody, .chord-card-buttons button.has-inv,
-.chord-card-buttons button.active, .chord-card-buttons button.has-voicing, .chord-card-buttons button.stale-voicing,
-.chord-card-buttons button.has-dur {
+.chord-card-buttons button.active {
   background: rgba(0,0,0,0.5);
   border-color: #fff;
   color: #fff;
 }
 .chord-card-buttons button:disabled, .chord-card-buttons button.overridden { opacity: .35; }
-.chord-card-buttons .insert-btn {
-  width: 19px; height: 19px; border-radius: 50%; padding: 0;
-  background: rgba(0,0,0,0.28); border: 1px dashed rgba(255,255,255,0.35); color: rgba(255,255,255,0.8);
+/* Badges — borrowed/passing/guided-listening/voicing-status, previously each their own
+   full-width row (borrow-chip-tag, passing-chip-tag, gl-badge-row) or, for voicing, a
+   pill sharing the button row, then briefly an overlay hanging off the card's corner.
+   All rare/occasional states, not part of a chord's normal footprint, so they share the
+   dur row rather than claiming one of their own — but stay INSIDE the card's own layout
+   (no absolute positioning, nothing overlapping the card's edge). Hover/tap (gl badges
+   are real buttons; the rest are static, title-only) is how the full label reads — a
+   single letter plus color is enough to tell badges apart at a glance without one. */
+.chip-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; flex: none; }
+.chip-badge {
+  width: 15px; height: 15px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700; line-height: 1;
+  background: var(--surface-1); border: 1.5px solid currentColor;
+  flex: none; cursor: default;
 }
-.chord-card-buttons .insert-btn:hover { background: rgba(0,0,0,0.45); border-color: #fff; color: #fff; }
-.chord-card-buttons .insert-btn.active { background: #fff; border-color: #fff; color: #111; border-style: solid; }
+.cc-borrowed { color: var(--rootmove); }
+.cc-passing { color: var(--geom); }
+.cc-voicing { color: var(--mv); }
+.cc-voicing-stale { color: var(--stale); }
 .bass-btn {
   font-size: 12px;
   padding: 4px 12px;
@@ -725,8 +961,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .delete-btn:hover { background: rgba(235,104,52,0.18); border-color: var(--secdom); color: var(--text-primary); }
 .revise-btn {
-  font-size: 12px;
-  padding: 4px 10px;
+  /* Was font-size 12px / padding 4px 10px — noticeably larger than bass/melody/inv
+     (9px / 3px 6px) beside it, which meant IT alone was setting the button row's
+     height even though its siblings were smaller. Brought down close to them (not all
+     the way, so the pencil glyph stays legible) as part of shortening the card overall. */
+  font-size: 10px;
+  padding: 3px 8px;
   border-radius: 10px;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
@@ -735,7 +975,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   line-height: 1.3;
 }
 .revise-btn:hover { border-color: var(--accent); color: var(--text-primary); }
-.revise-btn.active { border: 2px solid var(--accent); padding: 3px 9px; color: var(--text-primary); background: var(--accent-dim); }
+.revise-btn.active { border: 2px solid var(--accent); padding: 2px 7px; color: var(--text-primary); background: var(--accent-dim); }
 .inv-btn {
   font-size: 12px;
   padding: 4px 12px;
@@ -873,6 +1113,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   white-space: nowrap;
 }
 .strip-empty { color: var(--text-muted); font-size: 15px; padding: 12px 0; }
+/* Item 58: quiet inline note when the root picker's effective key context (item 7's
+   effectiveMapKeyContext — the insert/revise cursor, or the progression's end key) differs
+   from the global Build Key/Mode selector. Deliberately lighter-weight than .insert-note
+   (which signals an active mode change) — this is a passive, always-available disclosure. */
+.root-context-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: -4px 0 8px;
+}
 
 /* --- Mid-progression key change (modulation) controls --- */
 .keychange-btn {
@@ -991,21 +1240,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .voicing-caveat strong { color: var(--text-primary); font-family: var(--font-mono); font-weight: 500; }
 .voicing-caveat.mv-override { border-left-color: var(--mv); }
 .voicing-caveat.mv-stale { border-left-color: var(--stale); }
-
-.voicing-btn {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 4px 9px;
-  border-radius: 6px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface-2);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.voicing-btn:hover { border-color: var(--mv); box-shadow: 0 0 0 1px var(--mv-dim); }
-.voicing-btn.has-voicing { background: var(--mv-dim); color: var(--text-primary); border-color: var(--mv); }
-.voicing-btn.stale-voicing { background: var(--stale-dim); color: var(--text-primary); border-color: var(--stale); }
-.voicing-btn.active { border: 2px solid var(--mv); padding: 3px 8px; color: var(--text-primary); background: var(--mv-dim); }
 
 .bass-btn:disabled, .melody-btn:disabled, .inv-btn:disabled,
 .bass-btn.overridden, .melody-btn.overridden, .inv-btn.overridden {
@@ -1176,6 +1410,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   cursor: pointer;
   white-space: nowrap;
   text-align: left;
+  /* Color swatch (Ricky's request — train the eye on the map's own quality colors
+     everywhere a chord quality is offered, not just the map itself and the Suggested
+     list). Same grid/dot pattern as .suggestion-item, reused rather than reinvented. */
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  align-items: start;
+  gap: 8px;
 }
 .secdom-btn:hover { border-color: var(--secdom); color: var(--text-primary); }
 .secdom-btn .target { color: var(--text-muted); font-size: 11px; display: block; margin-top: 2px; }
@@ -1294,6 +1535,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   cursor: pointer;
   white-space: nowrap;
   text-align: left;
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  align-items: start;
+  gap: 8px;
 }
 .diatonic-btn:hover { border-color: var(--accent-strong); color: var(--text-primary); }
 .diatonic-btn .num { color: var(--text-muted); font-size: 10px; display: block; margin-top: 2px; }
@@ -1357,6 +1602,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   cursor: pointer;
   white-space: nowrap;
   text-align: left;
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  align-items: start;
+  gap: 8px;
 }
 .borrow-btn:hover { border-color: var(--rootmove); color: var(--text-primary); }
 .borrow-btn .borrow-src { color: var(--text-muted); font-size: 10px; display: block; margin-top: 2px; }
@@ -1374,20 +1623,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .passing-btn:hover { background: var(--geom-strong); }
 .passing-btn .passing-tag { color: var(--text-muted); font-size: 11px; display: block; margin-top: 2px; }
-.passing-chip-tag {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--geom);
-  display: block;
-  margin-top: 2px;
-}
-.borrow-chip-tag {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--rootmove);
-  display: block;
-  margin-top: 2px;
-}
 
 /* Tempo & duration controls */
 .tempo-row {
@@ -1466,17 +1701,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .dur-mod-btn:disabled { opacity: 0.35; cursor: default; }
 .chip-dur {
   font-size: 10px;
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: 8px;
-  background: transparent;
-  border: 1px solid var(--border-strong);
+  background: rgba(0,0,0,0.28);
+  border: 1px solid rgba(255,255,255,0.18);
   cursor: pointer;
-  color: var(--text-muted);
+  color: rgba(255,255,255,0.78);
   font-family: var(--font-mono);
   line-height: 1.3;
+  /* Now a <select> (direct-pick dropdown, replacing the old cycle-on-click button) —
+     reset native select chrome so it still reads as the same small pill as every other
+     chip control, not a browser-default dropdown box. Colors match the translucent
+     black/white overlay every other chip button uses (.chord-card-buttons button),
+     NOT the app's own accent gold — that was invisible on any chord whose own map color
+     happened to sit in the same yellow/orange family (e.g. a major chord), since border
+     and background were the same hue as what they sat on top of. Black/white overlays
+     read against any underlying color, chord map or otherwise. */
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
 }
-.chip-dur:hover { border-color: var(--accent); color: var(--text-secondary); }
-.chip-dur.has-dur { background: var(--accent-dim); color: var(--text-primary); border-color: var(--accent); }
+.chip-dur:hover { background: rgba(0,0,0,0.42); border-color: rgba(255,255,255,0.32); }
+.chip-dur.has-dur { background: rgba(0,0,0,0.5); border-color: #fff; color: #fff; }
+/* Options render in the browser's native dropdown popup, which can't inherit the chip's
+   own dark styling on every platform — pin it to the app's own dark surface/text tokens
+   explicitly rather than leaving it to whatever default (often white-on-white) the OS
+   would otherwise pick. */
+.chip-dur option { background: var(--surface-2); color: var(--text-primary); }
 
 /* --- Harmonic Rhythm Editor (Rhythm tab) --- */
 .rhythm-toolbar { display: flex; gap: 20px; flex-wrap: wrap; align-items: end; margin-bottom: 14px; }
@@ -2422,6 +2671,10 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="10" width="4" height="7" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="10" y="5" width="4" height="12" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="17" y="13" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
         Rhythm
       </button>
+      <button class="tab" data-tab="analysis" role="tab" aria-selected="false" aria-controls="tab-analysis" title="Full harmonic breakdown — timeline, tension contour, every finding. For quick guidance while composing, see Build's own Listen For panel instead.">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19v-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2 19h20" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        Full Theory
+      </button>
     </nav>
     <div class="header-file-actions" role="group" aria-label="File actions">
       <div class="project-menu-wrap">
@@ -2478,15 +2731,18 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
             <button id="audition-scale" class="btn-loop" type="button" title="Hear the current key/mode's scale before building on it">▶ scale</button>
           </div>
         </div>
-        <details class="note-disclosure">
-          <summary>ⓘ About this key/mode &amp; suggestion mode</summary>
-          <dl class="note-terms">
-            <dt>Key / mode</dt>
-            <dd id="mode-note"></dd>
-            <dt>Suggestion mode</dt>
-            <dd id="sugg-mode-note"></dd>
-          </dl>
-        </details>
+        <div class="info-pop-wrap">
+          <button type="button" class="info-pop-trigger" id="keymode-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="keymode-info-panel">ⓘ About this key/mode &amp; suggestion mode</button>
+          <div class="info-pop-panel" id="keymode-info-panel" role="dialog" aria-label="About this key/mode &amp; suggestion mode" hidden>
+            <button type="button" class="info-pop-close" id="keymode-info-close" aria-label="Close">&times;</button>
+            <dl class="note-terms">
+              <dt>Key / mode</dt>
+              <dd id="mode-note"></dd>
+              <dt>Suggestion mode</dt>
+              <dd id="sugg-mode-note"></dd>
+            </dl>
+          </div>
+        </div>
       </div>
       <div class="section map-section">
         <div class="map-head">
@@ -2512,21 +2768,24 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
           </div>
           <button id="map-reset-view" class="map-reset-view-btn" type="button" title="Reset zoom and pan" hidden>reset view</button>
         </div>
-        <details class="note-disclosure">
-          <summary>ⓘ How the map works</summary>
-          <dl class="note-terms">
-            <dt>Clicking a chord</dt>
-            <dd>Adds it to your progression.</dd>
-            <dt>Outlined dots</dt>
-            <dd>Diatonic to your key — gold is your tonic, green is your key's signature chord.</dd>
-            <dt>Ranked suggestions</dt>
-            <dd>Live in the "Suggested next chords" panel to the right, not on the map itself.</dd>
-            <dt>The connecting line</dt>
-            <dd>Click it to <strong style="color:var(--text-secondary);">cut</strong> the progression back to that point — cutting the last segment undoes just the last chord.</dd>
-            <dt>Green loops</dt>
-            <dd>Mark chords with the <strong style="color:var(--text-secondary);">same quality</strong> as the previous one, labeled with the root motion — same-quality chords land on the same map point and leave no line to follow otherwise.</dd>
-          </dl>
-        </details>
+        <div class="info-pop-wrap">
+          <button type="button" class="info-pop-trigger" id="map-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="map-info-panel">ⓘ How the map works</button>
+          <div class="info-pop-panel" id="map-info-panel" role="dialog" aria-label="How the map works" hidden>
+            <button type="button" class="info-pop-close" id="map-info-close" aria-label="Close">&times;</button>
+            <dl class="note-terms">
+              <dt>Clicking a chord</dt>
+              <dd>Adds it to your progression.</dd>
+              <dt>Outlined dots</dt>
+              <dd>Diatonic to your key — gold is your tonic, green is your key's signature chord.</dd>
+              <dt>Ranked suggestions</dt>
+              <dd>Live in the "Suggested next chords" panel to the right, not on the map itself.</dd>
+              <dt>The connecting line</dt>
+              <dd>Click it to <strong style="color:var(--text-secondary);">cut</strong> the progression back to that point — cutting the last segment undoes just the last chord.</dd>
+              <dt>Green loops</dt>
+              <dd>Mark chords with the <strong style="color:var(--text-secondary);">same quality</strong> as the previous one, labeled with the root motion — same-quality chords land on the same map point and leave no line to follow otherwise.</dd>
+            </dl>
+          </div>
+        </div>
         <div class="build-edit-row">
           <button id="undo">undo</button>
           <button id="redo">redo</button>
@@ -2538,22 +2797,27 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
     <div class="build-inspector">
       <div class="section">
         <p class="section-label">Root for next chord</p>
+        <p id="rootContextNote" class="root-context-note" style="display:none;"></p>
         <div id="roots" class="row root-grid" style="margin-bottom:0;"></div>
       </div>
       <div class="section">
         <p class="section-label">Suggested next chords</p>
+        <p id="suggContextNote" class="root-context-note" style="display:none;"></p>
         <div id="suggestions" class="suggestions-list"></div>
-        <details class="note-disclosure">
-          <summary>ⓘ How these lists work</summary>
-          <dl class="note-terms">
-            <dt>Ranking</dt>
-            <dd>Suggested next chords are ranked by whichever suggestion mode is active above.</dd>
-            <dt>Click once</dt>
-            <dd>Previews the chord — nothing is added yet, and it's highlighted so you know it's armed.</dd>
-            <dt>Click it again</dt>
-            <dd>Adds it to your progression. Clicking a different suggestion instead just previews that one — nothing is added until you click the same one twice. Same pattern here and in Related chords below.</dd>
-          </dl>
-        </details>
+        <div class="info-pop-wrap">
+          <button type="button" class="info-pop-trigger" id="sugglist-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="sugglist-info-panel">ⓘ How these lists work</button>
+          <div class="info-pop-panel" id="sugglist-info-panel" role="dialog" aria-label="How these lists work" hidden>
+            <button type="button" class="info-pop-close" id="sugglist-info-close" aria-label="Close">&times;</button>
+            <dl class="note-terms">
+              <dt>Ranking</dt>
+              <dd>Suggested next chords are ranked by whichever suggestion mode is active above.</dd>
+              <dt>Click once</dt>
+              <dd>Previews the chord — nothing is added yet, and it's highlighted so you know it's armed.</dd>
+              <dt>Click it again</dt>
+              <dd>Adds it to your progression. Clicking a different suggestion instead just previews that one — nothing is added until you click the same one twice. Same pattern here and in Related chords below.</dd>
+            </dl>
+          </div>
+        </div>
       </div>
 
       <div class="section">
@@ -2586,28 +2850,34 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       <span id="progression-count" class="progression-count"></span>
     </div>
     <div class="strip-region">
-      <details class="note-disclosure" style="margin-top:0;margin-bottom:8px;">
-        <summary>ⓘ How the chip strip works</summary>
-        <dl class="note-terms">
-          <dt>Click a chip</dt>
-          <dd>Hear it. <strong style="color:var(--text-secondary);">✕</strong> deletes it, <strong style="color:var(--text-secondary);">+</strong> inserts a new one there.</dd>
-          <dt>bass / inv buttons</dt>
-          <dd><strong style="color:var(--text-secondary);">bass</strong> sets a slash bass note, <strong style="color:var(--text-secondary);">inv</strong> sets inversion.</dd>
-          <dt>Exact voicings</dt>
-          <dd>Hand-place notes by dragging them on the Voice Leading tab.</dd>
-          <dt>Durations</dt>
-          <dd>Shape each chord's duration on the Rhythm tab.</dd>
-        </dl>
-      </details>
-      <details class="note-disclosure" id="mv-shared-disclosure" style="margin-top:0;margin-bottom:8px;" hidden>
-        <summary>ⓘ Manual voicings override Bass, Melody and Inversion</summary>
-        <dl class="note-terms">
-          <dt>What's overridden</dt>
-          <dd>A chord marked <strong style="color:var(--text-secondary);">voicing · set</strong> below is playing an exact, hand-placed or imported voicing. Its saved Bass, Melody, and Inversion pins are still stored, but not currently controlling playback.</dd>
-          <dt>Where to change it</dt>
-          <dd>Drag notes on the Voice Leading tab, or double-click a note there to release it back to Auto.</dd>
-        </dl>
-      </details>
+      <div class="info-pop-wrap" style="margin-top:0;margin-bottom:8px;">
+        <button type="button" class="info-pop-trigger" id="chipstrip-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="chipstrip-info-panel">ⓘ How the chip strip works</button>
+        <div class="info-pop-panel" id="chipstrip-info-panel" role="dialog" aria-label="How the chip strip works" hidden>
+          <button type="button" class="info-pop-close" id="chipstrip-info-close" aria-label="Close">&times;</button>
+          <dl class="note-terms">
+            <dt>Click a chip</dt>
+            <dd>Hear it. <strong style="color:var(--text-secondary);">✕</strong> deletes it, <strong style="color:var(--text-secondary);">+</strong> inserts a new one there.</dd>
+            <dt>bass / inv buttons</dt>
+            <dd><strong style="color:var(--text-secondary);">bass</strong> sets a slash bass note, <strong style="color:var(--text-secondary);">inv</strong> sets inversion.</dd>
+            <dt>Exact voicings</dt>
+            <dd>Hand-place notes by dragging them on the Voice Leading tab.</dd>
+            <dt>Durations</dt>
+            <dd>Pick one from the <strong style="color:var(--text-secondary);">dur</strong> dropdown on the chip, or shape it precisely (including triplets and dotted values) on the Rhythm tab.</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="info-pop-wrap" id="mv-shared-disclosure" style="margin-top:0;margin-bottom:8px;" hidden>
+        <button type="button" class="info-pop-trigger" id="mv-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="mv-info-panel">ⓘ Manual voicings override Bass, Melody and Inversion</button>
+        <div class="info-pop-panel" id="mv-info-panel" role="dialog" aria-label="Manual voicings override Bass, Melody and Inversion" hidden>
+          <button type="button" class="info-pop-close" id="mv-info-close" aria-label="Close">&times;</button>
+          <dl class="note-terms">
+            <dt>What's overridden</dt>
+            <dd>A chord marked <strong style="color:var(--text-secondary);">voicing · set</strong> below is playing an exact, hand-placed or imported voicing. Its saved Bass, Melody, and Inversion pins are still stored, but not currently controlling playback.</dd>
+            <dt>Where to change it</dt>
+            <dd>Drag notes on the Voice Leading tab, or double-click a note there to release it back to Auto.</dd>
+          </dl>
+        </div>
+      </div>
       <p id="insert-note" class="insert-note" style="display:none;"></p>
       <div class="row" style="margin-bottom:8px;">
         <button id="add-keychange" class="keychange-btn" title="Insert a mid-progression key change at the cursor (or at the end)">+ key change</button>
@@ -2618,6 +2888,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       <div id="invpanel"></div>
       <div id="basspanel"></div>
       <div id="melodypanel"></div>
+      <div id="glpanel"></div>
     </div>
   </div>
 
@@ -2753,23 +3024,26 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       <span class="oct-transpose-val tempo-val">0</span>
       <button class="oct-transpose-up" onclick="setVoicingOctaveOffset(1)">▲</button>
     </div>
-    <details class="note-disclosure">
-      <summary>ⓘ How voice-leading analysis works</summary>
-      <dl class="note-terms">
-        <dt>Editing the roll</dt>
-        <dd>Drag a note up or down to move it to a new octave. Double-click a note to clear a chord's hand-placed voicing. Click a chord's roman numeral or name above its column to hear it and open full control over which notes it uses.</dd>
-        <dt>What these numbers mean</dt>
-        <dd>The <strong style="color:var(--text-secondary);">exact optimal</strong> voice leading between each pair of chords — the least motion an ideal bijective assignment achieves, in pitch-class space (each voice takes the shorter path around the octave), with the smaller chord doubling a tone when sizes differ.</dd>
-        <dt>The toggle above</dt>
-        <dd>Switches which optimum is sought: <strong style="color:var(--text-secondary);">least total motion</strong> (L1, all voices combined) can pick a different "smoothest" chord pair than <strong style="color:var(--text-secondary);">least largest leap</strong> (L∞, the single biggest jump). Affects this tab only, not the map's suggestion rings.</dd>
-        <dt>One honest gap</dt>
-        <dd>Your progression still <em>plays and exports</em> with the nearest-register voicing you actually hear, which can move more than this optimum — the line below the metrics shows by how much.</dd>
-        <dt>Voice labeling</dt>
-        <dd>Low-to-high: with 3–5 tones per chord (triads, sevenths, slash bass) there is no fixed four-part SATB texture.</dd>
-        <dt>Reading the roll</dt>
-        <dd>Line <strong style="color:var(--text-secondary);">color</strong> follows an individual voice — the same color stays with a voice from chord to chord, including through a crossing, so you can trace one line by eye instead of guessing from slope. A held common tone is already obvious as a flat horizontal line, so it gets no separate treatment. Colors are a rendering aid only: this app has no persistent named-voice (S/A/T/B) data, so a color can start or drop out when a chord's note count changes. Smoothness = 100 × (1 − average motion ÷ 6), so 100 means every voice is held and 0 means voices average a tritone or more.</dd>
-      </dl>
-    </details>
+    <div class="info-pop-wrap">
+      <button type="button" class="info-pop-trigger" id="vl-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="vl-info-panel">ⓘ How voice-leading analysis works</button>
+      <div class="info-pop-panel" id="vl-info-panel" role="dialog" aria-label="How voice-leading analysis works" hidden>
+        <button type="button" class="info-pop-close" id="vl-info-close" aria-label="Close">&times;</button>
+        <dl class="note-terms">
+          <dt>Editing the roll</dt>
+          <dd>Drag a note up or down to move it to a new octave. Double-click a note to clear a chord's hand-placed voicing. Click a chord's roman numeral or name above its column to hear it and open full control over which notes it uses.</dd>
+          <dt>What these numbers mean</dt>
+          <dd>The <strong style="color:var(--text-secondary);">exact optimal</strong> voice leading between each pair of chords — the least motion an ideal bijective assignment achieves, in pitch-class space (each voice takes the shorter path around the octave), with the smaller chord doubling a tone when sizes differ.</dd>
+          <dt>The toggle above</dt>
+          <dd>Switches which optimum is sought: <strong style="color:var(--text-secondary);">least total motion</strong> (L1, all voices combined) can pick a different "smoothest" chord pair than <strong style="color:var(--text-secondary);">least largest leap</strong> (L∞, the single biggest jump). Affects this tab only, not the map's suggestion rings.</dd>
+          <dt>One honest gap</dt>
+          <dd>Your progression still <em>plays and exports</em> with the nearest-register voicing you actually hear, which can move more than this optimum — the line below the metrics shows by how much.</dd>
+          <dt>Voice labeling</dt>
+          <dd>Low-to-high: with 3–5 tones per chord (triads, sevenths, slash bass) there is no fixed four-part SATB texture.</dd>
+          <dt>Reading the roll</dt>
+          <dd>Line <strong style="color:var(--text-secondary);">color</strong> follows an individual voice — the same color stays with a voice from chord to chord, including through a crossing, so you can trace one line by eye instead of guessing from slope. A held common tone is already obvious as a flat horizontal line, so it gets no separate treatment. Colors are a rendering aid only: this app has no persistent named-voice (S/A/T/B) data, so a color can start or drop out when a chord's note count changes. Smoothness = 100 × (1 − average motion ÷ 6), so 100 means every voice is held and 0 means voices average a tritone or more.</dd>
+        </dl>
+      </div>
+    </div>
   </div>
 
   </div><!-- /tab-voice -->
@@ -2824,31 +3098,34 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
       </div>
     </div>
 
-    <details class="note-disclosure" style="margin-top:14px;">
-      <summary>ⓘ What this view is &amp; honest caveats</summary>
-      <dl class="note-terms">
-        <dt>What this view is</dt>
-        <dd>A second view of the same field the Build map uses — here the seven diatonic chords of
-        <strong id="cyl-keyname" style="color:var(--text-secondary);"></strong> sit as a constellation, and your
-        progression threads through them as a path you can orbit. Playing the progression sends a pulse along that
-        path and the active chord briefly brightens and grows in place. Clicking a chord or path segment auditions
-        and inspects it — it never changes the progression by itself. Adding or replacing a chord from this view
-        only happens if Insert or Revise was already started on the Build tab; a banner above the stage shows when
-        that's the case.</dd>
-        <dt>Honest caveat: coordinates</dt>
-        <dd>Brightness and stability are the same hand-placed coordinates as the 2D map — a legible approximation, not a
-        rigorous metric — so read nearness as "roughly similar in character," not exact.</dd>
-        <dt>Honest caveat: dark-chord crowding</dt>
-        <dd>Because radius shrinks toward the centre, the darkest chords crowd together near the axis: two dark dots
-        looking close there can be further apart in root than they appear.</dd>
-        <dt>On the rim toggle</dt>
-        <dd>Chromatic order puts semitone neighbours next to each other, so it's the honest map of voice-leading distance.
-        Circle of fifths puts functional neighbours next to each other instead — a ii–V–I becomes a walk along the rim
-        rather than a scatter across it — which is better for seeing cadential pull, not voice-leading smoothness.
-        Neither layout is more correct; they answer different questions, and switching changes only which chords sit
-        next to which, nothing else about the field.</dd>
-      </dl>
-    </details>
+    <div class="info-pop-wrap" style="margin-top:14px;">
+      <button type="button" class="info-pop-trigger" id="cyl-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="cyl-info-panel">ⓘ What this view is &amp; honest caveats</button>
+      <div class="info-pop-panel" id="cyl-info-panel" role="dialog" aria-label="What this view is &amp; honest caveats" hidden>
+        <button type="button" class="info-pop-close" id="cyl-info-close" aria-label="Close">&times;</button>
+        <dl class="note-terms">
+          <dt>What this view is</dt>
+          <dd>A second view of the same field the Build map uses — here the seven diatonic chords of
+          <strong id="cyl-keyname" style="color:var(--text-secondary);"></strong> sit as a constellation, and your
+          progression threads through them as a path you can orbit. Playing the progression sends a pulse along that
+          path and the active chord briefly brightens and grows in place. Clicking a chord or path segment auditions
+          and inspects it — it never changes the progression by itself. Adding or replacing a chord from this view
+          only happens if Insert or Revise was already started on the Build tab; a banner above the stage shows when
+          that's the case.</dd>
+          <dt>Honest caveat: coordinates</dt>
+          <dd>Brightness and stability are the same hand-placed coordinates as the 2D map — a legible approximation, not a
+          rigorous metric — so read nearness as "roughly similar in character," not exact.</dd>
+          <dt>Honest caveat: dark-chord crowding</dt>
+          <dd>Because radius shrinks toward the centre, the darkest chords crowd together near the axis: two dark dots
+          looking close there can be further apart in root than they appear.</dd>
+          <dt>On the rim toggle</dt>
+          <dd>Chromatic order puts semitone neighbours next to each other, so it's the honest map of voice-leading distance.
+          Circle of fifths puts functional neighbours next to each other instead — a ii–V–I becomes a walk along the rim
+          rather than a scatter across it — which is better for seeing cadential pull, not voice-leading smoothness.
+          Neither layout is more correct; they answer different questions, and switching changes only which chords sit
+          next to which, nothing else about the field.</dd>
+        </dl>
+      </div>
+    </div>
   </div>
 
   </div><!-- /tab-cylinder -->
@@ -2878,33 +3155,36 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
     <div id="rhythm-timeline-wrap" class="rhythm-timeline-wrap">
       <div id="rhythm-timeline" class="rhythm-timeline"></div>
     </div>
-    <details class="note-disclosure">
-      <summary>ⓘ How this works &amp; honest caveats</summary>
-      <dl class="note-terms">
-        <dt>Editing a block</dt>
-        <dd>Drag a block's body to move it, or drag its right edge to change how long it holds. <strong style="color:var(--text-secondary);">−/+</strong> steppers do the same without dragging. Everything snaps to the note grid shown behind the blocks.</dd>
-        <dt>Markers &amp; zoom</dt>
-        <dd>Dashed dividers are key/meter changes — click one to edit it. Drag "Timeline width" left to fit more on screen at once, right to zoom in for precision.</dd>
-        <dt>The grid is fixed</dt>
-        <dd>Its length is a setting (the "Grid length" control above), not something that grows or shrinks as a side effect of an edit — matching Logic's Step Sequencer length dropdown rather than an elastic timeline. "Auto" sizes it to whatever the progression currently needs, rounded up to a full bar; picking a bar count locks it there.</dd>
-        <dt>Every chord has a real position</dt>
-        <dd>Same as a note in a DAW piano roll — a chord is always sitting somewhere specific, never "following" a neighbor. Moving one chord is completely independent of every other chord: nothing you do elsewhere in the progression can ever move it again, only dragging it yourself.</dd>
-        <dt>Shortening a chord</dt>
-        <dd>Never ripples the rest of the progression — nothing else moves, a gap just opens up.</dd>
-        <dt>Lengthening a chord</dt>
-        <dd>Capped hard at the next chord's start, or the grid's end if there's no next chord — it can never push or cross another chord.</dd>
-        <dt>Moving a chord</dt>
-        <dd>Dragging left closes any gap in front of the previous chord, then trims that chord's own duration to keep making room — down to a one-sixteenth-note floor, or a key/meter marker, whichever it hits first. Dragging right is capped the same way lengthening is — it stops at the next chord or the grid's end, never crosses it. It never reorders the harmony itself.</dd>
-        <dt>Bar lines</dt>
-        <dd>Placed using whichever time signature is active at that point in the progression. A meter change restarts bar counting from there.</dd>
-        <dt>Resolution</dt>
-        <dd>Whole, half, quarter, eighth, and sixteenth notes — that's also the finest grid increment blocks snap to. Triplets and dotted values aren't supported in the UI yet, though the grid's internal resolution was built so adding them later won't require rebuilding it.</dd>
-        <dt>Adding a meter change</dt>
-        <dd>Meter changes ride on the same markers as key changes — add one with "+ key change" on the Build tab, then set its meter here or in the marker editor. A marker doesn't have to change the key to carry a meter change.</dd>
-        <dt>Hearing it back</dt>
-        <dd>Silence and chord positions play back exactly as shown — but they aren't in the exported MIDI file yet. That fix is queued as its own careful pass since it touches the MIDI export engine directly.</dd>
-      </dl>
-    </details>
+    <div class="info-pop-wrap">
+      <button type="button" class="info-pop-trigger" id="rhythm-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="rhythm-info-panel">ⓘ How this works &amp; honest caveats</button>
+      <div class="info-pop-panel" id="rhythm-info-panel" role="dialog" aria-label="How this works &amp; honest caveats" hidden>
+        <button type="button" class="info-pop-close" id="rhythm-info-close" aria-label="Close">&times;</button>
+        <dl class="note-terms">
+          <dt>Editing a block</dt>
+          <dd>Drag a block's body to move it, or drag its right edge to change how long it holds. <strong style="color:var(--text-secondary);">−/+</strong> steppers do the same without dragging. Everything snaps to the note grid shown behind the blocks.</dd>
+          <dt>Markers &amp; zoom</dt>
+          <dd>Dashed dividers are key/meter changes — click one to edit it. Drag "Timeline width" left to fit more on screen at once, right to zoom in for precision.</dd>
+          <dt>The grid is fixed</dt>
+          <dd>Its length is a setting (the "Grid length" control above), not something that grows or shrinks as a side effect of an edit — matching Logic's Step Sequencer length dropdown rather than an elastic timeline. "Auto" sizes it to whatever the progression currently needs, rounded up to a full bar; picking a bar count locks it there.</dd>
+          <dt>Every chord has a real position</dt>
+          <dd>Same as a note in a DAW piano roll — a chord is always sitting somewhere specific, never "following" a neighbor. Moving one chord is completely independent of every other chord: nothing you do elsewhere in the progression can ever move it again, only dragging it yourself.</dd>
+          <dt>Shortening a chord</dt>
+          <dd>Never ripples the rest of the progression — nothing else moves, a gap just opens up.</dd>
+          <dt>Lengthening a chord</dt>
+          <dd>Capped hard at the next chord's start, or the grid's end if there's no next chord — it can never push or cross another chord.</dd>
+          <dt>Moving a chord</dt>
+          <dd>Dragging left closes any gap in front of the previous chord, then trims that chord's own duration to keep making room — down to a one-sixteenth-note floor, or a key/meter marker, whichever it hits first. Dragging right is capped the same way lengthening is — it stops at the next chord or the grid's end, never crosses it. It never reorders the harmony itself.</dd>
+          <dt>Bar lines</dt>
+          <dd>Placed using whichever time signature is active at that point in the progression. A meter change restarts bar counting from there.</dd>
+          <dt>Resolution</dt>
+          <dd>Whole, half, quarter, eighth, and sixteenth notes — that's also the finest grid increment blocks snap to. Triplets and dotted values aren't supported in the UI yet, though the grid's internal resolution was built so adding them later won't require rebuilding it.</dd>
+          <dt>Adding a meter change</dt>
+          <dd>Meter changes ride on the same markers as key changes — add one with "+ key change" on the Build tab, then set its meter here or in the marker editor. A marker doesn't have to change the key to carry a meter change.</dd>
+          <dt>Hearing it back</dt>
+          <dd>Silence and chord positions play back exactly as shown — but they aren't in the exported MIDI file yet. That fix is queued as its own careful pass since it touches the MIDI export engine directly.</dd>
+        </dl>
+      </div>
+    </div>
   </div>
 
   <div class="section" id="lines-section">
@@ -2955,37 +3235,34 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
         </div>
       </div>
     </div>
-    <details class="note-disclosure" style="margin-top:14px;">
-      <summary>
-        <span class="lines-info-wrap">
-          <span class="lines-info-badge" aria-hidden="true">i</span>
-          <span class="lines-info-popover" id="lines-info-popover" onclick="event.stopPropagation()"></span>
-        </span>
-        How Lines works
-      </summary>
-      <dl class="note-terms" id="lines-info-content">
-        <dt>What this is</dt>
-        <dd>A place to write an actual melody and bass line — notes with their own start, length, and pitch — separate from the single melody/bass note each chord can carry on the Build tab.</dd>
-        <dt>Placing notes</dt>
-        <dd>Click an empty spot in either lane to drop a note at that pitch and time. Drag a note to move it — it sounds again each time it crosses into a new pitch, so you can hear where it's landing. Drag its right edge to change its length. Right-click, long-press on touch, or select it and press <strong style="color:var(--text-secondary);">Delete</strong>/<strong style="color:var(--text-secondary);">Backspace</strong>/<strong style="color:var(--text-secondary);">X</strong> to remove it.</dd>
-        <dt>Selecting several at once</dt>
-        <dd>Drag across empty space to lasso a group of notes — from either lane, or both at once. Shift-click toggles one note in or out of the selection. Grab any selected note to drag the whole group together; erase any one of them (or press Delete/Backspace/X) to erase the whole group.</dd>
-        <dt>Row height</dt>
-        <dd>The <strong style="color:var(--text-secondary);">−/+</strong> buttons in the melody/bass groups above zoom each lane's pitch rows independently — taller rows are easier to grab, at the cost of needing to scroll vertically to reach the rest of the 3-octave range. Horizontal zoom is shared with the Rhythm tab's own "Timeline width" control above.</dd>
-        <dt>Snapping</dt>
-        <dd>Notes snap to the same sixteenth-note grid as the Rhythm tab. That grid will get finer once triplets and dotted values ship there — these lines will follow along.</dd>
-        <dt>Pitch is free</dt>
-        <dd>Nothing restricts which notes you can place — passing tones, chromatic motion, and leaps outside the chord are all allowed on purpose.</dd>
-        <dt>Tone coloring</dt>
-        <dd>Each note is checked against whichever chord is sounding at the moment it starts. Chord tones and other in-key notes look exactly like they always have. A note that's genuinely outside the key turns red — the same red used for the parallel-5th/8ve flag below — so red always means "worth a second look," nothing more. This is a read, not a rule — nothing is ever blocked.</dd>
-        <dt>Motion analysis</dt>
-        <dd>The summary bar above the lanes shows how the two lines move against each other — contrary, similar, oblique, or static — measured at every point where either line's note changes. This is only measured where <strong style="color:var(--text-secondary);">both</strong> lines are actually sounding; a stretch where one line is resting is left out rather than guessed at, so a rest can visibly break up a run of contrary or similar motion in the percentages.</dd>
-        <dt>Parallel 5ths/8ves &amp; voice crossing</dt>
-        <dd>Small dots above the lanes flag parallel perfect 5ths/octaves and moments where the melody dips below the bass. These are advisory, not errors — parallel motion is a real stylistic choice in a lot of electronic and pop writing, so nothing is blocked or auto-corrected. Hover a dot for the specific notes involved.</dd>
-        <dt>Not yet included</dt>
-        <dd>These lines don't factor into the Build tab's voice-leading analysis or MIDI export yet — they play back on their own synths, with their own playhead highlighting, for now.</dd>
-      </dl>
-    </details>
+    <div class="info-pop-wrap" style="margin-top:14px;">
+      <button type="button" class="info-pop-trigger" id="lines-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="lines-info-panel">ⓘ How Lines works</button>
+      <div class="info-pop-panel" id="lines-info-panel" role="dialog" aria-label="How Lines works" hidden>
+        <button type="button" class="info-pop-close" id="lines-info-close" aria-label="Close">&times;</button>
+        <dl class="note-terms">
+          <dt>What this is</dt>
+          <dd>A place to write an actual melody and bass line — notes with their own start, length, and pitch — separate from the single melody/bass note each chord can carry on the Build tab.</dd>
+          <dt>Placing notes</dt>
+          <dd>Click an empty spot in either lane to drop a note at that pitch and time. Drag a note to move it — it sounds again each time it crosses into a new pitch, so you can hear where it's landing. Drag its right edge to change its length. Right-click, long-press on touch, or select it and press <strong style="color:var(--text-secondary);">Delete</strong>/<strong style="color:var(--text-secondary);">Backspace</strong>/<strong style="color:var(--text-secondary);">X</strong> to remove it.</dd>
+          <dt>Selecting several at once</dt>
+          <dd>Drag across empty space to lasso a group of notes — from either lane, or both at once. Shift-click toggles one note in or out of the selection. Grab any selected note to drag the whole group together; erase any one of them (or press Delete/Backspace/X) to erase the whole group.</dd>
+          <dt>Row height</dt>
+          <dd>The <strong style="color:var(--text-secondary);">−/+</strong> buttons in the melody/bass groups above zoom each lane's pitch rows independently — taller rows are easier to grab, at the cost of needing to scroll vertically to reach the rest of the 3-octave range. Horizontal zoom is shared with the Rhythm tab's own "Timeline width" control above.</dd>
+          <dt>Snapping</dt>
+          <dd>Notes snap to the same sixteenth-note grid as the Rhythm tab. That grid will get finer once triplets and dotted values ship there — these lines will follow along.</dd>
+          <dt>Pitch is free</dt>
+          <dd>Nothing restricts which notes you can place — passing tones, chromatic motion, and leaps outside the chord are all allowed on purpose.</dd>
+          <dt>Tone coloring</dt>
+          <dd>Each note is checked against whichever chord is sounding at the moment it starts. Chord tones and other in-key notes look exactly like they always have. A note that's genuinely outside the key turns red — the same red used for the parallel-5th/8ve flag below — so red always means "worth a second look," nothing more. This is a read, not a rule — nothing is ever blocked.</dd>
+          <dt>Motion analysis</dt>
+          <dd>The summary bar above the lanes shows how the two lines move against each other — contrary, similar, oblique, or static — measured at every point where either line's note changes. This is only measured where <strong style="color:var(--text-secondary);">both</strong> lines are actually sounding; a stretch where one line is resting is left out rather than guessed at, so a rest can visibly break up a run of contrary or similar motion in the percentages.</dd>
+          <dt>Parallel 5ths/8ves &amp; voice crossing</dt>
+          <dd>Small dots above the lanes flag parallel perfect 5ths/octaves and moments where the melody dips below the bass. These are advisory, not errors — parallel motion is a real stylistic choice in a lot of electronic and pop writing, so nothing is blocked or auto-corrected. Hover a dot for the specific notes involved.</dd>
+          <dt>Not yet included</dt>
+          <dd>These lines don't factor into the Build tab's voice-leading analysis or MIDI export yet — they play back on their own synths, with their own playhead highlighting, for now.</dd>
+        </dl>
+      </div>
+    </div>
   </div>
 
   <div class="section" id="midi-import-section" style="display:none;">
@@ -2994,6 +3271,36 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
   </div>
 
   </div><!-- /tab-session -->
+
+  <div class="tab-panel" id="tab-analysis" role="tabpanel" aria-label="Full Theory" hidden>
+
+  <div id="analysis-timeline-wrap"></div>
+
+  <details class="note-disclosure" id="analysis-findings-disclosure">
+    <summary>Progression findings &middot; key regions &amp; directional pull</summary>
+    <div id="analysis-findings"></div>
+  </details>
+
+  <div class="info-pop-wrap">
+    <button type="button" class="info-pop-trigger" id="howread-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="howread-info-panel">&#9432; How to read Analysis</button>
+    <div class="info-pop-panel" id="howread-info-panel" role="dialog" aria-label="How to read Analysis" hidden>
+      <button type="button" class="info-pop-close" id="howread-info-close" aria-label="Close">&times;</button>
+      <dl class="note-terms">
+        <dt>Findings, not interpretation</dt>
+        <dd>Everything on this tab is a finding &mdash; something this app already computes about your progression (function, cadence, pitch content, tension position). There's no interpretive reading here yet; an Emotional Map layer is proposed for a later phase, not this one.</dd>
+        <dt>The timeline</dt>
+        <dd>Chord symbol and function read left to right in musical order; block width follows each chord's actual duration (compressed for legibility, not literal rhythmic notation). Key regions are labeled above the group of chords they cover.</dd>
+        <dt>Chord-color tension contour</dt>
+        <dd>The line beneath the timeline plots where each <strong style="color:var(--text-secondary);">chord type</strong> sits on the app's own brightness/tension map &mdash; an intrinsic property of the quality itself (major 7, dominant 7, diminished, and so on). It does <em>not</em> measure the actual voicing, spacing, or register you're hearing in Voice Leading or Rhythm, and it is not an emotional reading of any kind.</dd>
+        <dt>Directional pull</dt>
+        <dd>Shown in words, never a number, in the detail panel below the timeline: whether a chord carries a strong tonal or modal pull toward the local tonic, and whether the very next chord resolves it. This reuses the same cadence classification the Harmonic Arc export already uses, so the two always agree.</dd>
+        <dt>Selecting a chord or connector</dt>
+        <dd>Click or tap a chord to hear it and see its full findings below &mdash; the same audition glow lights up here and in Voice Leading. Click a connector between two chords for that transition's findings. This view never edits your progression; use Build or Voice Leading to change anything.</dd>
+      </dl>
+    </div>
+  </div>
+
+  </div><!-- /tab-analysis -->
 </div><!-- /app -->
 
 <div class="transport" id="transport" role="region" aria-label="Transport and file actions">
@@ -3056,7 +3363,7 @@ select.cyl-btn option { background: var(--surface-2); color: var(--text-primary)
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v71";
+const APP_VERSION = "v77";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -4704,7 +5011,43 @@ function detectCadences(chordRoots,kr,km){
   }
   return events;
 }
-// Groups a per-chord tier list into consecutive-run brackets: [{tier,start,end}, ...]
+// --- Item 62: borrowed-dominant tonal cadence recognition (Opus design-lock) ---
+// detectCadences() above only knows a chord's ROOT position against modeCadences' native-
+// degree table — a borrowed dominant sitting on a scale degree that mode doesn't natively
+// treat as a pull (e.g. a borrowed V7 on Dorian's naturally-minor v) produces no cadence
+// event at all, even when it resolves to the local tonic exactly like a real authentic
+// cadence. This layers a SECOND, independent check on top, never replacing or editing
+// detectCadences/modeCadences/cadencePullClass/CADENCE_STRONG.
+//
+// Reuses tendencyInfoAt() (Craft VL Phase B, item 24) verbatim — no new theory. Its
+// 'minorRaisedTendency' branch already identifies exactly this case: a non-native chord
+// carrying dominant guide tones (major 3rd + b7) whose leading tone/chordal-7th resolve to
+// the LOCAL tonic via a source mode where this same degree is itself tonal. User-validated
+// in v66 on E7->Am in A Aeolian — that same live authority is simply being read here for a
+// cadence finding instead of only a voicing one.
+// Deliberately scoped to the 'V'-role case only (secondary dominants, native tonal pulls,
+// and borrowed vii-role leading-tone chords are all out of scope — see the lock in
+// chord_space_backlog.md, item 62). Never fires at a position detectCadences() already
+// flagged (native-degree detection always wins), so no position can ever carry two pull
+// events. "Same key segment" check on the next chord mirrors detectCadences' own per-
+// segment boundary handling — a key change or end of progression right after this chord
+// is treated as unresolved, not compared against a now-irrelevant tonic.
+function borrowedDominantCadenceEvents(chordEntries, cadenceEvents){
+  const already=new Set(cadenceEvents.map(e=>e.at));
+  const extra=[];
+  chordEntries.forEach((ce,ci)=>{
+    if(already.has(ci)) return;
+    const ti=tendencyInfoAt(ce.seqIdx);
+    if(!ti || ti.origin!=='minorRaisedTendency') return;
+    const next=chordEntries[ci+1];
+    const sameSeg=next && next.kr===ce.kr && next.km===ce.km;
+    let type;
+    if(!sameSeg) type='tonalUnresolved';
+    else type=(next.s.root===ce.kr) ? 'tonalResolve' : 'tonalAway';
+    extra.push({at:ci, type});
+  });
+  return extra;
+}
 function groupRegions(tiers){
   const groups=[];
   for(let i=0;i<tiers.length;i++){
@@ -4736,7 +5079,329 @@ const qualitySymbol={major:'',minor:'m','diminished':'\u00B0',augmented:'+','maj
   'dominant 7 #5 #9':'7\u266F5\u266F9',
   // Item 11: maj7 with raised 5th.
   'augmented major 7':'maj7\u266F5'};
+
+// --- Item 59 Phase 1: Live Analysis workspace (read-only) --------------------------------
+// Computes a fresh, render-ready structure from the SAME underlying authorities exportTheory()
+// already uses (nativeDegreeByFunction, borrowedStatusAt, secDomStatusAt, pitchContentStatus,
+// classifyTransition, detectCadences, keyContextAt, meterContextAt) — deliberately NOT calling
+// exportTheory() itself and never touching its code, so this addition carries zero risk to the
+// existing, already-validated export path. Holds no state of its own: every call re-derives
+// from the live seq/lib data at call time (items 46/50 truth-first principle — borrowed/secDom
+// status is never read from a stored s.borrowed/s.secDom flag). Never mutates seq, voicings, or
+// any global — Analysis is a read-only VIEW per its design-lock, not a second editing authority.
+// Trust-boundary note (design-lock item 59): chromatic/borrowed SPELLING (item 51's still-open
+// half) and detectKey's own region-guessing are deliberately not surfaced here as verdicts —
+// this reads keyContextAt()'s already-set region, never re-guesses one.
+function computeLiveAnalysis(){
+  const voicings=window._voicings||[];
+  if(!seq.length || !voicings.length) return {empty:true};
+
+  const chordEntries=[];
+  seq.forEach((s,i)=>{ if(!isMarker(s)){ const kc=keyContextAt(i); chordEntries.push({s,seqIdx:i,kr:kc.keyRoot,km:kc.keyMode,mt:meterContextAt(i)}); } });
+  if(!chordEntries.length) return {empty:true};
+
+  const invNames=['root pos.','1st inv.','2nd inv.','3rd inv.'];
+  const durLabels={'1n':'whole','2n':'half','4n':'quarter','8n':'eighth','16n':'sixteenth',
+    '1n_d':'dotted whole','2n_d':'dotted half','4n_d':'dotted quarter','8n_d':'dotted eighth',
+    '8n_t':'eighth triplet','4n_t':'quarter triplet','16n_t':'sixteenth triplet'};
+
+  const cards=chordEntries.map((ce)=>{
+    const s=ce.s, ch=lib[s.idx], lkr=ce.kr, lkm=ce.km;
+    const ds=diatonicChords(lkr,lkm);
+    const rn=keySpell(s.root,lkr,lkm);
+    const dm=nativeDegreeByFunction(s.root,ch.n,ds);
+    const dur=getChordDur(s);
+    const isOverride=!!s.dur;
+
+    let fn='', fnClass='chromatic', borrowDisclosure=null;
+    const bStatus=dm?null:borrowedStatusAt(ce.seqIdx);
+    const sdStatus=dm?null:secDomStatusAt(ce.seqIdx);
+    if(dm){
+      fn=dm.num; fnClass='diatonic';
+      if(dm.characteristic){ fn+='\u2009\u2605'; fnClass='characteristic'; }
+    } else if(sdStatus.isSecDom){
+      fn=sdStatus.label; fnClass='secdom';
+    } else if(s.passing){
+      fn=passingKindLabel[s.passing.kind]||'passing'; fnClass='passing';
+    } else if(bStatus.isBorrowed){
+      fn=bStatus.sources[0].num; fnClass='borrowed';
+      borrowDisclosure=borrowedDisclosureText(bStatus, keySpell(lkr,lkr,lkm));
+    } else {
+      fn='chromatic';
+    }
+
+    const pcStatus=pitchContentStatus(s.root,ch.n,lkr,lkm);
+    const chromaticColorNote=(dm&&!pcStatus.native)?pcStatus.outside.map(o=>o.name).join(', '):null;
+
+    const sym=(qualitySymbol[ch.n]!==undefined)?qualitySymbol[ch.n]:(' '+ch.n);
+    const inv=s.inv||0;
+
+    return {
+      seqIdx:ce.seqIdx, root:s.root, quality:ch.n, label:rn+sym, fn, fnClass,
+      borrowDisclosure, chromaticColorNote, pitchNative:pcStatus.native,
+      dur:durLabels[dur]+(isOverride?' \u25CF':''), invLabel: inv>0?invNames[inv]:null,
+      bass: s.bass!==null ? keySpell(s.bass,lkr,lkm) : null,
+      keyName: keySpell(lkr,lkr,lkm)+' '+lkm, meter: ce.mt.num+'/'+ce.mt.den,
+      // tensionPct reuses toPct()'s own y->percent inversion verbatim ((1-y)/2)*100 — the
+      // same formula that already places dots on the map — rather than a hand-derived one.
+      // Higher y (more consonant/stable, e.g. major 7 at 0.55) yields a LOW percent; lower/
+      // negative y (more tense, e.g. diminished 7 at -0.85) yields a HIGH percent. This is
+      // BUILD NOTE 1 satisfied by construction, not by a separately-invented inversion.
+      tensionY: ch.y, tensionPct: ((1-ch.y)/2)*100, col: ch.col,
+      // Item 59 visual-refinement pass (v74): durUnits is a purely presentational addition —
+      // the SAME grid-unit authority Rhythm/Notes already use (getChordDur + DUR_UNITS), just
+      // not previously exposed as a raw number (only the formatted label above). Used only to
+      // size the Harmonic Timeline's chord-track width proportionally; not a new classification,
+      // no theory content, nothing computeLiveAnalysis() didn't already have access to.
+      durUnits: DUR_UNITS[dur]||12
+    };
+  });
+
+  // Transitions — same chordMeta shape classifyTransition expects, built independently of
+  // exportTheory (never calling it) but from the identical authorities.
+  const chordMeta=chordEntries.map(ce=>{
+    const s=ce.s, ch=lib[s.idx], ds=diatonicChords(ce.kr,ce.km);
+    const isNative=!!nativeDegreeByFunction(s.root,ch.n,ds);
+    return { root:s.root, quality:ch.n, pcs:pcsOf(s.root,ch.n), isDiatonic:isNative,
+      isDom:(ch.n==='dominant 7'||ch.n==='9th'), secDom:isNative?null:secDomStatusAt(ce.seqIdx).label };
+  });
+
+  // Cadence/pull events, segmented per key region exactly as exportTheory does (same
+  // segmentation algorithm, independently applied — not shared code, same shared authority).
+  const cadenceLabels={
+    tonalResolve:'Tonal resolution to tonic', tonalAway:'Tonal pull does not resolve to tonic',
+    tonalUnresolved:'Unresolved tonal pull', modalResolve:'Modal resolution to tonic',
+    modalAway:'Modal pull does not resolve to tonic', modalUnresolved:'Unresolved modal pull'
+  };
+  const cadenceEvents=[];
+  {
+    let segStart=0;
+    while(segStart<chordEntries.length){
+      const segKr=chordEntries[segStart].kr, segKm=chordEntries[segStart].km;
+      let segEnd=segStart;
+      while(segEnd+1<chordEntries.length && chordEntries[segEnd+1].kr===segKr && chordEntries[segEnd+1].km===segKm) segEnd++;
+      const segRoots=chordEntries.slice(segStart,segEnd+1).map(ce=>ce.s.root);
+      detectCadences(segRoots,segKr,segKm).forEach(e=>cadenceEvents.push({at:segStart+e.at, type:e.type}));
+      segStart=segEnd+1;
+    }
+  }
+  // Item 62: layer borrowed-dominant tonal cadences on top of the native-degree events
+  // above — never replaces them, never fires where one already exists.
+  borrowedDominantCadenceEvents(chordEntries, cadenceEvents).forEach(e=>cadenceEvents.push(e));
+  const cadenceByIndex={};
+  cadenceEvents.forEach(e=>{ cadenceByIndex[e.at]=e.type; });
+
+  const transitions=[];
+  for(let i=1;i<chordMeta.length;i++){
+    const t=classifyTransition(chordMeta[i-1],chordMeta[i],chordEntries[i].kr);
+    // The DEPARTING chord (i-1) is the pull source, matching detectCadences' own indexing —
+    // it asks "does the NEXT chord resolve this one's pull," which is exactly this transition.
+    const pullType=cadenceByIndex[i-1];
+    const pullText=(pullType && pullType!=='tonalUnresolved' && pullType!=='modalUnresolved')
+      ? cadenceLabels[pullType] : null;
+    // Color-tension direction (design-lock, Ricky's frozen indicator spec): the track runs
+    // low(tense)->high(stable) inverted from the raw map y (BUILD NOTE 1 — higher y = more
+    // consonant/stable in lib, so a tension RISE means y FALLS). Compare raw y directly.
+    const yA=cards[i-1].tensionY, yB=cards[i].tensionY;
+    let tensionDir='neutral';
+    if(yB < yA - 1e-9) tensionDir='up';        // y fell -> tension rose
+    else if(yB > yA + 1e-9) tensionDir='down'; // y rose -> tension fell
+    transitions.push({ afterCi:i-1, motion:t.motion, commonCount:t.commonCount,
+      commonNames:t.commonNames, pullText, tensionDir });
+  }
+
+  // Final-chord unresolved pull is a state of the LAST chord, not a transition (no "next"
+  // chord owns it) — surfaced separately so the finding isn't silently dropped.
+  const lastIdx=chordEntries.length-1;
+  const lastType=cadenceByIndex[lastIdx];
+  const finalUnresolved=(lastType==='tonalUnresolved'||lastType==='modalUnresolved') ? cadenceLabels[lastType] : null;
+
+  // Key regions: consecutive same-key runs over the card list (key boundaries only — the
+  // Harmonic Arc's own tier+key grouping is a different, finer-grained split not needed here).
+  const keyRegions=[];
+  cards.forEach((c,i)=>{
+    const prev=keyRegions[keyRegions.length-1];
+    if(prev && prev.keyName===c.keyName) prev.end=i;
+    else keyRegions.push({keyName:c.keyName, start:i, end:i});
+  });
+
+  // Honest empty-pull state (design-lock risk flag): Locrian's only pull sits below
+  // CADENCE_STRONG (item 47) so it correctly produces zero events — this must read as a
+  // real, correct state, not a blank card or a fabricated reading.
+  const anyLocrian=chordEntries.some(ce=>ce.km==='Locrian');
+  const noPullAtAll=cadenceEvents.length===0;
+
+  return {empty:false, cards, transitions, keyRegions, finalUnresolved, anyLocrian, noPullAtAll};
+}
 function fifthsIdx(pc){ return (((pc%12)+12)%12)*7%12; }
+
+// --- Item 59 next iteration: Guided Listening (post-v74 product reopening, Opus lock) -----
+// Deliberately NOT a new theory engine: every moment below is a plain-language translation
+// of ONE category-A finding computeLiveAnalysis() (or its own live authorities) already
+// produces. No comparatives, no superlatives, no ranking — moments are listed in strict
+// progression order, never "top N" or "strongest" (the lock's hard requirement, since the
+// engine CLASSIFIES but does not RANK). The headline translates one named fact into plain
+// English; "whyLines" stays pure findings underneath — the trust boundary the lock fixed.
+// See chord_space_backlog.md, "Item 59 next iteration — Guided Listening", for the full lock.
+//
+// Each moment carries seqIdx (the raw seq[] index of its "anchor" chip — the chord itself
+// for a chord-anchored moment, the DEPARTING chord for a transition-anchored one) so the
+// Build strip can look up which chips get a badge with one Map keyed by seqIdx, and
+// seqIdxNext (transition-anchored only) for the two-chord audition sequence.
+function computeGuidedListening(){
+  const data=computeLiveAnalysis();
+  if(data.empty) return [];
+  const moments=[];
+
+  data.cards.forEach((c,ci)=>{
+    if(c.fnClass==='secdom'){
+      const sd=secDomStatusAt(c.seqIdx);
+      moments.push({
+        id:'chord:'+c.seqIdx, anchorType:'chord', seqIdx:c.seqIdx, seqIdxNext:null, ci, kind:'secdom',
+        headline:`Secondary dominant \u2014 briefly tonicizes ${sd.targetNum||'the next degree'}.`,
+        whyLines:[`Function: ${esc(sd.label||c.fn)}`, sd.targetNum?`Target: ${esc(sd.targetNum)}`:null,
+          `A dominant-quality chord borrowed to point toward ${esc(sd.targetNum||'that degree')} instead of the tonic.`].filter(Boolean)
+      });
+    } else if(c.fnClass==='borrowed'){
+      const bs=borrowedStatusAt(c.seqIdx);
+      const kc=keyContextAt(c.seqIdx);
+      const disclosure=borrowedDisclosureText(bs, keySpell(kc.keyRoot,kc.keyRoot,kc.keyMode));
+      moments.push({
+        id:'chord:'+c.seqIdx, anchorType:'chord', seqIdx:c.seqIdx, seqIdxNext:null, ci, kind:'borrowed',
+        headline:`Borrowed color \u2014 brings in a chord from outside ${esc(c.keyName)} without changing the tonic.`,
+        whyLines:[`Function here: ${esc(c.fn)}`, disclosure].filter(Boolean)
+      });
+    }
+  });
+
+  data.transitions.forEach((t)=>{
+    if(!t.pullText) return;
+    // cadenceLabels (computeLiveAnalysis) is a small fixed table — pattern-matching its own
+    // wording here is safe and avoids re-deriving the raw cadence type a second time; the
+    // string itself is already the finding computeLiveAnalysis returned.
+    const resolves=t.pullText.indexOf('does not resolve')===-1;
+    const modal=t.pullText.startsWith('Modal');
+    const a=data.cards[t.afterCi], b=data.cards[t.afterCi+1];
+    moments.push({
+      id:'transition:'+t.afterCi, anchorType:'transition', seqIdx:a.seqIdx, seqIdxNext:b.seqIdx, ci:t.afterCi,
+      kind:resolves?'pull-resolve':'pull-away',
+      headline: resolves
+        ? `${modal?'Modal':'Tonal'} pull home \u2014 this motion resolves to the tonic.`
+        : `${modal?'Modal':'Tonal'} pull that moves away instead of resolving.`,
+      whyLines:[esc(t.pullText), esc(t.motion), `${t.commonCount} common tone${t.commonCount===1?'':'s'}${t.commonNames?' ('+esc(t.commonNames)+')':''}`]
+    });
+  });
+
+  if(data.finalUnresolved){
+    const last=data.cards.length-1, lc=data.cards[last];
+    moments.push({
+      id:'chord:'+lc.seqIdx, anchorType:'chord', seqIdx:lc.seqIdx, seqIdxNext:null, ci:last, kind:'pull-unresolved',
+      headline:`This pull doesn't resolve within what's written.`,
+      whyLines:[esc(data.finalUnresolved)]
+    });
+  }
+
+  data.keyRegions.forEach((r,ri)=>{
+    if(ri===0) return; // the first region is the starting key, not a "change"
+    const prev=data.cards[r.start-1], cur=data.cards[r.start];
+    moments.push({
+      id:'transition:'+(r.start-1), anchorType:'transition', seqIdx:prev.seqIdx, seqIdxNext:cur.seqIdx, ci:r.start-1,
+      kind:'key-change',
+      headline:`The harmonic context changes here \u2014 into ${esc(cur.keyName)}.`,
+      whyLines:[`Before: ${esc(prev.keyName)}`, `After: ${esc(cur.keyName)}`,
+        prev.meter!==cur.meter?`Meter also changes: ${esc(prev.meter)} \u2192 ${esc(cur.meter)}`:null].filter(Boolean)
+    });
+  });
+
+  // Strict progression order — never ranked, never "top N" (design-lock hard requirement:
+  // the engine classifies, it does not rank). A pull moment and a key-change moment CAN
+  // legitimately share the same ci at a modulation boundary (detectCadences runs fresh per
+  // key segment, so the previous segment's own last-chord pull is unaffected by the
+  // boundary) — both are kept, neither silently dropped in favor of the other.
+  moments.sort((x,y)=> (x.ci-y.ci) || ((x.anchorType==='chord'?0:1)-(y.anchorType==='chord'?0:1)));
+  return moments;
+}
+
+// Plays a chord-anchored moment's own chord, or a transition-anchored moment's departing
+// chord immediately followed by its successor after a plain setTimeout (NOT routed through
+// Tone.Transport/playProgression) — the same lightweight, independent single-chord trigger
+// the Build strip's own tap-to-preview already uses (see the chip.onclick site), just
+// called twice in sequence. Deliberately isolated from isPlaying/Transport state so it can
+// never collide with normal playback.
+function auditionMoment(m){
+  const v=window._voicings||[];
+  const sA=seq[m.seqIdx]; if(!sA) return;
+  Tone.start(); ensureSynth();
+  const notesA=(v[m.seqIdx]||[]).map(midiToNote);
+  const durA=durToSeconds(getChordDur(sA));
+  if(notesA.length) synth.triggerAttackRelease(notesA, durA);
+  flashAuditionGlow(m.seqIdx);
+  if(m.anchorType==='transition' && m.seqIdxNext!=null){
+    setTimeout(()=>{
+      const sB=seq[m.seqIdxNext]; if(!sB) return;
+      const notesB=(v[m.seqIdxNext]||[]).map(midiToNote);
+      if(notesB.length) synth.triggerAttackRelease(notesB, durToSeconds(getChordDur(sB)));
+      flashAuditionGlow(m.seqIdxNext);
+    }, Math.max(durA*1000, 150));
+  }
+}
+// Selecting/deselecting a moment is view-local UI state only (same principle as v73/v74's
+// Analysis tab selection) — never writes seq, activeChordIndex, or any editing authority.
+// Re-renders both the strip (so the clicked badge shows its .active state) and the panel.
+function openGuidedListeningMoment(id){
+  activeInsightMomentId=(activeInsightMomentId===id)?null:id;
+  renderStrip(window._voicings||[]);
+}
+const glKindLabel={secdom:'Secondary dominant', borrowed:'Borrowed color', 'pull-resolve':'Resolves home',
+  'pull-away':'Moves away', 'pull-unresolved':'Left unresolved', 'key-change':'Key change'};
+function renderGuidedListeningPanel(voicings){
+  if(!glpanel) return;
+  if(!seq.some(s=>!isMarker(s))){
+    // True zero-chord state: the strip's own "No chords yet..." message already covers
+    // this clearly — showing a second, differently-worded empty message here would read
+    // as a mismatch rather than genuinely new information.
+    glpanel.innerHTML='';
+    return;
+  }
+  const moments=computeGuidedListening();
+  if(!moments.length){
+    glpanel.innerHTML='<p class="gl-empty">Nothing notable detected yet in this progression — no secondary dominants, borrowed chords, strong pulls, or key changes found. That\'s an honest reading, not a gap: a purely diatonic progression with no modulation has nothing here to flag.</p>';
+    return;
+  }
+  const listHtml=moments.map(m=>{
+    const active=activeInsightMomentId===m.id;
+    return `<li class="gl-list-item${active?' active':''}" data-gl-id="${esc(m.id)}" tabindex="0" role="button">
+      <span class="gl-list-kind gl-badge-${m.kind}">\u2022</span>
+      <span class="gl-list-headline">${m.headline}</span>
+    </li>`;
+  }).join('');
+  let detailHtml='';
+  const sel=activeInsightMomentId?moments.find(m=>m.id===activeInsightMomentId):null;
+  if(sel){
+    detailHtml=`<div class="gl-detail">
+      <p class="gl-detail-headline"><span class="gl-badge-inline gl-badge-${sel.kind}">\u2022</span> ${sel.headline}</p>
+      <button class="gl-hear-btn" id="gl-hear-btn">Hear this moment \u25B6</button>
+      <details class="gl-why">
+        <summary>Why?</summary>
+        <ul class="gl-why-list">${sel.whyLines.map(l=>`<li>${l}</li>`).join('')}</ul>
+      </details>
+    </div>`;
+  }
+  glpanel.innerHTML=`
+    <div class="section gl-section">
+      <p class="section-label">Listen for \u2014 notable moments in this progression, in order</p>
+      <ul class="gl-list">${listHtml}</ul>
+      ${detailHtml}
+    </div>`;
+  glpanel.querySelectorAll('.gl-list-item').forEach(el=>{
+    const id=el.dataset.glId;
+    const activate=()=>openGuidedListeningMoment(id);
+    el.addEventListener('click',activate);
+    el.addEventListener('keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); activate(); } });
+  });
+  const hearBtn=document.getElementById('gl-hear-btn');
+  if(hearBtn && sel) hearBtn.onclick=()=>auditionMoment(sel);
+}
 function posAtAngleDeg(angleDeg,cx,cy,R){
   const a=angleDeg*Math.PI/180;
   return {x:cx+R*Math.cos(a), y:cy+R*Math.sin(a)};
@@ -5020,6 +5685,9 @@ function exportTheory(){
       segStart=segEnd+1;
     }
   }
+  // Item 62: same additive layer as computeLiveAnalysis — both surfaces must agree (item
+  // 46/47's own standing discipline), so this call is identical to the one there.
+  borrowedDominantCadenceEvents(chordEntries, cadenceEvents).forEach(e=>cadenceEvents.push(e));
   const cadenceLabels={
     tonalResolve:'Tonal resolution to tonic',
     tonalAway:'Tonal pull does not resolve to tonic',
@@ -5406,7 +6074,7 @@ ${motionDiagramHtml?motionDiagramHtml:(transitions.length?`<h2>Motion &amp; voic
 //               computed voicing — until "clear manual voicing" (keyboard panel) or an
 //               inversion click releases it back to Auto.
 // Ricky clears this before his own final save, per standing delivery rule.
-let currentRoot=0,keyRoot=0,keyMode="Ionian",mode="functional",activeBassIndex=null,insertAt=null,activeInvIndex=null,activeMelodyIndex=null,borrowMode=null,activeKeyboardIndex=null,reviseAt=null;
+let currentRoot=0,keyRoot=0,keyMode="Ionian",mode="functional",activeBassIndex=null,insertAt=null,activeInvIndex=null,activeMelodyIndex=null,borrowMode=null,activeKeyboardIndex=null,reviseAt=null,activeInsightMomentId=null;
 // Session name (added for export continuity): a free-text label the user can set for the
 // current sketch. Purely cosmetic — carries into the .chordspace.json save, the MIDI
 // filename + conductor track name, and the theory export doc/filename. Empty string means
@@ -5454,7 +6122,21 @@ let seq=[
   {idx:35, root:3, startUnit:156, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Eb+maj7  — III+ (augmented major 7, the Item 11 colour chord)
   {idx:6,  root:5, startUnit:168, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Fm7      — iv (weak/plagal)
   {idx:5,  root:7, startUnit:180, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // G7       — V7, raised-7th leading tone -> strong TONAL pull to i
-  {idx:9,  root:0, startUnit:192, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Cm(maj7) — i (strong tonal pull resolves)
+  {idx:9,  root:0, startUnit:192, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cm(maj7) — i (strong tonal pull resolves)
+  // Item 59 Phase 1 demo extension (v73): appended, nothing above touched. Every prior chord's
+  // idx/root/startUnit/dur is byte-identical to v72 — this only adds four new entries after the
+  // existing progression, still in the C Harmonic Minor region set by the marker above. Validated
+  // against the REAL live classifiers via a jsdom harness before being written (not hand-derived):
+  // secDomStatusAt confirmed Eb7 as a genuine V/VI targeting Ab; nativeDegreeByFunction confirmed
+  // Ab maj7 as the native VI resolution; borrowedStatusAt confirmed F maj7 as a real borrowed IV
+  // (modal interchange from Ionian/Mixolydian — Harmonic Minor's own iv is minor). Exists so the
+  // new Analysis tab's demo coverage includes a secondary dominant and a borrowed chord, which the
+  // pre-v73 progression never exercised (it proved cadences, modulation, and sub-threshold/no-pull
+  // chords, but no secondary dominant or borrowed chord anywhere in the whole sequence).
+  {idx:5,  root:3, startUnit:204, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Eb7      — V7/VI, secondary dominant targeting Ab
+  {idx:4,  root:8, startUnit:216, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Abmaj7   — VI, resolves the secondary dominant
+  {idx:4,  root:5, startUnit:228, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Fmaj7    — borrowed IV (major 3rd; HM's own iv is minor)
+  {idx:9,  root:0, startUnit:240, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Cm(maj7) — i, final resolution
 ];
 // Whole-progression register bias, in octaves (each unit = ±12 semitones). Applied as a
 // post-process in voicingsForSeq() — never touches computeVoicings (protected) or the
@@ -5876,7 +6558,7 @@ function populateRhythmZoomControl(){
     if(typeof renderLinesRoll==='function') renderLinesRoll(); // Lines shares this same zoom level
   };
 }
-const wrap=document.getElementById('pts'),pathsegments=document.getElementById('pathsegments'),strip=document.getElementById('strip'),basspanel=document.getElementById('basspanel'),invpanel=document.getElementById('invpanel'),melodypanel=document.getElementById('melodypanel'),keyboardpanel=document.getElementById('keyboardpanel'),rootsWrap=document.getElementById('roots'),keyRootsWrap=document.getElementById('build-keyroot'),roll=document.getElementById('roll'),borrowModesWrap=document.getElementById('borrow-modes'),borrowChordsWrap=document.getElementById('borrow-chords');
+const wrap=document.getElementById('pts'),pathsegments=document.getElementById('pathsegments'),strip=document.getElementById('strip'),basspanel=document.getElementById('basspanel'),invpanel=document.getElementById('invpanel'),melodypanel=document.getElementById('melodypanel'),keyboardpanel=document.getElementById('keyboardpanel'),rootsWrap=document.getElementById('roots'),keyRootsWrap=document.getElementById('build-keyroot'),roll=document.getElementById('roll'),borrowModesWrap=document.getElementById('borrow-modes'),borrowChordsWrap=document.getElementById('borrow-chords'),glpanel=document.getElementById('glpanel');
 const SVGNS='http://www.w3.org/2000/svg';
 
 const suggModeText = {
@@ -5995,6 +6677,20 @@ function buildRoots(){
   // Build-tab key — see effectiveMapKeyContext().
   const mkc=effectiveMapKeyContext();
   const ds=diatonicChords(mkc.keyRoot,mkc.keyMode);
+  // Item 58: effectiveMapKeyContext() can legitimately disagree with the global Build
+  // Key/Mode selector (e.g. an insert cursor sitting in an earlier key region, or the
+  // progression's own trailing key-change marker putting the append point in a different
+  // key than the selector shows) — item 7's designed behavior, not a bug. Surface it
+  // rather than let the picker's roots silently look mismatched with the selector above.
+  const rootNoteEl=document.getElementById('rootContextNote');
+  if(rootNoteEl){
+    if(mkc.keyRoot!==keyRoot || mkc.keyMode!==keyMode){
+      rootNoteEl.textContent=`showing: ${tonicLabel(mkc.keyRoot,mkc.keyMode)} ${mkc.keyMode}`;
+      rootNoteEl.style.display='';
+    } else {
+      rootNoteEl.style.display='none';
+    }
+  }
   // Functional mode's "which root is favored" signal now lives in the
   // Suggested next chords list (renderSuggestions), same place atonal and
   // geometric suggestions live — this row stays a plain root/tier picker.
@@ -6026,6 +6722,11 @@ function renderSuggestions(voicings){
   const el=document.getElementById('suggestions');
   if(!el) return;
   el.innerHTML='';
+  // Item 61: mirrors rootContextNote (buildRoots) — a passive disclosure for whenever this
+  // panel's own candidate pool disagrees with the global Build Key/Mode selector. Hidden by
+  // default and on every empty-state branch below; only shown once endKc is actually known.
+  const suggNoteEl=document.getElementById('suggContextNote');
+  if(suggNoteEl) suggNoteEl.style.display='none';
   if(seq.length===0){
     el.innerHTML='<p class="suggestions-empty">Add a first chord to see ranked suggestions here.</p>';
     return;
@@ -6041,6 +6742,18 @@ function renderSuggestions(voicings){
   // Candidate pool is drawn from the key active at the END of the sequence — so right after
   // a modulation, suggestions come from the NEW key even though the VL reference chord predates it.
   const endKc=keyContextAt(seq.length-1);
+  // Item 61: disclose it here too, not just on the root picker — this panel deliberately uses
+  // endKc (end-of-sequence), not effectiveMapKeyContext() (insert/revise-cursor-aware), since a
+  // suggestion is always "what could I play next," which is an end-of-sequence question even
+  // while revising an earlier chord. Comparing against THIS panel's own endKc (not mkc from
+  // buildRoots) means the two notes can legitimately disagree during an earlier-chord revise —
+  // that disagreement is real and informative, not a bug to paper over.
+  if(suggNoteEl){
+    if(endKc.keyRoot!==keyRoot || endKc.keyMode!==keyMode){
+      suggNoteEl.textContent=`showing: ${tonicLabel(endKc.keyRoot,endKc.keyMode)} ${endKc.keyMode}`;
+      suggNoteEl.style.display='';
+    }
+  }
   const ds=diatonicChords(endKc.keyRoot,endKc.keyMode);
   const lastPCs=pcsOf(last.root,lastQ);
   const candidates=ds
@@ -6334,22 +7047,41 @@ function cutSegment(i){
   insertAt=null;reviseAt=null;
   renderAll();
 }
+// Item 18 revisit (Ricky's call): picks a brand-new chord's default duration — the
+// transport's "note" dropdown (globalDur) whenever it safely fits without colliding with
+// whatever already-placed chord comes right after it, else the original safe quarter-
+// note fallback (the failure globalDur-always was retired to prevent in the first place —
+// e.g. globalDur is a whole note but the very next already-placed chord sits less than a
+// whole note away). "Fits" uses the exact same ceiling-to-next-chord check
+// setChordDuration/setChordDurationExact already use everywhere else a duration gets set
+// (nextChordIndex, the same MIN_UNITS floor) rather than a separate meter/bar
+// computation — nothing else in the app enforces bar boundaries on chord placement, so
+// this stays consistent with what "fits" already means everywhere it appears. Must be
+// called with the chord's OWN FINAL index — after it's already sitting in seq at its real
+// position — so nextChordIndex reads the true neighbor; addChordAtInsertPoint calls this
+// right after the splice/push (or the in-place revise swap) for exactly that reason.
+// fitNewChordDuration() still runs right after this in the insert/append path as the
+// final safety net, in case even the quarter-note fallback doesn't fit a genuinely tight
+// gap. Existing/loaded chords with dur:null are untouched by any of this — getChordDur()'s
+// own fallback to globalDur is unchanged, so old files still play back exactly as before.
+function applyDefaultChordDuration(i){
+  const s=seq[i]; if(!s||isMarker(s)) return;
+  const ni=nextChordIndex(i);
+  const ceilingUnits=(ni>=0) ? Math.max(MIN_UNITS, seq[ni].startUnit-s.startUnit) : Infinity;
+  s.dur=((DUR_UNITS[globalDur]||12)<=ceilingUnits) ? globalDur : '4n';
+}
 // Adds a chord entry either at the end, at the pending insert point, or — if revise mode
 // is active (backlog item 3) — as a clean in-place swap for the chord being revised.
 function addChordAtInsertPoint(entry){
   if(!entry.hasOwnProperty('inv')) entry.inv=0;
   if(!entry.hasOwnProperty('invLocked')) entry.invLocked=false; // item 30: new chords start unlocked
-  // Item 18: a brand-new chord always starts as a quarter note, regardless of the active
-  // meter or whatever the transport's "note" dropdown (globalDur) is currently set to.
-  // Previously this was null (meaning "inherit globalDur"), which could silently overflow a
-  // short bar — e.g. a whole note dropped into a 3/4 section right after working in 4/4.
-  // Quarter note fits inside any meter Chord Space supports, so it's a safe unconditional
-  // default rather than computing bar-length math per meter. fitNewChordDuration() below
-  // still applies on top of this if a following chord leaves even less room than a quarter
-  // note. Existing/loaded chords with dur:null are untouched — getChordDur() still falls
-  // back to globalDur for those, so old files play back exactly as before.
-  if(!entry.hasOwnProperty('dur')) entry.dur='4n';
   if(!entry.hasOwnProperty('manualVoicing')) entry.manualVoicing=null;
+  // Item 18 revisit (Ricky's call): a brand-new chord's duration is decided below, once
+  // its real position and real next-neighbor are known — applyDefaultChordDuration(idx)
+  // does the actual choosing. wantsDurDefault just remembers whether the caller left dur
+  // unset at all (every current call site does; the check stays as a guard, same as the
+  // inv/invLocked/manualVoicing ones above, in case a future caller sets its own).
+  const wantsDurDefault=!entry.hasOwnProperty('dur');
   if(reviseAt!==null && seq[reviseAt] && !isMarker(seq[reviseAt])){
     // Revise mode: replace the chord at reviseAt in place. This is a clean swap, not a
     // patch — bass, melody, duration override, and any hand-placed voicing are all left
@@ -6359,6 +7091,7 @@ function addChordAtInsertPoint(entry){
     // chord is this," never "when does it play."
     entry.startUnit=seq[reviseAt].startUnit;
     seq[reviseAt]=entry;
+    if(wantsDurDefault) applyDefaultChordDuration(reviseAt);
     reviseAt=null;
     activeBassIndex=null;
     activeInvIndex=null;
@@ -6378,7 +7111,9 @@ function addChordAtInsertPoint(entry){
   } else {
     seq.push(entry);
   }
-  fitNewChordDuration(seq.indexOf(entry));
+  const idx=seq.indexOf(entry);
+  if(wantsDurDefault) applyDefaultChordDuration(idx);
+  fitNewChordDuration(idx);
   insertAt=null;
   activeBassIndex=null;
   activeInvIndex=null;
@@ -6580,6 +7315,198 @@ const RHYTHM_UNIT_PX_MIN=4, RHYTHM_UNIT_PX_MAX=32;
 const RHYTHM_MARKER_GUTTER_PX=14; // extra visual spacing reserved around a marker divider
 let rhythmDrag=null;     // {i} while a resize (duration) drag is in progress
 let rhythmMoveDrag=null; // {i} while a reposition (pin) drag is in progress
+
+// --- Item 59 Phase 1 (v74 visual-refinement pass): Analysis tab render -----------------
+// Presentation-only rewrite on top of the unchanged v73 factual engine (computeLiveAnalysis).
+// No theory/classification logic lives here — every finding below is read directly off the
+// data object computeLiveAnalysis() already returns; this function only decides how to lay
+// it out. Builds fresh DOM every call, like every other render* function in this file — no
+// diffing, no persisted DOM state beyond the one local UI-only selection variable below
+// (which chord/transition the detail panel is currently showing — never written to seq,
+// activeChordIndex, or any shared editing state; a click here only auditions + updates this
+// tab's own detail panel, per the design-lock's read-only-VIEW requirement).
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+let analysisSelected=null; // {type:'chord'|'transition', idx} — idx into data.cards / data.transitions; view-local only
+
+// Compact duration-informed width weight for the Harmonic Timeline's chord tracks. Deliberately
+// NOT literally proportional to raw grid units (a whole note would render 16x a sixteenth note,
+// unreadable in a compact timeline) — a mild compression (durUnits/6, floored at 1) keeps longer
+// chords visibly wider while keeping the timeline scannable. Presentational only; the underlying
+// durUnits value itself is the same DUR_UNITS-derived number Rhythm/Notes use.
+function analysisFrWeight(durUnits){ return Math.max(1, (durUnits/6)); }
+
+function renderAnalysisTab(){
+  const timelineWrap=document.getElementById('analysis-timeline-wrap');
+  const findingsEl=document.getElementById('analysis-findings');
+  if(!timelineWrap||!findingsEl) return; // tab not in DOM yet on very first call ordering — defensive only
+  const data=computeLiveAnalysis();
+
+  if(data.empty){
+    timelineWrap.innerHTML='<p class="an-empty">Add some chords in Build to see live analysis here.</p>';
+    findingsEl.innerHTML='';
+    analysisSelected=null;
+    return;
+  }
+
+  const n=data.cards.length;
+  // Shared grid column template: chord tracks (duration-weighted fr, 56px floor) alternating
+  // with fixed narrow transition-connector tracks. One SINGLE grid instance holds all three
+  // visual rows (region labels / chord blocks+connectors / tension contour) so the browser's
+  // own layout engine guarantees column alignment — never approximated with separately
+  // measured or percentage-matched elements, which is the more fragile approach this pass
+  // deliberately avoided (see session_handoff_v74.md for the reasoning).
+  const colTracks=[];
+  data.cards.forEach((c,i)=>{
+    colTracks.push(`minmax(56px, ${analysisFrWeight(c.durUnits).toFixed(2)}fr)`);
+    if(i<n-1) colTracks.push('46px');
+  });
+  const gridTemplateColumns=colTracks.join(' ');
+
+  // --- Row 1: key-region labels, each spanning exactly its group of chord+connector columns ---
+  const regionLabelsHtml=data.keyRegions.map(r=>{
+    const startCol=2*r.start+1;
+    const isLastRegion = r.end===n-1;
+    const endColExclusive = isLastRegion ? (2*r.end+2) : (2*r.end+3); // swallow the trailing connector column, unless it's the very last chord
+    return `<div class="an-region-label" style="grid-row:1; grid-column:${startCol}/${endColExclusive};">${esc(r.keyName)}</div>`;
+  }).join('');
+
+  // --- Row 2: chord blocks (class kept as .an-card — the existing shared audition-glow
+  // mechanism from v73 targets .an-card[data-chord-idx] and needed zero changes for this
+  // pass) + transition connectors between them ---
+  const blocksHtml=[];
+  data.cards.forEach((c,i)=>{
+    const col=2*i+1;
+    blocksHtml.push(`<div class="an-card an-block an-block-${c.fnClass}" data-chord-idx="${c.seqIdx}" data-ci="${i}" tabindex="0" role="button" aria-label="${esc(c.label)}, ${esc(c.fn)}" style="grid-row:2; grid-column:${col};">
+      <span class="an-block-symbol">${esc(c.label)}</span>
+      <span class="an-block-fn">${esc(c.fn)}</span>
+    </div>`);
+    if(i<n-1){
+      const t=data.transitions[i];
+      const arrow=t.motion.startsWith('\u2191')?'\u2191':(t.motion.startsWith('\u2193')?'\u2193':(t.motion==='same root'?'\u2192':'\u2195'));
+      blocksHtml.push(`<div class="an-connector" data-ti="${i}" tabindex="0" role="button" aria-label="Transition: ${esc(t.motion)}${t.pullText?', '+esc(t.pullText):''}" style="grid-row:2; grid-column:${col+1};">
+        <span class="an-connector-line"></span>
+        <span class="an-connector-arrow">${arrow}</span>
+        ${t.pullText?'<span class="an-connector-pull-dot" title="'+esc(t.pullText)+'"></span>':''}
+      </div>`);
+    }
+  });
+
+  // --- Row 3: chord-color tension contour — one continuous factual shape, NOT the Emotional
+  // Map (no trajectory words, no interpretation). Each dot sits in the SAME grid column as
+  // its chord above it; each connector column carries a small edge-to-edge SVG line segment
+  // between the two neighboring dots' heights, so the shape reads as continuous even though
+  // it's built from per-cell pieces — no cross-cell measurement needed, since CSS Grid itself
+  // guarantees the columns line up. tensionPct is untouched from v73 (same toPct()-derived
+  // inversion, same per-quality map value) — this row only draws it, never recomputes it.
+  const contourHtml=[];
+  data.cards.forEach((c,i)=>{
+    const col=2*i+1;
+    contourHtml.push(`<div class="an-contour-cell" style="grid-row:3; grid-column:${col};">
+      <span class="an-contour-dot" style="bottom:${c.tensionPct.toFixed(1)}%;" title="Intrinsic color tension of this chord type — not a measurement of the voicing."></span>
+    </div>`);
+    if(i<n-1){
+      const y1=(100-c.tensionPct).toFixed(1), y2=(100-data.cards[i+1].tensionPct).toFixed(1);
+      contourHtml.push(`<div class="an-contour-seg" style="grid-row:3; grid-column:${col+1};">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${y1}" x2="100" y2="${y2}"/></svg>
+      </div>`);
+    }
+  });
+
+  timelineWrap.innerHTML=`
+    <div class="an-timeline-scroll">
+      <div class="an-timeline-grid" style="grid-template-columns:${gridTemplateColumns};">
+        ${regionLabelsHtml}
+        ${blocksHtml.join('')}
+        ${contourHtml.join('')}
+      </div>
+    </div>
+    <div class="an-detail" id="analysis-detail"></div>
+  `;
+
+  // --- Progression findings (secondary, collapsed by default — key regions + directional
+  // pull events). Same data computeLiveAnalysis() already produced for the old summary. ---
+  const regionChips=data.keyRegions.map(r=>{
+    const span=r.start===r.end ? `chord ${r.start+1}` : `chords ${r.start+1}\u2013${r.end+1}`;
+    return `<span class="an-region-chip">${esc(r.keyName)} <span class="an-region-span">${span}</span></span>`;
+  }).join('');
+  const pullLines=[];
+  data.transitions.forEach(t=>{ if(t.pullText) pullLines.push(`chord ${t.afterCi+1} \u2192 ${t.afterCi+2}: ${esc(t.pullText)}`); });
+  if(data.finalUnresolved) pullLines.push(`chord ${data.cards.length}: ${esc(data.finalUnresolved)}`);
+  let pullBlock;
+  if(pullLines.length){
+    pullBlock=`<ul class="an-pull-list">${pullLines.map(l=>`<li>${l}</li>`).join('')}</ul>`;
+  } else if(data.anyLocrian){
+    pullBlock=`<p class="an-empty-finding">No strong directional pull in this context \u2014 Locrian's only pull sits below the strong-pull threshold, so zero events is the correct reading here, not a gap.</p>`;
+  } else {
+    pullBlock=`<p class="an-empty-finding">No strong directional pull found in this progression.</p>`;
+  }
+  findingsEl.innerHTML=`<div class="an-region-row">${regionChips}</div>${pullBlock}`;
+
+  // --- Detail panel: renders whatever is currently selected (view-local state only) ---
+  function renderDetail(){
+    const el=document.getElementById('analysis-detail');
+    if(!el) return;
+    if(!analysisSelected){
+      el.innerHTML='<p class="an-detail-hint">Click a chord or connector on the timeline for its full findings.</p>';
+      return;
+    }
+    if(analysisSelected.type==='chord'){
+      const c=data.cards[analysisSelected.idx];
+      if(!c){ analysisSelected=null; renderDetail(); return; }
+      const metaBits=[c.dur, c.keyName];
+      if(c.invLabel) metaBits.push(c.invLabel);
+      if(c.bass) metaBits.push('/ '+c.bass);
+      let note='';
+      if(c.chromaticColorNote) note=`<p class="an-detail-note">altered \u00B7 ${esc(c.chromaticColorNote)} outside ${esc(c.keyName)}</p>`;
+      else if(c.borrowDisclosure) note=`<p class="an-detail-note">${esc(c.borrowDisclosure)}</p>`;
+      el.innerHTML=`<div class="an-detail-head"><span class="an-detail-chord">${esc(c.label)}</span><span class="an-fn-badge an-fn-${c.fnClass}">${esc(c.fn)}</span></div>
+        <div class="an-detail-meta">${metaBits.map(m=>`<span>${esc(m)}</span>`).join('')}</div>
+        ${note}
+        <p class="an-detail-tension">Chord-color tension: intrinsic to this chord type, not a measurement of the voicing shown in Voice Leading.</p>`;
+    } else {
+      const t=data.transitions[analysisSelected.idx];
+      if(!t){ analysisSelected=null; renderDetail(); return; }
+      const dirPhrase=t.tensionDir==='up'?'rises':(t.tensionDir==='down'?'falls':'is unchanged');
+      el.innerHTML=`<div class="an-detail-head"><span class="an-detail-chord">${esc(data.cards[t.afterCi].label)} \u2192 ${esc(data.cards[t.afterCi+1].label)}</span></div>
+        <div class="an-detail-meta"><span>${esc(t.motion)}</span><span>${t.commonCount} common tone${t.commonCount===1?'':'s'}${t.commonNames?' ('+esc(t.commonNames)+')':''}</span></div>
+        <p class="an-detail-note">Chord-color tension ${dirPhrase} between these two chord types.</p>
+        <p class="an-detail-note">${t.pullText?esc(t.pullText):'No strong directional pull on this transition.'}</p>`;
+    }
+  }
+  renderDetail();
+
+  // --- Interaction: click a chord block or a connector to select it for the detail panel,
+  // and (chords only) audition it via the SAME shared mechanism every other click-audition
+  // site in this app uses (Item A) — never writes activeChordIndex/activeKeyboardIndex/
+  // isPlaying, never triggers a re-render, can't disturb transport state or any other tab. ---
+  timelineWrap.querySelectorAll('.an-card').forEach(el=>{
+    const idx=parseInt(el.dataset.chordIdx,10);
+    const ci=parseInt(el.dataset.ci,10);
+    const activate=()=>{
+      Tone.start(); ensureSynth();
+      const v=(window._voicings||[])[idx]||[];
+      if(v.length) synth.triggerAttackRelease(v.map(midiToNote),'2n');
+      flashAuditionGlow(idx);
+      analysisSelected={type:'chord', idx:ci};
+      timelineWrap.querySelectorAll('.an-block.an-selected, .an-connector.an-selected').forEach(x=>x.classList.remove('an-selected'));
+      el.classList.add('an-selected');
+      renderDetail();
+    };
+    el.addEventListener('click',activate);
+    el.addEventListener('keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); activate(); } });
+  });
+  timelineWrap.querySelectorAll('.an-connector').forEach(el=>{
+    const ti=parseInt(el.dataset.ti,10);
+    const activate=()=>{
+      analysisSelected={type:'transition', idx:ti};
+      timelineWrap.querySelectorAll('.an-block.an-selected, .an-connector.an-selected').forEach(x=>x.classList.remove('an-selected'));
+      el.classList.add('an-selected');
+      renderDetail();
+    };
+    el.addEventListener('click',activate);
+    el.addEventListener('keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); activate(); } });
+  });
+}
 
 function renderRhythmTab(){
   const wrap=document.getElementById('rhythm-timeline');
@@ -7341,17 +8268,77 @@ function syncLinesKeyScroll(which){
   if(melViewport) melViewport.addEventListener('scroll',()=>syncLinesKeyScroll('melody'));
   if(bassViewport) bassViewport.addEventListener('scroll',()=>syncLinesKeyScroll('bass'));
 })();
-// Hover-preview popover for the "How Lines works" info block. The disclosure's own body
-// (#lines-info-content) stays the single source of truth for the text — this just clones
-// it once into the hover popover at load, so a mouse user gets the content on hover
-// without needing to click, while a touch user (no hover at all) still reaches the exact
-// same content the normal way, by tapping the summary open. Scoped to Lines only this
-// session; the other ⓘ disclosures elsewhere in the app are untouched.
-(function wireLinesInfoPopover(){
-  const src=document.getElementById('lines-info-content');
-  const dest=document.getElementById('lines-info-popover');
-  if(src && dest) dest.appendChild(src.cloneNode(true));
-})();
+// Click-triggered anchored popover with larger type, replacing the small inline
+// .note-disclosure accordion app-wide, everywhere legibility matters — Build, Voice
+// Leading, Cylinder Map, Rhythm/Lines, and Full Theory. Generic over any
+// {prefix}-info-trigger/-panel/-close id triple, so a wrap can also carry its own
+// separate hidden state (e.g. mv-shared-disclosure's outer div, toggled elsewhere for
+// relevance) without conflicting with the panel's own open/closed hidden state.
+// Position is computed here, not anchored via static CSS: the panel is position:fixed
+// and openPanel measures the trigger and the panel's own rendered size against the
+// viewport, flipping above the trigger when there isn't room below and clamping both
+// axes so the panel never hangs off any edge of the screen — the failure mode that a
+// fixed top:100%/left:0 anchor can't avoid once the trigger sits near the bottom or
+// right of a scrolled page.
+function wireInfoPopover(prefix){
+  const trigger=document.getElementById(prefix+'-info-trigger');
+  const panel=document.getElementById(prefix+'-info-panel');
+  const closeBtn=document.getElementById(prefix+'-info-close');
+  if(!trigger || !panel) return;
+  const EDGE=12, GAP=8;
+  function positionPanel(){
+    const tr=trigger.getBoundingClientRect();
+    const pw=panel.offsetWidth, ph=panel.offsetHeight;
+    const vw=window.innerWidth, vh=window.innerHeight;
+    const spaceBelow=vh-tr.bottom-GAP, spaceAbove=tr.top-GAP;
+    let top;
+    if(ph<=spaceBelow || spaceBelow>=spaceAbove){
+      top=Math.min(tr.bottom+GAP, vh-ph-EDGE);
+    } else {
+      top=tr.top-ph-GAP;
+    }
+    top=Math.max(EDGE, top);
+    let left=Math.min(tr.left, vw-pw-EDGE);
+    left=Math.max(EDGE, left);
+    panel.style.top=top+'px';
+    panel.style.left=left+'px';
+  }
+  function openPanel(){
+    panel.hidden=false;
+    positionPanel();
+    trigger.setAttribute('aria-expanded','true');
+    document.addEventListener('click',onOutsideClick,true);
+    document.addEventListener('keydown',onKeydown);
+    window.addEventListener('scroll',onScrollOrResize,true);
+    window.addEventListener('resize',onScrollOrResize);
+  }
+  function closePanel(){
+    panel.hidden=true;
+    panel.style.top='-9999px';
+    panel.style.left='-9999px';
+    trigger.setAttribute('aria-expanded','false');
+    document.removeEventListener('click',onOutsideClick,true);
+    document.removeEventListener('keydown',onKeydown);
+    window.removeEventListener('scroll',onScrollOrResize,true);
+    window.removeEventListener('resize',onScrollOrResize);
+  }
+  function onOutsideClick(e){
+    if(!panel.contains(e.target) && e.target!==trigger) closePanel();
+  }
+  function onKeydown(e){
+    if(e.key==='Escape'){ closePanel(); trigger.focus(); }
+  }
+  // A fixed-position panel doesn't track the page scrolling underneath it, so a scroll
+  // (or a resize, which can equally invalidate the measured position) closes it rather
+  // than leaving it floating disconnected from the trigger it belongs to.
+  function onScrollOrResize(e){
+    if(e.type==='scroll' && panel.contains(e.target)) return; // scrolling inside the panel itself
+    closePanel();
+  }
+  trigger.addEventListener('click',()=>{ panel.hidden ? openPanel() : closePanel(); });
+  if(closeBtn) closeBtn.addEventListener('click',closePanel);
+}
+['keymode','map','sugglist','chipstrip','mv','vl','cyl','rhythm','lines','howread'].forEach(wireInfoPopover);
 // Playhead highlighting during playback — mirrors highlightChord's approach (a CSS class
 // toggled on the actual DOM element) but per-note rather than "clear all, light one,"
 // since melody and bass notes can genuinely sound at the same time.
@@ -8171,6 +9158,13 @@ function renderStrip(voicings){
     const chordCount=seq.filter(s=>!isMarker(s)).length;
     progCountEl.textContent=chordCount===0?'':`${chordCount} chord${chordCount===1?'':'s'}`;
   }
+  // Item 59 next iteration (Guided Listening): computed once per render, looked up per chip
+  // by its own raw seq[] index below. A chip can carry more than one badge (e.g. a chord
+  // that's both a secondary dominant AND the departing chord of a resolving pull) — neither
+  // is suppressed in favor of the other, per the design-lock's no-ranking requirement.
+  const glMoments=computeGuidedListening();
+  const glBySeqIdx=new Map();
+  glMoments.forEach(m=>{ if(!glBySeqIdx.has(m.seqIdx)) glBySeqIdx.set(m.seqIdx,[]); glBySeqIdx.get(m.seqIdx).push(m); });
   if(seq.length===0){
     strip.innerHTML='<span class="strip-empty">No chords yet. Click a chord in the map below to add one.</span>';
     // Item 64 fix: this branch returns before the shared disclosure's visibility toggle
@@ -8179,6 +9173,7 @@ function renderStrip(voicings){
     const mvDisclosureEmpty=document.getElementById('mv-shared-disclosure');
     if(mvDisclosureEmpty) mvDisclosureEmpty.hidden=true;
     updateInsertNote();
+    renderGuidedListeningPanel(voicings); // same reasoning: clear rather than leave stale
     return;
   }
   strip.appendChild(makeInsertBtn(0));
@@ -8235,8 +9230,55 @@ function renderStrip(voicings){
     const chip=document.createElement('div');
     chip.className='chip chord-card';
     chip.style.background=`rgb(${ch.col.join(',')})`;
+    // Corner badges — collected first, appended once at the end (only if non-empty) so
+    // the bottom-right corner stays completely clean on the common chord with none of them.
+    // See .chip-badges' own comment (CSS) for why these moved off dedicated rows.
+    const cornerBadges=[];
+    // Item 46: the chip's borrowed marker comes exclusively from the shared
+    // borrowedStatusAt() authority, never from s.borrowed — a chord that reclassifies as
+    // native after a key/mode change loses the tag here even if it still carries a stale
+    // s.borrowed flag, and a chord that arrived without one but is genuinely borrowable
+    // in context gets the tag exactly the same as a picker-added one. No mode name here —
+    // a claim-free marker; the full source list lives in the live detail panel and export.
+    if(!isMarker(s) && borrowedStatusAt(i).isBorrowed){
+      const b=document.createElement('span');
+      b.className='chip-badge cc-borrowed';
+      b.textContent='b';
+      b.title='Borrowed chord';
+      cornerBadges.push(b);
+    }
+    if(s.passing){
+      const b=document.createElement('span');
+      b.className='chip-badge cc-passing';
+      b.textContent='p';
+      b.title=passingKindLabel[s.passing.kind]||'passing';
+      cornerBadges.push(b);
+    }
+    // Item 59 next iteration (Guided Listening): a small quiet badge per moment that
+    // anchors here — deliberately not folded into the borrowed/passing badges above, since
+    // those are permanent factual labels and this is an entry point into a SEPARATE,
+    // dismissable panel (headline + Hear + Why), not another always-on data field. Up to
+    // two badges can coexist on one chip (e.g. secondary-dominant AND a resolving pull
+    // departing the same chord) — neither is dropped in favor of the other.
+    const glHere=glBySeqIdx.get(i);
+    if(glHere&&glHere.length){
+      glHere.forEach(m=>{
+        const b=document.createElement('button');
+        b.className='gl-badge gl-badge-'+m.kind+(activeInsightMomentId===m.id?' active':'');
+        b.title=m.headline;
+        b.textContent='\u2022';
+        b.setAttribute('aria-label','Guided listening: '+m.headline);
+        b.onclick=(ev)=>{ ev.stopPropagation(); openGuidedListeningMoment(m.id); };
+        cornerBadges.push(b);
+      });
+    }
     const topRow=document.createElement('div');
     topRow.className='chord-card-top';
+    const nameEl=document.createElement('div');
+    nameEl.className='chord-card-name';
+    nameEl.textContent=`${label}${secLabel}`;
+    const topRight=document.createElement('div');
+    topRight.className='chord-card-top-right';
     const numEl=document.createElement('span');
     numEl.className='chord-card-num';
     numEl.textContent=`${i+1}`;
@@ -8245,32 +9287,12 @@ function renderStrip(voicings){
     delBtn.textContent='✕';
     delBtn.title='Delete this chord';
     delBtn.onclick=()=>deleteChord(i);
-    topRow.appendChild(numEl);topRow.appendChild(delBtn);
-    const nameEl=document.createElement('div');
-    nameEl.className='chord-card-name';
-    nameEl.textContent=`${label}${secLabel}`;
+    topRight.appendChild(numEl);topRight.appendChild(delBtn);
+    topRow.appendChild(nameEl);topRow.appendChild(topRight);
     const romanEl=document.createElement('div');
     romanEl.className='chord-card-roman';
     romanEl.textContent=romanLabel;
-    chip.appendChild(topRow);chip.appendChild(nameEl);chip.appendChild(romanEl);
-    // Item 46: the chip's borrowed marker comes exclusively from the shared
-    // borrowedStatusAt() authority, never from s.borrowed — a chord that reclassifies as
-    // native after a key/mode change loses the tag here even if it still carries a stale
-    // s.borrowed flag, and a chord that arrived without one but is genuinely borrowable
-    // in context gets the tag exactly the same as a picker-added one. No mode name here —
-    // a claim-free marker; the full source list lives in the live detail panel and export.
-    if(!isMarker(s) && borrowedStatusAt(i).isBorrowed){
-      const tag=document.createElement('span');
-      tag.className='borrow-chip-tag';
-      tag.textContent='borrowed';
-      chip.appendChild(tag);
-    }
-    if(s.passing){
-      const tag=document.createElement('span');
-      tag.className='passing-chip-tag';
-      tag.textContent=passingKindLabel[s.passing.kind]||'passing';
-      chip.appendChild(tag);
-    }
+    chip.appendChild(topRow);chip.appendChild(romanEl);
     chip.onclick=()=>{
       if(chip._longPressFired){ chip._longPressFired=false; return; } // long-press already handled this touch/click
       Tone.start();ensureSynth();const d=durToSeconds(getChordDur(s));synth.triggerAttackRelease(voicings[i].map(midiToNote),d);
@@ -8317,47 +9339,80 @@ function renderStrip(voicings){
     invBtn.disabled=mvValid;
     invBtn.title=mvValid?'Overridden by manual voicing — saved but not currently used.':'';
     invBtn.onclick=()=>{activeInvIndex=(activeInvIndex===i)?null:i;activeBassIndex=null;activeMelodyIndex=null;renderStrip(voicings);renderInvPanel(voicings);renderBassPanel(voicings);renderMelodyPanel(voicings);};
+    // Duration dropdown — restored per Ricky's request (previously retired in favor of
+    // Rhythm-tab-only editing), and built as a direct-pick <select> rather than a cycle
+    // button so the desired length is one choice away instead of several clicks through
+    // intermediate values. Always shown, like bass/melody/inv above, using getChordDur(s)
+    // (not the raw s.dur) so it reads correctly even for an old loaded chord with
+    // dur:null — it shows whatever globalDur currently resolves to, and picking a value
+    // now gives that chord its own explicit override, same as any other duration control.
+    // NOT disabled by mvValid — a manual voicing overrides pitch content, never timing, so
+    // duration stays editable here regardless of whether this chord has one. Only offers
+    // the five plain values (matching DUR_ORDER, same as the Rhythm tab's −/+ steppers) —
+    // triplet/dotted remain Rhythm-tab-only, so picking any option here drops an existing
+    // modifier, same as the steppers already do when stepping bases.
+    // Whole/half note icons use plain-Unicode circle glyphs (○/◐), not the SMP musical
+    // note characters (𝅝/𝅗𝅥) — those have no fallback in iOS Safari's font stack and were
+    // rendering as blank boxes on real-device testing. Quarter/eighth/sixteenth (♩♪♬) are
+    // BMP characters with broad cross-platform support and are unaffected.
+    const durNames={'1n':'○ whole','2n':'◐ half','4n':'♩ quarter','8n':'♪ eighth','16n':'♬ sixteenth'};
+    const curDur=getChordDur(s);
+    const durBtn=document.createElement('select');
+    durBtn.className='chip-dur'+(s.dur?' has-dur':'');
+    DUR_ORDER.forEach(d=>{
+      const opt=document.createElement('option');
+      opt.value=d; opt.textContent=durNames[d];
+      durBtn.appendChild(opt);
+    });
+    durBtn.value=durBaseKey(curDur);
+    durBtn.title='Pick this chord\'s note value. Drag a block\'s edge, or use its −/+ steppers, triplet, and dotted toggles on the Rhythm tab for full control (including triplets and dotted values, not offered here).';
+    // Item fix: opening this dropdown was triggering the chip's own long-press handler
+    // (attachLongPress on the whole card, listening for mousedown/touchstart to arm a
+    // 550ms "play from here" timer) — a mousedown on the select bubbles up to the chip
+    // by default, and the real-world time spent with a native dropdown open (reading
+    // options, picking one) easily outlasts 550ms before anything resets the timer, so
+    // the whole progression started playing. Stopping propagation at every event
+    // attachLongPress listens for keeps the timer from ever arming in the first place,
+    // regardless of how long the native popup stays open.
+    durBtn.onmousedown=e=>e.stopPropagation();
+    durBtn.ontouchstart=e=>e.stopPropagation();
+    durBtn.onclick=e=>e.stopPropagation(); // also blocks the chip's own single-chord preview-on-click
+    durBtn.onchange=e=>{ setChordDurationExact(i,e.target.value); pushHistory(); renderAll(); };
     const reviseBtn=document.createElement('button');
     const isReviseActive=reviseAt===i;
     reviseBtn.textContent='\u270e';
     reviseBtn.className='revise-btn'+(isReviseActive?' active':'');
     reviseBtn.title=isReviseActive?'Cancel revise':'Revise this chord — pick a replacement on the map';
     reviseBtn.onclick=()=>setReviseAt(i);
-    // Per-chord insert-after control: same makeInsertBtn(i+1) element/handler that used to
-    // sit as a floating sibling between chips — now contained inside the card's own button
-    // row per the comp, exactly as the correction doc asked. Insert-before-the-very-first-
-    // chord has no card to live inside, so that one stays as the small leading control
-    // appended once, above, before this loop starts (see strip.appendChild(makeInsertBtn(0))).
-    const insertBtn=makeInsertBtn(i+1);
-    btnRow.appendChild(bassBtn);btnRow.appendChild(melodyBtn);btnRow.appendChild(invBtn);btnRow.appendChild(reviseBtn);btnRow.appendChild(insertBtn);
+    btnRow.appendChild(bassBtn);btnRow.appendChild(melodyBtn);btnRow.appendChild(invBtn);btnRow.appendChild(reviseBtn);
     chip.appendChild(btnRow);
-    group.appendChild(chip);
     if(mvSet){
-      // Passive status badge — editing a manual voicing happens on the Voice Leading tab
-      // (drag a note there), so this is informational only, not a click target.
-      const tag=document.createElement('span');
-      tag.className=mvValid?'voicing-btn has-voicing':'voicing-btn stale-voicing';
-      tag.style.cursor='default';
-      tag.textContent=mvValid?'voicing · set':'voicing · stale';
-      tag.title=mvValid?'Hand-placed on the Voice Leading tab — drag its notes there to change it.':'Saved voicing doesn\'t cover every tone in this chord — falling back to computed.';
-      btnRow.appendChild(tag);
+      // See .chip-badges' own comment (CSS) for why these small badges — borrowed,
+      // passing, guided-listening, and this one — sit together on the bottom row rather
+      // than each claiming a row of their own. Full explanation is still the title
+      // tooltip; editing a manual voicing still only happens on the Voice Leading tab
+      // (drag a note there), so this stays informational, not a click target.
+      const b=document.createElement('span');
+      b.className='chip-badge '+(mvValid?'cc-voicing':'cc-voicing-stale');
+      b.textContent='v';
+      b.title=mvValid?'Hand-placed on the Voice Leading tab — drag its notes there to change it.':'Saved voicing doesn\'t cover every tone in this chord — falling back to computed.';
+      cornerBadges.push(b);
     }
-    if(s.dur){
-      // Passive status badge — duration is now edited on the Rhythm tab's timeline
-      // (drag or step a block there), so this is informational only, not a click target.
-      // Whole/half note icons use plain-Unicode circle glyphs (○/◐), not the SMP musical
-      // note characters (𝅝/𝅗𝅥) — those have no fallback in iOS Safari's font stack and were
-      // rendering as blank boxes on real-device testing. Quarter/eighth/sixteenth (♩♪♬) are
-      // BMP characters with broad cross-platform support and are unaffected.
-      const durLabels={'1n':'○','2n':'◐','4n':'♩','8n':'♪','16n':'♬',
-        '1n_d':'○·','2n_d':'◐·','4n_d':'♩·','8n_d':'♪·', '8n_t':'♪³','4n_t':'♩³','16n_t':'♬³'};
-      const dtag=document.createElement('span');
-      dtag.className='chip-dur has-dur';
-      dtag.style.cursor='default';
-      dtag.textContent=`dur · ${durLabels[s.dur]||s.dur}`;
-      dtag.title='Set on the Rhythm tab — this chord no longer follows the transport\'s default note value.';
-      btnRow.appendChild(dtag);
+    // Dur gets its own row (see .chord-card-dur-row's comment, CSS) rather than sharing
+    // the bass/melody/inv/revise/insert row above. Any badges (borrowed/passing/guided-
+    // listening/voicing) share this same row, right-aligned — sitting inside the card's
+    // own bounds rather than overlaid past its edge, per Ricky's correction.
+    const durRow=document.createElement('div');
+    durRow.className='chord-card-dur-row';
+    durRow.appendChild(durBtn);
+    if(cornerBadges.length){
+      const badgeWrap=document.createElement('div');
+      badgeWrap.className='chip-badges';
+      cornerBadges.forEach(b=>badgeWrap.appendChild(b));
+      durRow.appendChild(badgeWrap);
     }
+    chip.appendChild(durRow);
+    group.appendChild(chip);
     if(mvStale){
       const ov=document.createElement('p');
       ov.className='voicing-caveat mv-stale';
@@ -8369,16 +9424,16 @@ function renderStrip(voicings){
     // stale/invalid case above is unchanged: that's a chord-specific problem, so it keeps
     // its own per-chord warning.
     strip.appendChild(group);
-    // Purely decorative connector between cards — comp's "→" glyph. No handler, no
-    // insert function here; the real insert-after-this-chord control now lives inside
-    // the card's own button row (see insertBtn above).
-    if(i<seq.length-1 && !isMarker(seq[i+1])){
-      const arrow=document.createElement('span');
-      arrow.className='chord-card-arrow';
-      arrow.textContent='→';
-      arrow.setAttribute('aria-hidden','true');
-      strip.appendChild(arrow);
-    }
+    // Insert-after-this-chord control, floating between cards — replaces the old purely
+    // decorative "→" connector (Ricky's call: the arrow served no purpose, and moving
+    // insert-after back out of the card's own button row is what let the card get
+    // shorter). Same makeInsertBtn(i+1) element/handler as the leading control before the
+    // very first chord (strip.appendChild(makeInsertBtn(0)), above the loop) and the one
+    // already used after a key-change marker — appended unconditionally after EVERY
+    // chord, including the last one, for the same reach a trailing in-card "+" used to
+    // give (the old arrow only ever appeared between two adjacent chords, never after the
+    // last one or before a following marker).
+    strip.appendChild(makeInsertBtn(i+1));
   });
   // Item 64: shared manual-voicing disclosure — shown once, only when the progression
   // currently contains at least one VALID manual voicing (the same manualVoicingValid()
@@ -8390,6 +9445,7 @@ function renderStrip(voicings){
     mvDisclosure.hidden=!hasValidMv;
   }
   updateInsertNote();
+  renderGuidedListeningPanel(voicings);
 }
 
 function renderBassPanel(voicings){
@@ -9705,7 +10761,7 @@ function renderInfo(voicings){
   info.innerHTML=`<p class="info-chord">${label}<span class="notes">${notes}</span></p><p class="info-body">${move}${dn}${mn}${invn}${bn}${mln}${cvn}</p>`;
 }
 
-function renderAll(){if(isPlaying)stopPlayback();buildRoots();renderDiatonicList();renderSecDoms();renderBorrowedModes();renderBorrowedChords();renderDots();renderPath();const v=voicingsForSeq();renderStrip(v);renderInvPanel(v);renderMelodyPanel(v);renderRoll(v);renderNotesRoll(v);renderVoiceSoloRow(v);renderKeyboardPanel(v);renderInfo(v);renderSessionOverview();window._voicings=v;renderSuggestions(v);renderVLMetrics();renderMarkerEditor();renderRhythmTab();renderLinesRoll();pushHistory();if(window.cylSync)window.cylSync();}
+function renderAll(){if(isPlaying)stopPlayback();buildRoots();renderDiatonicList();renderSecDoms();renderBorrowedModes();renderBorrowedChords();renderDots();renderPath();const v=voicingsForSeq();renderStrip(v);renderInvPanel(v);renderMelodyPanel(v);renderRoll(v);renderNotesRoll(v);renderVoiceSoloRow(v);renderKeyboardPanel(v);renderInfo(v);renderSessionOverview();window._voicings=v;renderSuggestions(v);renderVLMetrics();renderMarkerEditor();renderRhythmTab();renderLinesRoll();renderAnalysisTab();pushHistory();if(window.cylSync)window.cylSync();}
 
 // --- Undo/redo history: snapshots of seq as JSON strings, with a pointer ---
 // pushHistory() runs at the end of renderAll (and once directly from the
@@ -9829,7 +10885,7 @@ function renderDiatonicList(){
     if(d.characteristic) cls+=' characteristic';
     b.className=cls;
     const rootName=keySpell(d.root,keyRoot,keyMode);
-    b.innerHTML=`${rootName} ${quality} <span class="num">${d.num}${d.characteristic?' \u2605':''}</span>`;
+    b.innerHTML=`<i class="suggestion-swatch" style="background:rgb(${lib[idx].col.join(',')})"></i><span>${rootName} ${quality} <span class="num">${d.num}${d.characteristic?' \u2605':''}</span></span>`;
     b.title=extensionLabelText(d.quality, quality, degreeIndex, keyRoot, keyMode);
     wireAuditionClick(b,
       ()=>{previewChord(d.root,quality);},
@@ -9877,12 +10933,15 @@ function renderSecDoms(){
   el.innerHTML='';
   const sds = secondaryDominants(keyRoot, keyMode);
   if(!sds.length){ el.innerHTML='<span style="font-size:12px;color:var(--text-muted);">None available in this mode.</span>'; return; }
+  // Every secondary dominant here is a "dominant 7" quality by definition, so the swatch
+  // color is the same one lib lookup for all of them — computed once, not per row.
+  const domIdx=lib.findIndex(l=>l.n==="dominant 7");
   sds.forEach(sd=>{
     const b=document.createElement('button');
     b.className='secdom-btn';
     const rootName=keySpell(sd.root,keyRoot,keyMode);
     const targetName=keySpell(sd.target,keyRoot,keyMode);
-    b.innerHTML=`${rootName}7 <span class="target">${sd.label} → ${targetName}</span>`;
+    b.innerHTML=`<i class="suggestion-swatch" style="background:rgb(${lib[domIdx].col.join(',')})"></i><span>${rootName}7 <span class="target">${sd.label} → ${targetName}</span></span>`;
     wireAuditionClick(b,
       ()=>{previewChord(sd.root,"dominant 7");},
       ()=>{
@@ -9940,11 +10999,14 @@ function renderBorrowedChords(){
     let cls='borrow-btn';
     if(bc.characteristic) cls+=' characteristic';
     b.className=cls;
-    b.innerHTML=`${rootName} ${bc.quality} <span class="borrow-src">${bc.num} from ${borrowMode}${bc.characteristic?' ★':''}</span>`;
+    // Computed once, reused for both the swatch color and the click handler below —
+    // was previously looked up a second time inside the click closure; same lib entry.
+    const idx=lib.findIndex(l=>l.n===bc.quality);
+    const swatchCol=idx>=0?lib[idx].col.join(','):'115,107,94'; // falls back to --text-muted if a quality is ever missing from lib
+    b.innerHTML=`<i class="suggestion-swatch" style="background:rgb(${swatchCol})"></i><span>${rootName} ${bc.quality} <span class="borrow-src">${bc.num} from ${borrowMode}${bc.characteristic?' ★':''}</span></span>`;
     wireAuditionClick(b,
       ()=>{previewChord(bc.root, bc.quality);},
       ()=>{
-        const idx=lib.findIndex(l=>l.n===bc.quality);
         if(idx<0) return;
         addChordAtInsertPoint({idx, root:bc.root, bass:null, inv:0, borrowed:{mode:bc.mode, num:bc.num}});
       });
@@ -10185,17 +11247,22 @@ function clearPlaybackHighlights(){
 // called AFTER renderAll() has finished (renderAll rebuilds the roll/Notes DOM from
 // scratch, so a class applied before that render would just be discarded) — every call
 // site below calls renderAll() first, then this.
+// Item 59: extended to also cover Analysis's own .an-card elements, same data-chord-idx
+// attribute, same shared mechanism — not a new selection authority, just one more render
+// target for the glow that already exists. Analysis writes no state of its own either way.
 let auditionGlowTimer=null;
 function clearAuditionGlow(){
   if(auditionGlowTimer){ clearTimeout(auditionGlowTimer); auditionGlowTimer=null; }
   document.querySelectorAll('.roll-dot.auditioning').forEach(el=>el.classList.remove('auditioning'));
   document.querySelectorAll('.roll-head.auditioning').forEach(el=>el.classList.remove('auditioning'));
   document.querySelectorAll('.notes-bar.auditioning').forEach(el=>el.classList.remove('auditioning'));
+  document.querySelectorAll('.an-card.auditioning').forEach(el=>el.classList.remove('auditioning'));
 }
 function flashAuditionGlow(idx){
   clearAuditionGlow(); // a new click always cancels/replaces any glow already in progress
   document.querySelectorAll(`.roll-dot[data-chord-idx="${idx}"]`).forEach(dot=>dot.classList.add('auditioning'));
   document.querySelectorAll(`.roll-head[data-chord-idx="${idx}"]`).forEach(h=>h.classList.add('auditioning'));
+  document.querySelectorAll(`.an-card[data-chord-idx="${idx}"]`).forEach(c=>c.classList.add('auditioning'));
   // Notes: a held bar lists every chord index it spans in data-chord-idxs (space-separated)
   // since one continuous bar can cover several chords — reusing that existing membership
   // data (the same attribute highlightChord already reads) means a bar genuinely sounding
@@ -11582,7 +12649,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
 <script>
 (function(){
   const tabs = Array.from(document.querySelectorAll('.tabbar .tab'));
-  const panels = { build:'tab-build', voice:'tab-voice', cylinder:'tab-cylinder', session:'tab-session' };
+  const panels = { build:'tab-build', voice:'tab-voice', cylinder:'tab-cylinder', session:'tab-session', analysis:'tab-analysis' };
   function activate(name){
     if(!panels[name]) return;
     tabs.forEach(function(t){

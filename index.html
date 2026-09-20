@@ -1724,6 +1724,163 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   padding: 4px 0 4px 10px;
   margin: 12px 0 0;
 }
+/* Item 77 (v82): Insert / Remove blank bars, and the Passing chords panel. Both live in
+   floating panels (one open at a time) opened from buttons: the Rhythm toolbar's
+   "Insert / remove" and, on Build, the insert banner's "Passing chords" and "Blank bars".
+   Below 760px a panel becomes a sheet that slides up from the bottom, above the transport bar. */
+.bb-trigger {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.bb-trigger:hover { border-color: var(--accent); color: var(--accent); }
+.bb-trigger[aria-expanded="true"] { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.bb-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bb-trigger:disabled { opacity: 0.35; cursor: default; }
+.insert-note { flex-wrap: wrap; }
+.insert-note-top { flex: 1 1 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.insert-note-tools { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.insert-note-tools .keychange-btn { min-height: 36px; padding: 0 14px; font-family: var(--font-mono); font-weight: 500; }
+.bb-banner-note {
+  flex: 1 1 100%;
+  font-size: 13px;
+  line-height: 1.45;
+  border-top: 1px solid var(--accent-strong);
+  padding-top: 8px;
+}
+.bb-banner-note[hidden] { display: none; }
+.section-progression.insert-armed #dur-edit-note-build { display: none; }
+.section-progression.insert-mode .keychange-row { display: none; }
+.bb-panel {
+  position: fixed; top: -9999px; left: -9999px; z-index: 70;
+  width: min(400px, 92vw);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.bb-panel[hidden] { display: none; }
+.bb-panel .bb-lbl {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.bb-panel .bb-field { display: flex; flex-direction: column; gap: 6px; }
+.bb-panel .bb-side {
+  display: inline-flex; align-self: flex-start;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-1); overflow: hidden;
+}
+.bb-panel .bb-side[hidden] { display: none; }
+.bb-panel .bb-side-btn {
+  font-family: var(--font-mono); font-size: 13px; min-height: 40px; padding: 0 18px;
+  background: transparent; border: none; color: var(--text-secondary); cursor: pointer;
+}
+.bb-panel .bb-side-btn + .bb-side-btn { border-left: 1px solid var(--border-strong); }
+.bb-panel .bb-side-btn[aria-pressed="true"] { background: var(--accent-dim); color: var(--accent); }
+.bb-panel .bb-where { font-family: var(--font-mono); font-size: 14px; color: var(--text-primary); line-height: 1.4; }
+.bb-panel .bb-where.bb-where-empty { color: var(--text-muted); font-size: 13px; }
+.bb-panel .bb-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.bb-panel .bb-stepper {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.bb-panel .bb-step-btn {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.bb-panel .bb-step-btn:hover:not(:disabled) { color: var(--accent); background: var(--accent-dim); }
+.bb-panel .bb-step-btn:disabled { opacity: 0.35; cursor: default; }
+.bb-panel .bb-count {
+  min-width: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 14px; color: var(--text-primary);
+}
+.bb-panel .bb-actions { display: flex; gap: 8px; }
+.bb-panel .bb-btn {
+  flex: 1 1 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 40px;
+  padding: 0 12px;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.bb-panel .bb-insert { color: var(--text-primary); }
+.bb-panel .bb-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.bb-panel .bb-btn:disabled { opacity: 0.35; cursor: default; }
+.bb-panel .bb-btn:focus-visible, .bb-panel .bb-step-btn:focus-visible, .bb-panel .bb-side-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bb-panel .bb-follow-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
+}
+.bb-panel .bb-follow { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.bb-panel .bb-panel-note {
+  font-size: 13px; line-height: 1.45; color: var(--text-secondary);
+  border-left: 2px solid var(--accent); padding: 4px 0 4px 10px;
+}
+.bb-panel .bb-panel-note[hidden], .bb-panel[data-mode="build"] .bb-panel-note { display: none; }
+.pass-panel { width: min(460px, 92vw); }
+.key-panel { width: min(600px, 92vw); }
+.key-panel .marker-editor-inner { gap: 8px; }
+.key-panel .section-note { margin: 8px 0 0; }
+.rhythm-marker-label.editing { text-decoration: underline; text-underline-offset: 3px; }
+.pass-panel .pass-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.pass-panel .pass-grid .passing-btn {
+  text-align: left; display: flex; gap: 10px; align-items: flex-start;
+  background: color-mix(in srgb, var(--pc, var(--geom)) 20%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--pc, var(--geom)) 55%, var(--border-strong));
+}
+.pass-panel .pass-grid .passing-btn:hover { background: color-mix(in srgb, var(--pc, var(--geom)) 32%, var(--surface-2)); }
+.pass-panel .pass-grid .passing-btn .suggestion-swatch { width: 10px; height: 10px; margin-top: 4px; }
+.pass-panel .pass-grid .passing-btn .passing-label { min-width: 0; }
+.pass-panel .pass-hint { font-size: 13px; color: var(--text-muted); line-height: 1.45; }
+.pass-panel .pass-none { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.rhythm-block.bb-selected::after {
+  content: ''; position: absolute; inset: 0; z-index: 3;
+  border: 2px solid var(--accent); border-radius: inherit; pointer-events: none;
+}
+@media (max-width: 760px) {
+  .bb-panel {
+    left: 0 !important; right: 0; top: auto !important; bottom: var(--transport-h);
+    width: auto; max-height: 70dvh; overflow-y: auto;
+    border-radius: 16px 16px 0 0; border-left: none; border-right: none; border-bottom: none;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  .bb-panel .bb-btn, .bb-panel .bb-step-btn, .bb-panel .bb-side-btn { min-height: 44px; }
+  .bb-panel .bb-step-btn { min-width: 44px; }
+}
 .chip-dur {
   font-size: 10px;
   padding: 2px 6px;
@@ -2941,6 +3098,8 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
             <dd>Hand-place notes by dragging them on the Voice Leading tab.</dd>
             <dt>Durations</dt>
             <dd>Pick one from the <strong style="color:var(--text-secondary);">dur</strong> dropdown on the chip, or shape it precisely (including triplets and dotted values) on the Rhythm tab. With <strong style="color:var(--text-secondary);">Ripple</strong> on, a longer note pushes the chords after it later and a shorter one pulls them in.</dd>
+            <dt>Blank bars</dt>
+            <dd>Click a <strong style="color:var(--text-secondary);">+</strong> between chips and a banner appears with three buttons: <strong style="color:var(--text-secondary);">Passing chords</strong> (click one to hear it between its neighbors, click it again to insert), <strong style="color:var(--text-secondary);">Blank bars</strong>, and <strong style="color:var(--text-secondary);">+ key change</strong>. Blank bars opens a panel with <strong style="color:var(--text-secondary);">Insert bar</strong>, which opens a bar of silence in front of the next chord and moves everything from that chord on later, and <strong style="color:var(--text-secondary);">Remove empty bar</strong>, which does the reverse but only where a bar of time in front of the chord is already empty.</dd>
           </dl>
         </div>
       </div>
@@ -2957,10 +3116,9 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
         </div>
       </div>
       <p id="insert-note" class="insert-note" style="display:none;"></p>
-      <div class="row" style="margin-bottom:8px;">
+      <div class="row keychange-row" style="margin-bottom:8px;">
         <button id="add-keychange" class="keychange-btn" title="Insert a mid-progression key change at the cursor (or at the end)">+ key change</button>
       </div>
-      <div id="marker-editor" style="display:none;"></div>
       <div id="passing-section" style="display:none;"></div>
       <div id="strip" class="strip"></div>
       <div id="dur-edit-note-build" class="dur-edit-note" role="status" aria-live="polite" hidden></div>
@@ -3252,8 +3410,11 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
         <label for="rhythm-ripple-toggle">Ripple</label>
         <button type="button" class="ripple-toggle" id="rhythm-ripple-toggle" aria-pressed="true"></button>
       </div>
+      <div class="context-field">
+        <label for="rhythm-blank-trigger">Blank bars</label>
+        <button type="button" class="bb-trigger" id="rhythm-blank-trigger" data-float="bb" aria-haspopup="dialog" aria-expanded="false">Insert / remove <span aria-hidden="true">&#9662;</span></button>
+      </div>
     </div>
-    <div id="marker-editor-rhythm" class="marker-editor-box" style="display:none;"></div>
     <div id="rhythm-timeline-wrap" class="rhythm-timeline-wrap">
       <div id="rhythm-timeline" class="rhythm-timeline"></div>
     </div>
@@ -3264,7 +3425,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
         <button type="button" class="info-pop-close" id="rhythm-info-close" aria-label="Close">&times;</button>
         <dl class="note-terms">
           <dt>Editing a block</dt>
-          <dd>Drag a block's body to move it, or drag its right edge to change how long it holds. <strong style="color:var(--text-secondary);">−/+</strong> steppers do the same without dragging. Everything snaps to the note grid shown behind the blocks.</dd>
+          <dd>Click a block to hear it and select it (for Blank bars, below). Drag its body to move it, or drag its right edge to change how long it holds. <strong style="color:var(--text-secondary);">−/+</strong> steppers do the same without dragging. Everything snaps to the note grid shown behind the blocks.</dd>
           <dt>Markers &amp; zoom</dt>
           <dd>Dashed dividers are key/meter changes — click one to edit it. Drag "Timeline width" left to fit more on screen at once, right to zoom in for precision.</dd>
           <dt>The grid is fixed</dt>
@@ -3279,6 +3440,10 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
           <dd>Ripple on: chords in the way are pushed later, stopping at the first gap. On a locked grid length, a push that would run past the end is refused with a message, never trimmed. Ripple off: capped at the next chord's start, and the app tells you when that cap changed your pick.</dd>
           <dt>What Ripple does not cover yet</dt>
           <dd>Ripple applies to the note-value dropdown on Build and to the −/+, triplet and dotted buttons here. Dragging a block's right edge is not rippled yet: it still stops at the next chord. A long melody or bass note that starts before a pushed chord keeps its own start and length, so it can overlap the pushed chord differently than before.</dd>
+          <dt>Blank bars</dt>
+          <dd>Click a chord block to select it, then open <strong style="color:var(--text-secondary);">Blank bars</strong> in the toolbar. Choose Before or After the selected chord, set how many bars, and Insert or Remove. Insert moves that chord and every chord after it later by whole bars of the meter in force there. Remove needs a full bar of time already empty in front of the chord, and it moves the whole tail earlier. Melody and bass notes at or after that chord move too, unless you untick "Move melody/bass too". Ripple does not matter here, and one press is one undo step.</dd>
+          <dt>Blank bars: the honest limits</dt>
+          <dd>A key or meter change hangs off the chord after it, so a blank bar inserted at a meter change takes the meter before the change, not the new one. If the chord you pick does not start on a bar line, the new space is one bar long but does not line up with the bar lines. A long note that starts before the insert point keeps its own start and length. On a locked grid length, an insert that would run past the end is refused.</dd>
           <dt>Moving a chord</dt>
           <dd>Dragging left closes any gap in front of the previous chord, then trims that chord's own duration to keep making room — down to a one-sixteenth-note floor, or a key/meter marker, whichever it hits first. Dragging right is capped the same way lengthening is — it stops at the next chord or the grid's end, never crosses it. It never reorders the harmony itself.</dd>
           <dt>Bar lines</dt>
@@ -3472,7 +3637,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v81";
+const APP_VERSION = "v82";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -6245,7 +6410,12 @@ let seq=[
   {idx:5,  root:3, startUnit:204, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Eb7      — V7/VI, secondary dominant targeting Ab
   {idx:4,  root:8, startUnit:216, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Abmaj7   — VI, resolves the secondary dominant
   {idx:4,  root:5, startUnit:228, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Fmaj7    — borrowed IV (major 3rd; HM's own iv is minor)
-  {idx:9,  root:0, startUnit:240, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Cm(maj7) — i, final resolution
+  // Item 77 demo (v82): this final chord used to sit at startUnit 240, butted against the Fmaj7. It now
+  // sits at 288, which leaves exactly one blank bar (bar 6, units 240 to 288) in front of it. So
+  // "Remove empty bar" works on this chord as loaded, and "Insert blank bar" works anywhere. The
+  // G4 melody note and C2 bass note added to the Lines tracks below start at 288 too, so
+  // "Move melody/bass too" has something to carry. Nothing else in the demo moved.
+  {idx:9,  root:0, startUnit:288, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Cm(maj7) — i, final resolution, one blank bar after the Fmaj7
 ];
 // Whole-progression register bias, in octaves (each unit = ±12 semitones). Applied as a
 // post-process in voicingsForSeq() — never touches computeVoicings (protected) or the
@@ -7226,7 +7396,34 @@ function addChordAtInsertPoint(entry){
   }
   const idx=seq.indexOf(entry);
   if(wantsDurDefault) applyDefaultChordDuration(idx);
-  fitNewChordDuration(idx);
+  // v82: with Ripple on, a chord dropped in front of another that would collide keeps its full default
+  // length and pushes the chords after it later (the same chain rule as making a chord longer). Before,
+  // it was squeezed to a sixteenth note and still sat on top of the next chord's start. With Ripple off
+  // it is trimmed as before, but now the app says so.
+  if(rippleEnabled){
+    if(wantsDurDefault && DUR_UNITS[globalDur]) entry.dur=globalDur; // pushing makes room, so the default value need not shrink
+    const plan=planInsertPush(idx);
+    if(plan.shifts.length){
+      if(typeof gridLengthUnits==='number' && plan.endUnit>gridLengthUnits){
+        seq.splice(idx,1); // refuse, do not trim (lock D3): nothing was changed, insert mode stays armed
+        setDurEditNote(`Nothing was added. Making room for this chord would push the chords after it past the end of ${lockedGridWords()}. Lengthen Grid length first.`,false);
+        return;
+      }
+      const moved=applyChordShifts(plan.shifts,true);
+      const amts=plan.shifts.map(x=>x.delta), allSame=amts.every(a=>a===amts[0]);
+      const amount=allSame?fmtBeatsFromUnits(amts[0]):`up to ${fmtBeatsFromUnits(Math.max(...amts))}`;
+      const first=chordNumberAt(plan.shifts[0].i), last=chordNumberAt(plan.shifts[plan.shifts.length-1].i);
+      const who=first===last?`Chord ${first} moved`:`Chords ${first} to ${last} moved`;
+      const lines=moved.notes?` ${moved.notes} melody/bass note${moved.notes===1?'':'s'} went with ${moved.chords===1?'it':'them'}.`:'';
+      setDurEditNote(`Chord ${chordNumberAt(idx)} added. ${who} ${amount} later to make room.${lines}`,true);
+    }
+  } else {
+    const durBefore=getChordDur(seq[idx]);
+    fitNewChordDuration(idx);
+    if(getChordDur(seq[idx])!==durBefore){
+      setDurEditNote(`Chord ${chordNumberAt(idx)} was added as ${durWithArticle(getChordDur(seq[idx]))}, not ${durWithArticle(durBefore)}, because the next chord starts right after it. Turn Ripple on to push the chords after it later.`,true);
+    }
+  }
   insertAt=null;
   activeBassIndex=null;
   activeInvIndex=null;
@@ -7282,6 +7479,7 @@ function setReviseAt(i){
   renderStrip(window._voicings||[]);
 }
 function updateInsertNote(){
+  try{ syncBuildBlankBarTools(); }catch(e){ console.error('blank bar tools',e); } // item 77; guarded so it can never stop the map refresh below
   // Item 7 follow-up: moved ahead of renderPassingSuggestions() deliberately. That function
   // had its own pre-existing bug (see its own comment) that could throw and halt the rest of
   // this function — which silently stopped the map refresh below from ever running too,
@@ -7316,46 +7514,37 @@ function updateInsertNote(){
       regionNote=` This spot is in the <strong>${keySpell(kc.keyRoot,kc.keyRoot,kc.keyMode)} ${kc.keyMode}</strong> region, so the map below has switched to that key for this insert.`;
     }
   }
-  el.innerHTML = `<span class="insert-note-msg">Insert mode: the next chord you click on the map (or secondary dominant) will be placed ${pos}.${regionNote} You can also drop a key change here with <strong>+ key change</strong> below.</span> <strong id="cancel-insert" class="insert-note-cancel" style="cursor:pointer;">cancel</strong>`;
+  const bbOffer=firstChordIndexFrom(insertAt)>=0; // item 77: blank bars only make sense when a chord follows this spot
+  const ps=passingState;
+  el.innerHTML=`<div class="insert-note-top"><span class="insert-note-msg">Insert mode: the next chord you click on the map will go ${pos}.${regionNote}</span> <strong id="cancel-insert" class="insert-note-cancel" style="cursor:pointer;">cancel</strong></div>`
+    +`<div class="insert-note-tools">`
+    +(ps.available?`<button type="button" class="bb-trigger" data-float="passing" aria-haspopup="dialog" aria-expanded="${floatIsOpen('passing')?'true':'false'}">Passing chords \u00B7 ${ps.cands.length} <span aria-hidden="true">&#9662;</span></button>`:'')
+    +(bbOffer?`<button type="button" class="bb-trigger" data-float="bb" aria-haspopup="dialog" aria-expanded="${floatIsOpen('bb')?'true':'false'}">Blank bars <span aria-hidden="true">&#9662;</span></button>`:'')
+    +`<button type="button" class="keychange-btn banner-keychange" title="Insert a key change at this spot">+ key change</button>`
+    +`</div>`
+    +(bbOffer?`<div id="bb-banner-note" class="bb-banner-note" role="status" hidden></div>`:'');
   const cancelBtn=document.getElementById('cancel-insert');
   if(cancelBtn) cancelBtn.onclick=()=>{insertAt=null;renderStrip(window._voicings||[]);};
+  const passTrig=el.querySelector('.bb-trigger[data-float="passing"]');
+  if(passTrig) passTrig.onclick=()=>togglePassingPanel(passTrig);
+  const bbTrig=el.querySelector('.bb-trigger[data-float="bb"]');
+  if(bbTrig) bbTrig.onclick=()=>toggleBlankBarPanel(bbTrig,'build');
+  const kcBtn=el.querySelector('.banner-keychange');
+  if(kcBtn) kcBtn.onclick=insertKeyMarker;
+  renderDurEditNote(); // fills the banner's own result line
 }
 // Only meaningful when the insert cursor sits between two existing chords (a real
 // gap, not the very start or end) — a passing chord needs a neighbor on both sides.
 function renderPassingSuggestions(){
+  // v82: the tile list no longer stacks above the chips. It lives in the Passing chords panel, opened
+  // from the insert banner. This function now only keeps passingState current (the banner button reads
+  // its count) and refreshes the panel if it is open. The inline #passing-section stays empty.
   const el=document.getElementById('passing-section');
-  if(!el) return;
-  if(insertAt===null || insertAt<=0 || insertAt>=seq.length){ el.style.display='none'; el.innerHTML=''; return; }
-  // Bug fix: this used to grab seq[insertAt-1]/seq[insertAt] and hand them straight to
-  // passingChordCandidates assuming both were real chords — but either neighbor can be a
-  // key-change MARKER (no .idx field the way a real chord has), which crashed downstream in
-  // entryBassPC. Found via item 7 testing: the crash happened to sit earlier in
-  // updateInsertNote() than the map refresh, so it was silently blocking the map from
-  // updating too, whenever the insert cursor sat immediately next to a marker. A passing
-  // chord needs a real chord on both sides by definition, so treating a marker neighbor as
-  // "no candidates" is the correct behavior here, not just a crash guard.
-  const prevEntry=seq[insertAt-1], nextEntry=seq[insertAt];
-  if(isMarker(prevEntry) || isMarker(nextEntry)){ el.style.display='none'; el.innerHTML=''; return; }
-  const cands=passingChordCandidates(prevEntry,nextEntry);
-  el.style.display='block';
-  if(!cands.length){
-    el.innerHTML=`<p class="section-label" style="margin-bottom:4px;">Passing chord</p><span style="font-size:12px;color:var(--text-muted);">No clear stepwise gap between chords ${insertAt} and ${insertAt+1} to fill — their bass motion is too close or too wide for a single passing chord.</span>`;
-    return;
+  if(el){ el.style.display='none'; el.innerHTML=''; }
+  passingState=computePassingState();
+  if(floatIsOpen('passing')){
+    if(passingState.available) fillPassingPanel(); else closeFloatPanel();
   }
-  const rowsHtml=cands.map((c,ci)=>{
-    const rn=keySpell(c.root,keyRoot,keyMode);
-    return `<button class="passing-btn" data-ci="${ci}">${rn} ${c.quality} <span class="passing-tag">${passingKindLabel[c.kind]} \u00B7 \u0394${c.cost.toFixed(1)}</span></button>`;
-  }).join('');
-  el.innerHTML=`<p class="section-label" style="margin-bottom:6px;">Passing chord — connects chord ${insertAt} to chord ${insertAt+1}</p><div class="row" style="margin-bottom:0;">${rowsHtml}</div>`;
-  el.querySelectorAll('.passing-btn').forEach(b=>{
-    const c=cands[Number(b.dataset.ci)];
-    b.onclick=()=>{
-      const idx=lib.findIndex(l=>l.n===c.quality);
-      if(idx<0) return;
-      previewChord(c.root,c.quality);
-      addChordAtInsertPoint({idx, root:c.root, bass:null, inv:0, secDom:null, borrowed:null, passing:{kind:c.kind}});
-    };
-  });
 }
 // Key/mode picker for the marker currently being edited (editingMarkerIndex). Two dropdowns
 // backed by the same source lists the Build tab uses, so a modulation is authored the same way
@@ -7387,15 +7576,10 @@ function renderMarkerEditorInto(el,i,m){
   el.querySelector('.marker-meter-select').onchange=e=>{const [n,d]=e.target.value.split('/').map(Number);setMarkerMeter(i,n,d);};
   el.querySelector('.marker-done-select').onclick=()=>{editingMarkerIndex=null;renderMarkerEditor();};
 }
-function renderMarkerEditor(){
-  const containers=['marker-editor','marker-editor-rhythm'].map(id=>document.getElementById(id)).filter(Boolean);
-  if(editingMarkerIndex===null || !isMarker(seq[editingMarkerIndex])){
-    containers.forEach(el=>{el.style.display='none'; el.innerHTML='';});
-    return;
-  }
-  const i=editingMarkerIndex, m=seq[i];
-  containers.forEach(el=>renderMarkerEditorInto(el,i,m));
-}
+// v82: the key/mode/meter editor is a floating panel now (see syncKeyPanel), not a box that pushes the
+// chips down. This keeps its old name so every existing caller (setMarkerKey/Mode/Meter, the pills, the
+// Rhythm dividers, insertKeyMarker, renderAll) works unchanged: they set editingMarkerIndex and call this.
+function renderMarkerEditor(){ syncKeyPanel(); }
 
 // --- Harmonic Rhythm Editor (Rhythm tab) -----------------------------------------------
 // A FIXED grid, not a self-adjusting timeline: the grid's length is a deliberate setting
@@ -7622,6 +7806,7 @@ function renderAnalysisTab(){
 }
 
 function renderRhythmTab(){
+  try{ syncRhythmBlankTargets(); }catch(e){ console.error('blank bar picker',e); } // item 77
   const wrap=document.getElementById('rhythm-timeline');
   const totalEl=document.getElementById('rhythm-total');
   if(!wrap) return;
@@ -7704,18 +7889,19 @@ function renderRhythmTab(){
     if(!isMarker(s)) return;
     const x=px(i);
     const div=document.createElement('div');
-    div.className='rhythm-marker'; div.style.left=x+'px';
+    div.className='rhythm-marker'; div.style.left=x+'px'; div.dataset.mi=i;
     div.title='Click to edit this key/meter change';
     const openEditor=()=>{editingMarkerIndex=(editingMarkerIndex===i)?null:i;renderMarkerEditor();};
     div.onclick=openEditor;
     wrap.appendChild(div);
     const lbl=document.createElement('span');
-    lbl.className='rhythm-marker-label'; lbl.style.left=x+'px';
+    lbl.className='rhythm-marker-label'+(editingMarkerIndex===i?' editing':''); lbl.style.left=x+'px'; lbl.dataset.mi=i;
     lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     lbl.onclick=openEditor;
     wrap.appendChild(lbl);
   });
 
+  keyPanelReanchor(); // the divider labels were just rebuilt: an open Key change panel follows its label
   // Chord blocks.
   let chordCount=0;
   let claimedRightEdge=0; // short-block touch model: tracks how far right the PREVIOUS chord's own footprint (block, or its resize chip if one was drawn) actually extends, so this chord's own left-side touch-proxy padding can never encroach on it — updated for every chord, short or not
@@ -7731,7 +7917,9 @@ function renderRhythmTab(){
     block.style.left=x+'px';
     block.style.width=Math.max(w-4,20)+'px';
     block.dataset.idx=i;
-    block.title=`${rn} ${ch.n} — drag to move, drag the right edge to resize`;
+    block.title=`${rn} ${ch.n} — click to hear it and select it, drag to move, drag the right edge to resize`;
+    const chordNum=chordCount; // 1-based chord number of this block (item 77: selection is by chord number)
+    if(blankBarRhythmChord===chordNum) block.classList.add('bb-selected');
     // Item 63: restrained chord-color accent, reusing the same ch.col authority Build's
     // chips already use. A separate child strip, not a box-shadow/border/background change
     // on the block itself — .rhythm-block.dragging/.playing already use box-shadow for their
@@ -7817,10 +8005,12 @@ function renderRhythmTab(){
     // are enforced live during the drag — see startRhythmMove.
     block.addEventListener('mousedown',ev=>{
       if(ev.target.closest('.rhythm-block-steppers')||ev.target.closest('.rhythm-resize-handle')) return;
+      selectRhythmChord(chordNum);
       startRhythmMove(ev,i,block);
     });
     block.addEventListener('touchstart',ev=>{
       if(ev.target.closest('.rhythm-block-steppers')||ev.target.closest('.rhythm-resize-handle')) return;
+      selectRhythmChord(chordNum);
       startRhythmMove(ev,i,block);
     },{passive:false});
 
@@ -8129,13 +8319,19 @@ function startRhythmMove(ev,i,block){
   // always did, so mouse behavior is unchanged. Touch starts UNarmed instead: nothing
   // moves or repositions until real horizontal movement is seen, so a stationary tap never
   // touches s.startUnit and can fall through cleanly to an audition on release.
-  let armed=!isTouch;
+  // v82: the tap zone now applies to the MOUSE too. Before, a mouse press armed the drag at once
+  // and a plain click committed a (zero-distance) move, so on desktop a click never sounded the
+  // chord: tap-to-audition was touch-only. Now, for mouse and touch alike, nothing repositions until
+  // the pointer has travelled past RHYTHM_TOUCH_TAP_THRESH; a release inside that zone is a click and
+  // auditions. The mouse still gets its 'dragging' look on press, as before. `crossed` is that gate.
+  let armed=!isTouch, crossed=false;
   if(armed){ rhythmMoveDrag={i}; armVisual(); }
   const move=e=>{
     const x=(e.touches?e.touches[0].clientX:e.clientX);
-    if(!armed){
+    if(!crossed){
       if(Math.abs(x-startX)<=RHYTHM_TOUCH_TAP_THRESH) return;
-      armed=true; rhythmMoveDrag={i}; armVisual(); // arm on this tick; shared applyFor+liveReposition below runs once, not twice
+      crossed=true;
+      if(!armed){ armed=true; rhythmMoveDrag={i}; armVisual(); } // arm on this tick; shared applyFor+liveReposition below runs once, not twice
     }
     if(!rhythmMoveDrag) return;
     applyFor(x);
@@ -8151,11 +8347,13 @@ function startRhythmMove(ev,i,block){
   };
   const up=e=>{
     const x=(e.changedTouches?e.changedTouches[0].clientX:e.clientX);
-    if(isTouch && !armed){
-      // Never crossed the threshold: a tap, not a move. Audition the chord instead of
-      // committing any position change — same call the Build-tab chord chip's own tap
-      // already uses (Tone.start/ensureSynth/triggerAttackRelease), for consistency.
+    if(!crossed){
+      // Never crossed the threshold: a tap (touch) or a click (mouse), not a move. Audition the
+      // chord instead of committing any position change — same call the Build-tab chord chip's
+      // own tap already uses (Tone.start/ensureSynth/triggerAttackRelease), for consistency.
       cleanup();
+      rhythmMoveDrag=null;
+      document.querySelectorAll('.rhythm-block.dragging').forEach(el=>el.classList.remove('dragging'));
       const v=(window._voicings||[])[i];
       if(v){ Tone.start(); ensureSynth(); const d=durToSeconds(getChordDur(s)); synth.triggerAttackRelease(v.map(midiToNote),d); }
       return;
@@ -8228,7 +8426,7 @@ function startRhythmMove(ev,i,block){
 // sixteenth notes across the first two beats — deliberately alternating on-grid and
 // off-grid 16th positions (units 0,3,6,9,12,15,18,21) so the swing slider has something
 // obviously alternating to push. At 0% (default) this plays as a perfectly even run.
-// Bass track left empty — not needed for this demo.
+// Bass track: empty for the item 4 demo; v82 adds one C2 note (see item 77 comment on the final chord).
 let melodyTrack=[   // [{id, pitch(MIDI number), startUnit(grid units), durUnits(grid units)}, ...]
   {id:'ln1',pitch:60,startUnit:0, durUnits:3}, // C4 — on-grid
   {id:'ln2',pitch:62,startUnit:3, durUnits:3}, // D4 — off-16th, swings
@@ -8237,11 +8435,13 @@ let melodyTrack=[   // [{id, pitch(MIDI number), startUnit(grid units), durUnits
   {id:'ln5',pitch:67,startUnit:12,durUnits:3}, // G4 — on-grid
   {id:'ln6',pitch:69,startUnit:15,durUnits:3}, // A4 — off-16th, swings
   {id:'ln7',pitch:71,startUnit:18,durUnits:3}, // B4 — on-grid
-  {id:'ln8',pitch:72,startUnit:21,durUnits:3}  // C5 — off-16th, swings
+  {id:'ln8',pitch:72,startUnit:21,durUnits:3}, // C5 — off-16th, swings
+  {id:'ln9',pitch:67,startUnit:288,durUnits:12} // G4 — item 77 demo (v82): starts with the final Cm(maj7), rides along with blank-bar edits
 ];
 let bassTrack=[
+  {id:'ln10',pitch:36,startUnit:288,durUnits:12} // C2 — item 77 demo (v82): the final chord's root, rides along with blank-bar edits
 ];
-let linesNoteIdSeq=9; // bumped past the 8 example melody notes seeded above
+let linesNoteIdSeq=11; // bumped past the 10 example notes seeded above (8 melody, 1 more melody, 1 bass)
 function nextLinesNoteId(){ return 'ln'+(linesNoteIdSeq++); }
 let linesMoveDrag=null;      // {track,id} while a note/selection reposition drag is in progress
 let linesResizeDrag=null;    // {track,id} while a note duration drag is in progress
@@ -11330,7 +11530,7 @@ function setDurEditNote(text,expectPush){
   renderDurEditNote();
 }
 function renderDurEditNote(){
-  ['dur-edit-note-build','dur-edit-note-rhythm'].forEach(id=>{
+  ['dur-edit-note-build','dur-edit-note-rhythm','bb-banner-note','bb-panel-note'].forEach(id=>{
     const el=document.getElementById(id); if(!el) return;
     el.textContent=durEditNote; el.hidden=!durEditNote;
   });
@@ -11443,6 +11643,494 @@ function setChordDurationExact(i,newDur){
   } else {
     setDurEditNote(`Chord ${no} became ${durWithArticle(s.dur)} instead of ${durWithArticle(newDur)}: only ${room} fit before the next chord. Turn Ripple on to push the next chord, or move it first.`,true);
   }
+}
+
+
+// =====================================================================================
+// Item 77 (v82): Insert and Remove Blank Bars. Phase 2 of the item 76 design lock (section
+// 3.4). "Blank bar" here means a whole bar of the meter in force at that spot, opened up as
+// silence in front of a chord.
+//   Insert: the chosen chord and EVERY chord after it (array order) move later by N bars,
+//   through applyChordShifts (the shared primitive item 76 wrote for this). Key and meter
+//   dividers hang off the chord after them, so they travel with it (D2). A locked grid length
+//   refuses an insert that would run past its end (D3); Auto grows.
+//   Remove: only allowed when N bars of time in front of the chord are already empty (no chord
+//   ends inside it and no melody/bass note touches it). The whole tail then moves earlier, so
+//   Insert followed by Remove puts everything back exactly.
+//   Melody and bass notes: unlike Ripple's chord-window rule (D1), this is inserting TIME, so
+//   every Lines note that STARTS at or after the chosen chord's start moves with it, including
+//   notes sitting in rests. Otherwise a lead-in bar would strand any melody note in a gap.
+//   A "Move melody/bass too" box (default on, session state) lets the chords move alone.
+//   Ripple is not involved. One press is one undo step (the callers push history once).
+// State below is session only: nothing is added to the save schema.
+// =====================================================================================
+const BLANK_BARS_MIN=1, BLANK_BARS_MAX=16;
+let blankBarCount=1;           // bars per Insert or Remove press
+let blankBarFollowLines=true;  // "Move melody/bass too"
+let blankBarRhythmChord=null;  // 1-based number of the chord block selected on the Rhythm timeline (null = none yet)
+let blankBarSide='before';     // Rhythm: put the blank bars 'before' or 'after' the selected chord
+function firstChordIndexFrom(at){
+  for(let j=Math.max(0,at);j<seq.length;j++){ if(!isMarker(seq[j])) return j; }
+  return -1;
+}
+function seqIndexOfChordNumber(n){
+  let c=0;
+  for(let j=0;j<seq.length;j++){ if(!isMarker(seq[j])){ c++; if(c===n) return j; } }
+  return -1;
+}
+function chordEndUnit(s){ return (s.startUnit||0)+(DUR_UNITS[getChordDur(s)]||12); }
+function meterText(m){ return m.num+'/'+m.den; }
+// The meter a blank bar in front of seq[i] belongs to: the one in force BEFORE any dividers sitting
+// right ahead of the chord, because those dividers travel with the chord (D2, and the section 3.4
+// limitation: a blank bar at a meter change lands in the old meter until item 19).
+function blankBarMeterBefore(i){
+  let k=i; while(k>0 && isMarker(seq[k-1])) k--;
+  return meterContextAt(k-1);
+}
+// Does this grid position sit exactly on a bar line of the meter region it is in?
+function isOnBarLine(unit){
+  const regions=meterRegions().map(r=>({u:Math.round(r.startBeat*GRID_UNITS_PER_QUARTER),meter:r.meter}));
+  let reg=regions[0];
+  regions.forEach(r=>{ if(r.u<=unit) reg=r; });
+  const bar=Math.round(barQuarters(reg.meter)*GRID_UNITS_PER_QUARTER);
+  return ((unit-reg.u)%bar)===0;
+}
+function lockedGridWords(){
+  const bars=gridLengthUnits/(barQuarters(timeSignature)*GRID_UNITS_PER_QUARTER);
+  return Number.isInteger(bars)?`the ${bars}-bar grid`:'the grid';
+}
+function linesNotesFrom(unit){
+  let c=0; [melodyTrack,bassTrack].forEach(t=>t.forEach(n=>{ if(n.startUnit>=unit) c++; })); return c;
+}
+function shiftLinesFrom(unit,delta){
+  let c=0; [melodyTrack,bassTrack].forEach(t=>t.forEach(n=>{ if(n.startUnit>=unit){ n.startUnit+=delta; c++; } })); return c;
+}
+function linesNotesOverlapping(lo,hi){
+  let c=0; [melodyTrack,bassTrack].forEach(t=>t.forEach(n=>{ if(n.startUnit<hi && n.startUnit+n.durUnits>lo) c++; })); return c;
+}
+// Ripple for a NEW chord at seq[i]: the same walk as lengthening a chord (item 76). Chords the new one now
+// overlaps are pushed to the end of the chord before them; the first real gap absorbs the rest.
+function planInsertPush(i){
+  let running=(seq[i].startUnit||0)+(DUR_UNITS[getChordDur(seq[i])]||12);
+  const shifts=[];
+  for(let j=i+1;j<seq.length;j++){
+    if(isMarker(seq[j])) continue;
+    const cs=seq[j].startUnit||0;
+    if(cs>=running) break;
+    const d=running-cs;
+    shifts.push({i:j,delta:d});
+    running=cs+d+(DUR_UNITS[getChordDur(seq[j])]||12);
+  }
+  return {shifts,endUnit:running};
+}
+function blankBarWho(tail){
+  const first=chordNumberAt(tail[0]), last=chordNumberAt(tail[tail.length-1]);
+  return first===last?`Chord ${first} moved`:`Chords ${first} to ${last} moved`;
+}
+// Mutates chords (and Lines notes when the box is ticked); returns false, with a message set, when refused.
+// Callers push history and render once.
+function insertBlankBars(from,bars,afterNo){
+  const ci=firstChordIndexFrom(from);
+  if(ci<0){
+    setDurEditNote('No chord comes after this point, so there is nothing to move. To leave room at the end, lengthen Grid length.',false);
+    return false;
+  }
+  bars=Math.max(BLANK_BARS_MIN,Math.min(BLANK_BARS_MAX,bars|0));
+  const no=chordNumberAt(ci), meter=blankBarMeterBefore(ci);
+  const barU=Math.round(barQuarters(meter)*GRID_UNITS_PER_QUARTER), delta=bars*barU, split=seq[ci].startUnit||0;
+  const tail=[]; for(let j=ci;j<seq.length;j++){ if(!isMarker(seq[j])) tail.push(j); }
+  const newEnd=Math.max(...tail.map(j=>chordEndUnit(seq[j])))+delta;
+  const word=bars===1?'1 blank bar':`${bars} blank bars`;
+  if(typeof gridLengthUnits==='number' && newEnd>gridLengthUnits){
+    setDurEditNote(`Nothing moved. ${capFirst(word)} would push the last chord past the end of ${lockedGridWords()}. Lengthen Grid length first.`,false);
+    return false;
+  }
+  const aligned=isOnBarLine(split); // measured before anything moves
+  applyChordShifts(tail.map(j=>({i:j,delta})),false);
+  const moved=blankBarFollowLines?shiftLinesFrom(split,delta):0;
+  const whereIns=afterNo?`after chord ${afterNo}`:(no===1?'at the start':`before chord ${no}`);
+  let msg=`Inserted ${word} (${meterText(meter)}) ${whereIns}. ${blankBarWho(tail)} ${fmtBeatsFromUnits(delta)} later.`;
+  if(blankBarFollowLines){
+    if(moved) msg+=` ${moved} melody/bass note${moved===1?'':'s'} went with ${tail.length===1?'it':'them'}.`;
+  } else {
+    const stay=linesNotesFrom(split);
+    if(stay) msg+=` ${stay} melody/bass note${stay===1?'':'s'} stayed where ${stay===1?'it was':'they were'}.`;
+  }
+  const after=meterContextAt(ci);
+  if(after.num!==meter.num||after.den!==meter.den) msg+=` The meter change at this spot stays with chord ${no}, so the blank bar keeps the earlier meter (${meterText(meter)}).`;
+  if(!aligned) msg+=` Chord ${no} does not start on a bar line, so the new space is ${bars===1?'a bar':bars+' bars'} long but does not line up with the bar lines.`;
+  setDurEditNote(msg,true);
+  return true;
+}
+function removeBlankBars(from,bars,afterNo){
+  const ci=firstChordIndexFrom(from);
+  if(ci<0){
+    setDurEditNote('No chord comes after this point, so there is no bar to remove.',false);
+    return false;
+  }
+  bars=Math.max(BLANK_BARS_MIN,Math.min(BLANK_BARS_MAX,bars|0));
+  const no=chordNumberAt(ci), meter=blankBarMeterBefore(ci);
+  const barU=Math.round(barQuarters(meter)*GRID_UNITS_PER_QUARTER), delta=bars*barU, split=seq[ci].startUnit||0;
+  let prevEnd=0;
+  for(let j=0;j<ci;j++){ if(!isMarker(seq[j])) prevEnd=Math.max(prevEnd,chordEndUnit(seq[j])); }
+  const free=Math.max(0,split-prevEnd);
+  const emptyWord=bars===1?'empty bar':`${bars} empty bars`;
+  const whereRem=afterNo?`after chord ${afterNo}`:`in front of chord ${no}`;
+  if(free<delta){
+    setDurEditNote(`Nothing moved. ${bars===1?'There is no empty bar':'There are not '+bars+' empty bars'} ${whereRem}: ${fmtBeatsFromUnits(free)} free there, and ${bars===1?'a bar':bars+' bars'} of ${meterText(meter)} is ${fmtBeatsFromUnits(delta)}.`,false);
+    return false;
+  }
+  const blocked=linesNotesOverlapping(split-delta,split);
+  if(blocked){
+    setDurEditNote(`Nothing moved. ${blocked} melody/bass note${blocked===1?'':'s'} ${blocked===1?'touches':'touch'} the ${bars===1?'bar':'bars'} that would be removed ${whereRem}. Move or delete ${blocked===1?'it':'them'} first.`,false);
+    return false;
+  }
+  const tail=[]; for(let j=ci;j<seq.length;j++){ if(!isMarker(seq[j])) tail.push(j); }
+  applyChordShifts(tail.map(j=>({i:j,delta:-delta})),false);
+  const moved=blankBarFollowLines?shiftLinesFrom(split,-delta):0;
+  let msg=`Removed ${bars===1?'1 empty bar':emptyWord} (${meterText(meter)}) ${whereRem}. ${blankBarWho(tail)} ${fmtBeatsFromUnits(delta)} earlier.`;
+  if(blankBarFollowLines){
+    if(moved) msg+=` ${moved} melody/bass note${moved===1?'':'s'} went with ${tail.length===1?'it':'them'}.`;
+  } else {
+    const stay=linesNotesFrom(split);
+    if(stay) msg+=` ${stay} melody/bass note${stay===1?'':'s'} stayed where ${stay===1?'it was':'they were'}.`;
+  }
+  const after=meterContextAt(ci);
+  if(after.num!==meter.num||after.den!==meter.den) msg+=` The removed bar was in ${meterText(meter)}, the meter before the change at this spot.`;
+  setDurEditNote(msg,true);
+  return true;
+}
+function runBlankBars(kind,from,afterNo){
+  if(typeof from!=='number'||from<0){
+    if(afterNo) setDurEditNote(kind==='insert'?`Nothing moved. No chord comes after chord ${afterNo}, so there is nothing to push. To leave room at the end, lengthen Grid length.`:`Nothing moved. No chord comes after chord ${afterNo}, so there is no bar to remove.`,false);
+    return;
+  }
+  const changed=(kind==='insert')?insertBlankBars(from,blankBarCount,afterNo):removeBlankBars(from,blankBarCount,afterNo);
+  if(!changed) return; // refusal: the message already says why (banner or panel), nothing was touched, panel stays open
+  pushHistory();
+  closeFloatPanel(); // a committed edit dismisses the panel so the result and the chips are in view
+  renderAll();
+}
+// --- floating panels: Blank bars and Passing chords. One open at a time. ---
+let floatCur=null;           // {kind:'bb'|'passing', el, trigger, exempt}
+let blankBarPanelMode=null;  // 'build' or 'rhythm' while the Blank bars panel is open
+function blankBarIsSheet(){ return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches); }
+function floatIsOpen(kind){ return !!floatCur && (!kind || floatCur.kind===kind); }
+function floatPosition(){
+  if(!floatCur || blankBarIsSheet()) return;
+  const {el,trigger}=floatCur, EDGE=12, GAP=8;
+  const anchor=(trigger.closest && trigger.closest('.insert-note')) || trigger; // Build: sit BELOW the whole banner so its result line stays readable
+  const ar=anchor.getBoundingClientRect(), tr=trigger.getBoundingClientRect();
+  const pw=el.offsetWidth, ph=el.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
+  let top=ar.bottom+GAP;
+  if(top+ph>vh-EDGE){ top=(ar.top-GAP>=ph)?(ar.top-ph-GAP):Math.max(EDGE,vh-ph-EDGE); }
+  el.style.top=top+'px';
+  el.style.left=Math.max(EDGE,Math.min(tr.left,vw-pw-EDGE))+'px';
+}
+function onFloatOutside(e){
+  if(!floatCur) return;
+  const t=e.target;
+  if(floatCur.el.contains(t)) return;
+  if(t.closest && t.closest('.bb-trigger')) return; // the trigger's own click toggles
+  if(floatCur.exempt && t.closest && t.closest(floatCur.exempt)) return; // Rhythm: picking a chord block retargets the open panel
+  closeFloatPanel();
+}
+function onFloatKey(e){
+  if(e.key!=='Escape' || !floatCur) return;
+  e.stopPropagation(); // capture phase on window: the app's own Escape (which also cancels insert mode) never sees this press
+  const kind=floatCur.kind;
+  closeFloatPanel();
+  const t=document.querySelector('.bb-trigger[data-float="'+kind+'"]'); if(t) t.focus();
+}
+function onFloatScroll(e){
+  if(!floatCur || blankBarIsSheet()) return; // a sheet is anchored to the screen, not to the page
+  if(e.type==='scroll' && floatCur.el.contains(e.target)) return;
+  closeFloatPanel();
+}
+function openFloatPanel(kind,el,trigger,exempt){
+  if(floatCur) closeFloatPanel();
+  floatCur={kind,el,trigger,exempt:exempt||null};
+  el.hidden=false;
+  document.querySelectorAll('.bb-trigger').forEach(t=>t.setAttribute('aria-expanded',t.dataset.float===kind?'true':'false'));
+  floatPosition();
+  document.addEventListener('click',onFloatOutside,true);
+  window.addEventListener('keydown',onFloatKey,true);
+  window.addEventListener('scroll',onFloatScroll,true);
+  window.addEventListener('resize',onFloatScroll);
+}
+function closeFloatPanel(){
+  if(!floatCur) return;
+  const c=floatCur; floatCur=null;
+  c.el.hidden=true;
+  if(c.kind==='bb') blankBarPanelMode=null;
+  if(c.kind==='key'){ // closing the panel ends the edit: the pill stops looking "open"
+    editingMarkerIndex=null;
+    document.querySelectorAll('.key-marker-chip.editing, .rhythm-marker-label.editing').forEach(x=>x.classList.remove('editing'));
+  }
+  document.querySelectorAll('.bb-trigger').forEach(t=>t.setAttribute('aria-expanded','false'));
+  document.removeEventListener('click',onFloatOutside,true);
+  window.removeEventListener('keydown',onFloatKey,true);
+  window.removeEventListener('scroll',onFloatScroll,true);
+  window.removeEventListener('resize',onFloatScroll);
+}
+function floatMake(tag,cls,txt){ const e=document.createElement(tag); if(cls) e.className=cls; if(txt!==undefined) e.textContent=txt; return e; }
+function floatCloseButton(){
+  const b=floatMake('button','info-pop-close','\u00D7'); b.type='button'; b.setAttribute('aria-label','Close');
+  b.onclick=()=>closeFloatPanel();
+  return b;
+}
+// --- Blank bars panel ---
+function blankBarFrom(){
+  if(blankBarPanelMode==='build') return insertAt;
+  const n=blankBarRhythmChord; if(!n) return -1;
+  return seqIndexOfChordNumber(blankBarSide==='after'?n+1:n); // "after chord N" is "in front of chord N+1"
+}
+function blankBarAfterNo(){ return (blankBarPanelMode==='rhythm' && blankBarSide==='after') ? blankBarRhythmChord : null; }
+function blankBarLabelText(kind){
+  const n=blankBarCount;
+  if(kind==='insert') return n===1?'Insert bar':`Insert ${n} bars`;
+  return n===1?'Remove empty bar':`Remove ${n} empty bars`;
+}
+function syncBlankBarLabels(){
+  document.querySelectorAll('.bb-panel .bb-count').forEach(e=>{ e.textContent=blankBarCount; });
+  document.querySelectorAll('.bb-panel .bb-insert').forEach(e=>{ e.textContent=blankBarLabelText('insert'); });
+  document.querySelectorAll('.bb-panel .bb-remove').forEach(e=>{ e.textContent=blankBarLabelText('remove'); });
+  document.querySelectorAll('.bb-panel .bb-follow').forEach(e=>{ e.checked=blankBarFollowLines; });
+  document.querySelectorAll('.bb-panel .bb-dec').forEach(e=>{ e.disabled=blankBarCount<=BLANK_BARS_MIN; });
+  document.querySelectorAll('.bb-panel .bb-inc').forEach(e=>{ e.disabled=blankBarCount>=BLANK_BARS_MAX; });
+}
+function ensureBlankBarPanel(){
+  let p=document.getElementById('blank-bar-panel'); if(p) return p;
+  const el=floatMake;
+  p=el('div','bb-panel'); p.id='blank-bar-panel'; p.hidden=true;
+  p.setAttribute('role','dialog'); p.setAttribute('aria-label','Blank bars');
+  p.appendChild(floatCloseButton());
+  const fWhere=el('div','bb-field');
+  fWhere.appendChild(el('div','bb-lbl','Where'));
+  const side=el('div','bb-side'); side.setAttribute('role','group'); side.setAttribute('aria-label','Before or after the selected chord');
+  ['before','after'].forEach(k=>{
+    const b=el('button','bb-side-btn',k==='before'?'Before':'After'); b.type='button'; b.dataset.side=k;
+    b.onclick=()=>{ blankBarSide=k; refreshBlankBarPanel(); };
+    side.appendChild(b);
+  });
+  fWhere.appendChild(side);
+  fWhere.appendChild(el('div','bb-where'));
+  p.appendChild(fWhere);
+  const row=el('div','bb-row');
+  const fBars=el('div','bb-field');
+  fBars.appendChild(el('div','bb-lbl','Bars'));
+  const step=el('span','bb-stepper');
+  const dec=el('button','bb-step-btn bb-dec','\u2212'); dec.type='button'; dec.title='One fewer bar';
+  const cnt=el('span','bb-count');
+  const inc=el('button','bb-step-btn bb-inc','+'); inc.type='button'; inc.title='One more bar';
+  dec.onclick=()=>{ blankBarCount=Math.max(BLANK_BARS_MIN,blankBarCount-1); syncBlankBarLabels(); };
+  inc.onclick=()=>{ blankBarCount=Math.min(BLANK_BARS_MAX,blankBarCount+1); syncBlankBarLabels(); };
+  step.appendChild(dec); step.appendChild(cnt); step.appendChild(inc);
+  fBars.appendChild(step);
+  row.appendChild(fBars);
+  const lab=el('label','bb-follow-label');
+  const cb=el('input','bb-follow'); cb.type='checkbox';
+  cb.onchange=()=>{ blankBarFollowLines=cb.checked; syncBlankBarLabels(); };
+  lab.appendChild(cb); lab.appendChild(document.createTextNode('Move melody/bass too'));
+  row.appendChild(lab);
+  p.appendChild(row);
+  const acts=el('div','bb-actions');
+  const ins=el('button','bb-btn bb-insert'); ins.type='button';
+  ins.title='Open silence: the chord after the gap and every chord after it move later by whole bars.';
+  ins.onclick=()=>runBlankBars('insert',blankBarFrom(),blankBarAfterNo());
+  const rem=el('button','bb-btn bb-remove'); rem.type='button';
+  rem.title='Close up empty time. Only works where that many full bars are already empty.';
+  rem.onclick=()=>runBlankBars('remove',blankBarFrom(),blankBarAfterNo());
+  acts.appendChild(ins); acts.appendChild(rem);
+  p.appendChild(acts);
+  const note=el('div','bb-panel-note'); note.id='bb-panel-note'; note.hidden=true; note.setAttribute('role','status');
+  p.appendChild(note);
+  document.body.appendChild(p);
+  syncBlankBarLabels();
+  return p;
+}
+// Keeps the panel truthful about where it acts and whether it can.
+function refreshBlankBarPanel(){
+  const p=document.getElementById('blank-bar-panel'); if(!p) return;
+  const isBuild=blankBarPanelMode==='build';
+  const side=p.querySelector('.bb-side'), where=p.querySelector('.bb-where');
+  let has=false;
+  where.classList.remove('bb-where-empty');
+  if(isBuild){
+    const ci=(insertAt!==null && reviseAt===null)?firstChordIndexFrom(insertAt):-1;
+    has=ci>=0;
+    where.textContent=has?('In front of chord '+chordNumberAt(ci)):'No chord after this point';
+    if(!has && floatIsOpen('bb')){ closeFloatPanel(); return; }
+  } else {
+    const n=blankBarRhythmChord;
+    has=!!n;
+    if(has){
+      const ci=seqIndexOfChordNumber(n);
+      where.textContent=(blankBarSide==='after'?'After':'Before')+' chord '+n+(ci>=0?' \u00B7 '+blankBarChordLabel(ci):'');
+    } else {
+      where.textContent='Click a chord block on the timeline to choose where.';
+      where.classList.add('bb-where-empty');
+    }
+  }
+  side.hidden=isBuild;
+  p.querySelectorAll('.bb-side-btn').forEach(b=>b.setAttribute('aria-pressed',b.dataset.side===blankBarSide?'true':'false'));
+  p.querySelectorAll('.bb-insert,.bb-remove').forEach(b=>{ b.disabled=!has; });
+}
+function toggleBlankBarPanel(trigger,mode){
+  const p=ensureBlankBarPanel();
+  if(floatIsOpen('bb') && blankBarPanelMode===mode){ closeFloatPanel(); return; }
+  if(floatCur) closeFloatPanel();
+  blankBarPanelMode=mode; p.dataset.mode=mode;
+  refreshBlankBarPanel();
+  openFloatPanel('bb',p,trigger,mode==='rhythm'?'.rhythm-block':null);
+}
+// Build: toggles the classes the CSS keys off (insert mode, and "armed" = a chord follows the +) and
+// keeps the panels in step. Called from updateInsertNote, i.e. on every strip render.
+function syncBuildBlankBarTools(){
+  const sec=document.querySelector('.section-progression');
+  const mode=(insertAt!==null && reviseAt===null);
+  const armed=mode && firstChordIndexFrom(insertAt)>=0;
+  if(sec){ sec.classList.toggle('insert-mode',mode); sec.classList.toggle('insert-armed',armed); }
+  if(!mode && (floatIsOpen('bb') || floatIsOpen('passing'))) closeFloatPanel(); // never the key panel: it is not tied to insert mode
+  else if(blankBarPanelMode==='build' && !armed) closeFloatPanel();
+  refreshBlankBarPanel();
+}
+// Rhythm: selecting a chord block on the timeline is how you choose where. Only classes change here,
+// never a re-render, so it is safe to call in the middle of a mousedown that starts a drag.
+function selectRhythmChord(n){
+  blankBarRhythmChord=n;
+  document.querySelectorAll('.rhythm-block').forEach(b=>{
+    b.classList.toggle('bb-selected',chordNumberAt(Number(b.dataset.idx))===n);
+  });
+  refreshBlankBarPanel();
+}
+function blankBarChordLabel(i){
+  const s=seq[i], kc=keyContextAt(i);
+  return keySpell(s.root,kc.keyRoot,kc.keyMode)+' '+lib[s.idx].n;
+}
+// Called from renderRhythmTab: keep the selection inside the chord count and the trigger honest.
+function syncRhythmBlankTargets(){
+  const p=ensureBlankBarPanel(); if(!p) return;
+  const n=seq.filter(s=>!isMarker(s)).length;
+  if(!n) blankBarRhythmChord=null;
+  else if(blankBarRhythmChord && blankBarRhythmChord>n) blankBarRhythmChord=n;
+  const rt=document.getElementById('rhythm-blank-trigger');
+  if(rt) rt.disabled=!n;
+  refreshBlankBarPanel();
+}
+// --- Passing chords panel (Build). Replaces the inline tile list that used to stack above the chips. ---
+let passingState={available:false,cands:[],prev:null,next:null};
+function computePassingState(){
+  const none={available:false,cands:[],prev:null,next:null};
+  if(insertAt===null || insertAt<=0 || insertAt>=seq.length) return none;
+  const prev=seq[insertAt-1], next=seq[insertAt];
+  if(isMarker(prev)||isMarker(next)) return none; // a passing chord needs a real chord on both sides
+  return {available:true,cands:passingChordCandidates(prev,next),prev,next};
+}
+// The three voicings a passing chord would actually get: prev, the candidate, next, computed by the
+// live voice-leading code against a COPY of the progression with the candidate spliced in. seq is
+// swapped for the call and restored in a finally, the same pattern downloadMidi uses; nothing is written.
+function passingAuditionVoicings(c){
+  const idx=lib.findIndex(l=>l.n===c.quality);
+  if(idx<0 || insertAt===null) return null;
+  const entry={idx,root:c.root,bass:null,inv:0,invLocked:false,secDom:null,borrowed:null,manualVoicing:null,passing:{kind:c.kind},startUnit:defaultStartUnitFor(insertAt),dur:'4n'};
+  const tmp=seq.slice(); tmp.splice(insertAt,0,entry);
+  const real=seq; let v;
+  seq=tmp;
+  try{ v=voicingsForSeq(); } finally { seq=real; }
+  const trio=[v[insertAt-1],v[insertAt],v[insertAt+1]];
+  return trio.every(x=>x&&x.length)?trio:null;
+}
+function auditionPassing(c){
+  const trio=passingAuditionVoicings(c); if(!trio) return;
+  Tone.start(); ensureSynth();
+  const step=(60/bpm)*2, t0=Tone.now()+0.05; // each chord a half note: before, the passing chord, after
+  trio.forEach((notes,k)=>synth.triggerAttackRelease(notes.map(midiToNote),step*0.92,t0+k*step));
+}
+function commitPassing(c){
+  const idx=lib.findIndex(l=>l.n===c.quality); if(idx<0) return;
+  closeFloatPanel();
+  addChordAtInsertPoint({idx, root:c.root, bass:null, inv:0, secDom:null, borrowed:null, passing:{kind:c.kind}});
+}
+function ensurePassingPanel(){
+  let p=document.getElementById('passing-panel'); if(p) return p;
+  p=floatMake('div','bb-panel pass-panel'); p.id='passing-panel'; p.hidden=true;
+  p.setAttribute('role','dialog'); p.setAttribute('aria-label','Passing chords');
+  document.body.appendChild(p);
+  return p;
+}
+function fillPassingPanel(){
+  const p=ensurePassingPanel();
+  p.innerHTML='';
+  p.appendChild(floatCloseButton());
+  const st=passingState;
+  const a=chordNumberAt(insertAt-1), b=chordNumberAt(insertAt);
+  p.appendChild(floatMake('div','bb-lbl',`Passing chord \u00B7 chord ${a} to chord ${b}`));
+  if(!st.cands.length){
+    p.appendChild(floatMake('div','pass-none',`No clear stepwise gap between chords ${a} and ${b} to fill. Their bass motion is too close or too wide for a single passing chord.`));
+    return;
+  }
+  const grid=floatMake('div','pass-grid');
+  st.cands.forEach(c=>{
+    const btn=floatMake('button','passing-btn'); btn.type='button';
+    // Same chord-class color (lib[i].col) that drives the map dots, the chips and the other suggestion lists.
+    const li=lib.findIndex(l=>l.n===c.quality);
+    const rgb=(li>=0)?lib[li].col.join(','):'128,128,128';
+    btn.style.setProperty('--pc','rgb('+rgb+')');
+    const sw=floatMake('i','suggestion-swatch'); sw.style.background='rgb('+rgb+')';
+    const lab=floatMake('span','passing-label');
+    lab.appendChild(document.createTextNode(keySpell(c.root,keyRoot,keyMode)+' '+c.quality+' '));
+    lab.appendChild(floatMake('span','passing-tag',passingKindLabel[c.kind]+' \u00B7 \u0394'+c.cost.toFixed(1)));
+    btn.appendChild(sw); btn.appendChild(lab);
+    wireAuditionClick(btn,()=>auditionPassing(c),()=>commitPassing(c));
+    grid.appendChild(btn);
+  });
+  p.appendChild(grid);
+  p.appendChild(floatMake('div','pass-hint','Click a chord to hear it between its neighbors. Click the highlighted one again to insert it.'));
+}
+function togglePassingPanel(trigger){
+  if(floatIsOpen('passing')){ closeFloatPanel(); return; }
+  if(floatCur) closeFloatPanel();
+  fillPassingPanel();
+  openFloatPanel('passing',ensurePassingPanel(),trigger,null);
+}
+// --- Key change panel (Build pills and Rhythm dividers). State lives in editingMarkerIndex, as before. ---
+const KEY_PANEL_EXEMPT='.key-marker-chip, .rhythm-marker-label, .rhythm-marker'; // clicks on these toggle or switch the edit themselves
+function keyPanelAnchor(i){
+  const c=[...document.querySelectorAll('.key-marker-chip.editing'),...document.querySelectorAll('.rhythm-marker-label[data-mi="'+i+'"]')];
+  return c.find(e=>e.offsetParent!==null)||c[0]||null; // whichever tab is showing
+}
+function ensureKeyPanel(){
+  let p=document.getElementById('key-panel'); if(p) return p;
+  p=floatMake('div','bb-panel key-panel'); p.id='key-panel'; p.hidden=true;
+  p.setAttribute('role','dialog'); p.setAttribute('aria-label','Key change');
+  p.appendChild(floatMake('div','key-panel-body'));
+  document.body.appendChild(p);
+  return p;
+}
+function keyPanelReanchor(){
+  if(!floatIsOpen('key')) return;
+  const a=keyPanelAnchor(editingMarkerIndex);
+  if(a){ floatCur.trigger=a; floatPosition(); }
+}
+function syncKeyPanel(){
+  const valid=(editingMarkerIndex!==null && isMarker(seq[editingMarkerIndex]));
+  document.querySelectorAll('.rhythm-marker-label').forEach(l=>l.classList.toggle('editing',valid && Number(l.dataset.mi)===editingMarkerIndex));
+  if(!valid){ if(floatIsOpen('key')) closeFloatPanel(); editingMarkerIndex=null; return; }
+  const p=ensureKeyPanel(), body=p.querySelector('.key-panel-body');
+  const ae=document.activeElement;
+  const focusCls=(ae && p.contains(ae)) ? [...ae.classList].find(c=>/^marker-.*-select$/.test(c)) : null; // keep the dropdown you are on
+  renderMarkerEditorInto(body,editingMarkerIndex,seq[editingMarkerIndex]);
+  const anchor=keyPanelAnchor(editingMarkerIndex);
+  if(floatIsOpen('key')){ if(anchor){ floatCur.trigger=anchor; floatPosition(); } }
+  else if(anchor){ openFloatPanel('key',p,anchor,KEY_PANEL_EXEMPT); }
+  if(focusCls){ const f=body.querySelector('.'+focusCls); if(f) f.focus(); }
+}
+function wireBlankBarTools(){
+  ensureBlankBarPanel();
+  const rt=document.getElementById('rhythm-blank-trigger');
+  if(rt) rt.onclick=()=>toggleBlankBarPanel(rt,'rhythm');
+  syncRhythmBlankTargets();
 }
 
 
@@ -12917,7 +13605,7 @@ document.getElementById('midi-file').onchange=function(){
   this.value='';
 };
 
-buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();updateModeNote();updateSuggNote();populateRandStart();renderBorrowedModes();syncOctaveTransposeControls();populateTimeSignatureControl();populateGridLengthControl();populateRhythmZoomControl();wireRippleToggles();renderAll();
+buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();updateModeNote();updateSuggNote();populateRandStart();renderBorrowedModes();syncOctaveTransposeControls();populateTimeSignatureControl();populateGridLengthControl();populateRhythmZoomControl();wireRippleToggles();wireBlankBarTools();renderAll();
 </script>
 <script>
 (function(){

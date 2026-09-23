@@ -2477,7 +2477,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .notes-label-strip {
   position: sticky; top: 0; z-index: 2;
   display: flex; align-items: stretch;
-  height: 32px;
+  height: 72px;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border);
 }
@@ -2516,7 +2516,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
    only the bars themselves flash for audition, never the label. */
 .notes-bar.auditioning { filter: brightness(1.6); box-shadow: 0 0 0 1.5px var(--text-primary) inset, 0 0 6px currentColor; }
 .notes-chord-label {
-  position: absolute; top: 2px; font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  position: absolute; top: 41px; font-family: var(--font-mono); font-size: 12px; font-weight: 600;
   color: var(--accent); cursor: pointer; white-space: nowrap; user-select: none;
 }
 .notes-chord-label .notes-chord-name { display: block; font-family: var(--font-body); font-size: 10px; font-weight: 400; color: var(--text-secondary); }
@@ -2534,8 +2534,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .notes-key-marker { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed var(--secdom); pointer-events: none; }
 .notes-key-marker-label {
-  position: absolute; top: -1px; font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  position: absolute; top: 22px; font-family: var(--font-mono); font-size: 10px; font-weight: 600;
   color: var(--secdom); white-space: nowrap; transform: translateX(2px);
+}
+/* Item 94: numbers-only bar-position reference, top row of the sticky notes-label-strip,
+   above the chord-label row it shifted down to make room for. Same absolute-time x-scale
+   as every other Notes element (x = units * pxPerUnit); no vertical divider lines in the
+   note lane itself (design-lock decision: a position reference, not a second timeline).
+   Item 97 (v88): row geometry widened from a bare-minimum-clearance 46px strip to a genuine
+   three-band hierarchy (bar numbers / key-mode labels / Roman+chord-name) after a real-
+   browser screenshot showed the original spacing read as one crowded line even though no
+   two boxes technically overlapped. Row tops (3 / 22 / 41) and the 72px strip height were
+   chosen from each row's REAL rendered content height (JetBrains Mono and Space Grotesk's
+   actual OS/2 typo line-height metrics: 13.2px / 13.2px / 28.6px for the two-line Roman+
+   name stack) plus deliberate ~6-7px gaps for clear visual separation, not just enough to
+   avoid box intersection. See design_lock_item94_notes_bar_position_reference.md and the
+   item 97 addendum in session_handoff_v88.md for the full readout. */
+.notes-bar-ruler-label {
+  position: absolute; top: 3px; font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  color: var(--text-muted); white-space: nowrap; pointer-events: none;
 }
 .notes-empty-msg { padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
 .vl-metrics { display: flex; gap: 14px; flex-wrap: wrap; margin: 0; }
@@ -3629,7 +3646,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v86";
+const APP_VERSION = "v89";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -10151,7 +10168,10 @@ function computeVoiceThreads(chordVoicings, stats){
 function renderRoll(voicings){
   roll.innerHTML='';
   const NS='http://www.w3.org/2000/svg';
-  const W=1180,H=380,padTop=58,padBot=26,padL=8,padR=56;
+  // padTop grew 58->72 for item 89: the header stack (roman numeral / quality name / Δ
+  // readout) shifted down 14px to make room for the key-change marker label's own row
+  // above it (y=10) — see the marker block below. H/W/aspect ratio unchanged.
+  const W=1180,H=380,padTop=72,padBot=26,padL=8,padR=56;
   const mk=(tag,attrs)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;};
   if(voicings.length<2){
     const t=mk('text',{x:W/2,y:H/2,'text-anchor':'middle',fill:'var(--text-muted)','font-family':'var(--font-body)','font-size':'16'});
@@ -10209,13 +10229,17 @@ function renderRoll(voicings){
       }));
     });
   }
-  // Key-change dividers: a vertical dashed line + label at each marker column.
+  // Key-change dividers: a vertical dashed line + label at each marker column. Item 89:
+  // the label gets its own dedicated top row (y=10), separate from the roman-numeral/
+  // quality-name/Δ header stack below it — it used to sit at the same y as the Δ readout
+  // (padTop-8, both at 50), which is the overlap Ricky's screenshots showed. Nothing here
+  // is dropped or shrunk; the stack below just moved down 14px to make room above it.
   seq.forEach((s,i)=>{
     if(!isMarker(s)) return;
     const x=colCenter(i);
     roll.appendChild(mk('line',{x1:x,y1:padTop-2,x2:x,y2:H-padBot,
       stroke:'var(--secdom)','stroke-width':1.5,'stroke-dasharray':'4 3',opacity:0.85}));
-    const lbl=mk('text',{x:x,y:padTop-8,'text-anchor':'middle',fill:'var(--secdom)',
+    const lbl=mk('text',{x:x,y:10,'text-anchor':'middle',fill:'var(--secdom)',
       'font-family':'var(--font-mono)','font-size':'10','font-weight':'600'});
     lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     roll.appendChild(lbl);
@@ -10283,7 +10307,7 @@ function renderRoll(voicings){
     const piv=pivotInfo(i); // {roman,keyRoot,keyMode} for a genuine pivot, else null
     const kbActive=effectiveKeyboardIndex()===i;
     if(rom){
-      const r=mk('text',{x:x,y:20,'text-anchor':'middle',fill:'var(--accent)','font-family':'var(--font-mono)','font-size':'13','font-weight':'600',class:'roll-head'+(kbActive?' kb-active':''),
+      const r=mk('text',{x:x,y:34,'text-anchor':'middle',fill:'var(--accent)','font-family':'var(--font-mono)','font-size':'13','font-weight':'600',class:'roll-head'+(kbActive?' kb-active':''),
 'data-chord-idx':i});
       // Pivot chord (item 6): old-key reading first, then new — "vi / ii" reads as
       // "was vi, now ii," matching the order the modulation actually happens in.
@@ -10298,7 +10322,7 @@ function renderRoll(voicings){
     }
     if(!ultraDense){
       const kc=keyContextAt(i);
-      const nm=mk('text',{x:x,y:36,'text-anchor':'middle',fill:'var(--text-secondary)','font-family':'var(--font-body)','font-size':'11',class:'roll-head'+(kbActive?' kb-active':''),'data-chord-idx':i});
+      const nm=mk('text',{x:x,y:50,'text-anchor':'middle',fill:'var(--text-secondary)','font-family':'var(--font-body)','font-size':'11',class:'roll-head'+(kbActive?' kb-active':''),'data-chord-idx':i});
       nm.textContent=`${keySpell(s.root,kc.keyRoot,kc.keyMode)} ${ch.n}`;
       const nt=mk('title',{});nt.textContent='Click to hear it and open the keyboard for this chord';nm.appendChild(nt);
       nm.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
@@ -10310,7 +10334,7 @@ function renderRoll(voicings){
   // narrow for even the short form to sit without overlapping its neighbours.
   if(!ultraDense) for(let t=0;t<chordVoicings.length-1;t++){
     const tr=stats.transitions[t],xm=(colCenter(chordIdxs[t])+colCenter(chordIdxs[t+1]))/2;
-    const d=mk('text',{x:xm,y:50,'text-anchor':'middle',fill:'var(--text-muted)','font-family':'var(--font-mono)','font-size':'10'});
+    const d=mk('text',{x:xm,y:64,'text-anchor':'middle',fill:'var(--text-muted)','font-family':'var(--font-mono)','font-size':'10'});
     d.textContent = dense ? `\u0394${tr.motion}` : `\u0394${tr.motion}${tr.held?' \u00B7 '+tr.held+' held':''}`;
     roll.appendChild(d);
   }
@@ -10501,6 +10525,32 @@ function renderNotesRoll(voicings){
     content.appendChild(band);
   }
 
+  // Item 94 — bar-position reference. Numbers only, no divider lines in the note lane
+  // (design-lock decision). Reuses barMarkers(), the SAME shared bar-numbering authority
+  // the Rhythm tab uses (item 79) — no new numbering scheme. barMarkers is driven purely
+  // by real time (meterRegions/beatLayout), so meter changes, several chords inside one
+  // bar, and a blank/rest bar are all handled correctly with no special-casing here: a bar
+  // gets its number at its real time position regardless of what (if anything) sounds
+  // during it. Positioned on the exact same x = units*pxPerUnit scale every other Notes
+  // element already uses, so it's pixel-aligned with the chord columns at any zoom, and
+  // lives in the same sticky, scroll-synced labelInner strip the chord labels use (see
+  // syncNotesLabelScroll below) — no new scroll listener or zoom hook needed. Density is
+  // handled by omitting a colliding number (never shrinking text below a legible floor),
+  // matching the philosophy the chord labels already use for their own dense/ultraDense
+  // thinning a few lines down.
+  const BAR_LABEL_MIN_GAP_PX=26;
+  let lastBarLabelPx=-Infinity;
+  barMarkers(drawUnits).forEach(b=>{
+    const bx=b.units*pxPerUnit;
+    if(bx-lastBarLabelPx<BAR_LABEL_MIN_GAP_PX) return; // too close to the previous number: omit, don't shrink
+    lastBarLabelPx=bx;
+    const bl=document.createElement('div');
+    bl.className='notes-bar-ruler-label';
+    bl.style.left=bx+'px';
+    bl.textContent=b.number;
+    labelInner.appendChild(bl);
+  });
+
   // Chord labels — one per real chord, always at its true position, independent of any
   // note-bar merging below, so the learner can always see exactly where the harmony
   // changes even while a held voice's bar runs straight through that boundary. Item 62:
@@ -10510,6 +10560,19 @@ function renderNotesRoll(voicings){
   // every notes-scroll-outer scroll event) rather than by shared DOM ancestry.
   let minGapPx=Infinity;
   for(let t=0;t<chordIdxs.length-1;t++) minGapPx=Math.min(minGapPx,(starts[chordIdxs[t+1]]-starts[chordIdxs[t]])*pxPerUnit);
+  // Item 98 (v89): `dense` was already computed here but never consulted -- a real dense
+  // progression (several adjacent chords, extended/altered qualities) showed full spelled-
+  // out names running into their neighbors well before the existing ultraDense threshold
+  // kicked in. Rather than shrink text or add collision logic, this is now a genuine
+  // three-tier reduction of detail, using the app's own canonical qualitySymbol table (the
+  // same lookup + keySpell() pairing the analysis-doc builder and the Cylinder view's
+  // symOf() already use) for the middle tier, so a lead-sheet symbol here can never drift
+  // out of sync with the chord library the way a second hand-written table could:
+  //   !dense       (>=70px gap) -> Roman numeral + full spelled-out name, unchanged
+  //   dense only   (44-70px)    -> Roman numeral + compact symbol, e.g. "G7", "Cmaj7"
+  //   ultraDense   (<44px)      -> Roman numeral only, unchanged
+  // No new CSS: the symbol reuses .notes-chord-name verbatim (same font/size), just
+  // different text. No new threshold: 70/44 stay exactly as they were.
   const dense=minGapPx<70, ultraDense=minGapPx<44;
   const ds=diatonicChords(keyRoot,keyMode);
   chordIdxs.forEach(i=>{
@@ -10523,7 +10586,11 @@ function renderNotesRoll(voicings){
     const romText = piv ? `${piv.roman} / ${rom}` : (rom||'');
     if(!ultraDense){
       const kc=keyContextAt(i);
-      lbl.innerHTML = `${romText}<span class="notes-chord-name">${keySpell(s.root,kc.keyRoot,kc.keyMode)} ${ch.n}</span>`;
+      const rootName=keySpell(s.root,kc.keyRoot,kc.keyMode);
+      const nameText = dense
+        ? rootName+((qualitySymbol[ch.n]!==undefined)?qualitySymbol[ch.n]:(' '+ch.n))
+        : rootName+' '+ch.n;
+      lbl.innerHTML = `${romText}<span class="notes-chord-name">${nameText}</span>`;
     } else {
       lbl.textContent = romText;
     }

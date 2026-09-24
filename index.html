@@ -4928,8 +4928,11 @@ function buildMidi(tracks, meterEvents, songName){
     } else { // 'chords'
       (spec.notes||[]).forEach((notes,i)=>{
         if(!notes) return;
-        const dur=getChordDur(seq[i]);
-        const chordTicks=durToTicks(dur,ppq);
+        // Block 3 Phase 2: chord length in ticks comes straight from the numeric durUnits
+        // authority (grid units -> ticks), identical to the Lines path above and exact for
+        // off-grid durations. For every named on-grid value this yields the same tick count
+        // durToTicks produced (480/12 = 40 ticks per unit), so existing exports are byte-identical.
+        const chordTicks=Math.round(ppq*chordDurUnits(seq[i])/GRID_UNITS_PER_QUARTER);
         // Each chord sounds at its OWN absolute grid position (grid units -> ticks), exactly as
         // playback (playProgression/beatLayout) schedules it — not laid out back-to-back. Any
         // gap you placed therefore exports as true silence: a MIDI rest is simply a longer wait
@@ -5402,7 +5405,7 @@ function computeLiveAnalysis(){
     const rn=keySpell(s.root,lkr,lkm);
     const dm=nativeDegreeByFunction(s.root,ch.n,ds);
     const dur=getChordDur(s);
-    const isOverride=!!s.dur;
+    const isOverride=(chordDurUnits(s)!==(DUR_UNITS[globalDur]||12));
 
     let fn='', fnClass='chromatic', borrowDisclosure=null;
     const bStatus=dm?null:borrowedStatusAt(ce.seqIdx);
@@ -5430,7 +5433,7 @@ function computeLiveAnalysis(){
     return {
       seqIdx:ce.seqIdx, root:s.root, quality:ch.n, label:rn+sym, fn, fnClass,
       borrowDisclosure, chromaticColorNote, pitchNative:pcStatus.native,
-      dur:durLabels[dur]+(isOverride?' \u25CF':''), invLabel: inv>0?invNames[inv]:null,
+      dur:(UNITS_TO_DUR[chordDurUnits(s)]?durLabels[dur]:fmtBeatsFromUnits(chordDurUnits(s)))+(isOverride?' \u25CF':''), invLabel: inv>0?invNames[inv]:null,
       bass: s.bass!==null ? keySpell(s.bass,lkr,lkm) : null,
       keyName: keySpell(lkr,lkr,lkm)+' '+lkm, meter: ce.mt.num+'/'+ce.mt.den,
       // tensionPct reuses toPct()'s own y->percent inversion verbatim ((1-y)/2)*100 — the
@@ -5757,7 +5760,7 @@ function computeAnalysisDoc(){
     const invNames=['root pos.','1st inv.','2nd inv.','3rd inv.'];
     const inv=s.inv||0;
     const dur=getChordDur(s);
-    const isOverride=!!s.dur;
+    const isOverride=(chordDurUnits(s)!==(DUR_UNITS[globalDur]||12));
 
     // Function classification (against the local key). Item 46: borrowed status comes
     // exclusively from the shared borrowedStatusAt() authority — never from s.borrowed
@@ -5817,7 +5820,7 @@ function computeAnalysisDoc(){
     if(s.bass!==null) label+=' / '+keySpell(s.bass,lkr,lkm);
 
     return {i:ci+1, label, fn, fnDisplay, fnClass, region, chromaticColorNote, borrowDisclosure, pitchNative:pcStatus.native,
-            notes, dur:durLabels[dur]+(isOverride?' \u25CF':''),
+            notes, dur:(UNITS_TO_DUR[chordDurUnits(s)]?durLabels[dur]:fmtBeatsFromUnits(chordDurUnits(s)))+(isOverride?' \u25CF':''),
             voicingNames, col:ch.col, kr:lkr, km:lkm, keyName:keySpell(lkr,lkr,lkm)+' '+lkm};
   });
 
@@ -6431,6 +6434,10 @@ const DUR_NAMES={'1n':'whole','2n':'half','4n':'quarter','8n':'eighth','16n':'si
 const GRID_UNITS_PER_QUARTER=12;
 const DUR_UNITS={'1n':48,'2n':24,'4n':12,'8n':6,'16n':3,
   '1n_d':72,'2n_d':36,'4n_d':18,'8n_d':9, '8n_t':4,'4n_t':8,'16n_t':2};
+// Block 3 Phase 1: durUnits (integer grid units) is the sole authority for a chord's
+// duration; notation is DERIVED for display. UNITS_TO_DUR is the exact reverse of DUR_UNITS
+// (all values distinct) for turning a stored unit count back into its notation key.
+const UNITS_TO_DUR={}; Object.keys(DUR_UNITS).forEach(k=>{ if(!(DUR_UNITS[k] in UNITS_TO_DUR)) UNITS_TO_DUR[DUR_UNITS[k]]=k; });
 const MIN_UNITS=DUR_UNITS['16n']; // shortest PLAIN note value — the trim/collision floor for ordinary drag/resize
 // Which plain base values a triplet or dotted modifier is actually offered on (backlog
 // item 3 design-lock): triplet covers eighth/quarter/sixteenth (Ricky's "full set" pick);
@@ -6506,6 +6513,10 @@ let notesUnitPx=6;
 const NOTES_UNIT_PX_MIN=0.25, NOTES_UNIT_PX_MAX=28;
 const NOTES_ROWPX=9; // fixed px per semitone — a stable pitch reference that never squishes, per design-lock
 let globalDur='2n', bpm=120, activeChordIndex=-1, isPlaying=false;
+// Block 3 Phase 1: normalize the initial in-memory demo seq to the v14 model (chords carry
+// durUnits; markers carry a startUnit equal to their v89-derived position). Same conversion
+// the load path applies, so the demo and any loaded project share one representation.
+ensureChordDurUnits(globalDur); syncMarkerPositions();
 let loopEnabled=false; // transport loop toggle; applied to Tone.Transport at play time
 // --- Voicing preferences (feed computeVoicings; affect audible + exported voicing) ---
 // Defaults chosen for musical quality, not to reproduce the old center-of-mass placement,
@@ -6598,10 +6609,10 @@ function barQuarters(meter){ return (meter&&meter.num&&meter.den) ? meter.num*(4
 function beatLayout(){
   const starts=[];
   seq.forEach((s,i)=>{
-    if(isMarker(s)){ starts.push(unitsToBeats(nextChordIndex(i)>=0?(seq[nextChordIndex(i)].startUnit||0):0)); return; }
+    if(isMarker(s)){ starts.push(unitsToBeats(s.startUnit||0)); return; }
     starts.push(unitsToBeats(s.startUnit||0));
   });
-  const totalUnits=seq.reduce((m,s,i)=>isMarker(s)?m:Math.max(m,(s.startUnit||0)+(DUR_UNITS[getChordDur(s)]||12)),0);
+  const totalUnits=seq.reduce((m,s,i)=>isMarker(s)?m:Math.max(m,(s.startUnit||0)+(chordDurUnits(s))),0);
   return {starts, total:unitsToBeats(totalUnits), totalUnits};
 }
 // Grid-units version of the same layout, used by the Rhythm tab and drag handlers (which
@@ -6609,10 +6620,10 @@ function beatLayout(){
 function unitLayout(){
   const starts=[];
   seq.forEach((s,i)=>{
-    if(isMarker(s)){ starts.push(nextChordIndex(i)>=0?(seq[nextChordIndex(i)].startUnit||0):0); return; }
+    if(isMarker(s)){ starts.push(s.startUnit||0); return; }
     starts.push(s.startUnit||0);
   });
-  const totalUnits=seq.reduce((m,s,i)=>isMarker(s)?m:Math.max(m,(s.startUnit||0)+(DUR_UNITS[getChordDur(s)]||12)),0);
+  const totalUnits=seq.reduce((m,s,i)=>isMarker(s)?m:Math.max(m,(s.startUnit||0)+(chordDurUnits(s))),0);
   return {starts, totalUnits};
 }
 // Default position for a NEWLY CREATED chord about to be spliced in at array index `at`
@@ -6622,7 +6633,7 @@ function unitLayout(){
 function defaultStartUnitFor(at){
   const clampedAt=Math.max(0,Math.min(at,seq.length));
   for(let j=clampedAt-1;j>=0;j--){
-    if(!isMarker(seq[j])) return (seq[j].startUnit||0)+(DUR_UNITS[getChordDur(seq[j])]||12);
+    if(!isMarker(seq[j])) return (seq[j].startUnit||0)+(chordDurUnits(seq[j]));
   }
   return 0;
 }
@@ -6637,10 +6648,10 @@ function fitNewChordDuration(i){
   const ni=nextChordIndex(i);
   if(ni<0) return;
   const room=(seq[ni].startUnit||0)-(s.startUnit||0);
-  const durUnits=DUR_UNITS[getChordDur(s)]||12;
+  const durUnits=chordDurUnits(s);
   if(room<durUnits){
     const fitted=Math.max(MIN_UNITS,room);
-    s.dur=unitsToNearestDurCapped(fitted,fitted);
+    s.durUnits=DUR_UNITS[unitsToNearestDurCapped(fitted,fitted)];
   }
 }
 // The grid length actually in force right now: whatever was explicitly set, or — if
@@ -6679,7 +6690,7 @@ function progressionBarsBeats(){
   let lastEnd=0;
   seq.forEach((s,i)=>{
     if(isMarker(s)) return;
-    const dur=DUR_BEATS[getChordDur(s)]||2;
+    const dur=unitsToBeats(chordDurUnits(s));
     lastEnd=Math.max(lastEnd,starts[i]+dur);
   });
   const totalBeats=lastEnd;
@@ -7310,7 +7321,7 @@ function applyDefaultChordDuration(i){
   const s=seq[i]; if(!s||isMarker(s)) return;
   const ni=nextChordIndex(i);
   const ceilingUnits=(ni>=0) ? Math.max(MIN_UNITS, seq[ni].startUnit-s.startUnit) : Infinity;
-  s.dur=((DUR_UNITS[globalDur]||12)<=ceilingUnits) ? globalDur : '4n';
+  s.durUnits=(((DUR_UNITS[globalDur]||12)<=ceilingUnits) ? (DUR_UNITS[globalDur]||12) : DUR_UNITS['4n']);
 }
 // Adds a chord entry either at the end, at the pending insert point, or — if revise mode
 // is active (backlog item 3) — as a clean in-place swap for the chord being revised.
@@ -7361,7 +7372,7 @@ function addChordAtInsertPoint(entry){
   // it was squeezed to a sixteenth note and still sat on top of the next chord's start. With Ripple off
   // it is trimmed as before, but now the app says so.
   if(rippleEnabled){
-    if(wantsDurDefault && DUR_UNITS[globalDur]) entry.dur=globalDur; // pushing makes room, so the default value need not shrink
+    if(wantsDurDefault && DUR_UNITS[globalDur]) entry.durUnits=(DUR_UNITS[globalDur]||12); // pushing makes room, so the default value need not shrink
     const plan=planInsertPush(idx);
     if(plan.shifts.length){
       if(typeof gridLengthUnits==='number' && plan.endUnit>gridLengthUnits){
@@ -7401,6 +7412,12 @@ function insertKeyMarker(){
   // Seeds as a no-op copy of the meter active at this point too (same pattern as key) —
   // it only becomes a real meter change once edited in the marker editor / Rhythm tab.
   const marker={marker:true,keyRoot:ctx.keyRoot,keyMode:ctx.keyMode,meter:{num:meterCtx.num,den:meterCtx.den}};
+  // Phase 3 Option B: a marker is a positional authority, so it needs a real startUnit the
+  // moment it is created — nothing re-derives it per layout any more. Seed it at the boundary it
+  // would have rendered at under v89: the start of the first chord at or after the insert point,
+  // or 0 when no chord follows (a trailing marker; Phase 4 owns trailing semantics).
+  let mStart=0; for(let j=at;j<seq.length;j++){ if(!isMarker(seq[j])){ mStart=(seq[j].startUnit||0); break; } }
+  marker.startUnit=mStart;
   if(insertAt!==null && insertAt<=seq.length) seq.splice(insertAt,0,marker);
   else seq.push(marker);
   insertAt=null;reviseAt=null;
@@ -7634,7 +7651,7 @@ function auditionTransition(seqIdxA,seqIdxB){
   const sA=seq[seqIdxA]; if(!sA) return;
   Tone.start(); ensureSynth();
   const notesA=(v[seqIdxA]||[]).map(midiToNote);
-  const durA=durToSeconds(getChordDur(sA));
+  const durA=chordDurSeconds(sA);
   if(notesA.length) synth.triggerAttackRelease(notesA, durA);
   flashAuditionGlow(seqIdxA);
   if(seqIdxB==null) return;
@@ -7642,7 +7659,7 @@ function auditionTransition(seqIdxA,seqIdxB){
     analysisAuditionTimer=null;
     const sB=seq[seqIdxB]; if(!sB) return;
     const notesB=(v[seqIdxB]||[]).map(midiToNote);
-    if(notesB.length) synth.triggerAttackRelease(notesB, durToSeconds(getChordDur(sB)));
+    if(notesB.length) synth.triggerAttackRelease(notesB, chordDurSeconds(sB));
     flashAuditionGlow(seqIdxB);
   }, Math.max(durA*1000, 150));
 }
@@ -7911,7 +7928,7 @@ function renderRhythmTab(){
   seq.forEach((s,i)=>{
     if(isMarker(s)) return;
     chordCount++;
-    const dur=getChordDur(s), durUnits=DUR_UNITS[dur]||QUARTER_UNITS;
+    const dur=getChordDur(s), durUnits=chordDurUnits(s);
     const x=px(i), w=durUnits*RHYTHM_UNIT_PX;
     const ch=lib[s.idx], kc=keyContextAt(i), rn=keySpell(s.root,kc.keyRoot,kc.keyMode);
 
@@ -7969,7 +7986,7 @@ function renderRhythmTab(){
 
     const sub=document.createElement('div');
     sub.className='rhythm-block-sub';
-    sub.textContent=w>44?`${DUR_SYMBOLS[dur]||''} ${DUR_NAMES[dur]||dur}`:(DUR_SYMBOLS[dur]||'');
+    sub.textContent=UNITS_TO_DUR[chordDurUnits(s)]?(w>44?`${DUR_SYMBOLS[dur]||''} ${DUR_NAMES[dur]||dur}`:(DUR_SYMBOLS[dur]||'')):fmtBeatsFromUnits(chordDurUnits(s));
     block.appendChild(sub);
 
     const steppers=document.createElement('div');
@@ -8163,14 +8180,14 @@ function rhythmBlockPx(i){
 // width, not just this chord's own) doesn't have to duplicate the arithmetic a fourth time.
 function rhythmBlockWidthPx(i){
   const s=seq[i]; if(!s||isMarker(s)) return 0;
-  const durUnits=DUR_UNITS[getChordDur(s)]||12;
+  const durUnits=chordDurUnits(s);
   return Math.max(durUnits*RHYTHM_UNIT_PX-4,20);
 }
 function repositionRhythmBlockEl(i){
   const s=seq[i]; if(!s||isMarker(s)) return;
   const el=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
   if(!el) return;
-  const durUnits=DUR_UNITS[getChordDur(s)]||12;
+  const durUnits=chordDurUnits(s);
   const w=durUnits*RHYTHM_UNIT_PX;
   const newLeft=rhythmBlockPx(i);
   const newWidth=Math.max(w-4,20);
@@ -8195,7 +8212,7 @@ function startRhythmDrag(ev,i,block){
   ev.preventDefault();
   const s=seq[i]; if(!s||isMarker(s)) return;
   const startX=(ev.touches?ev.touches[0].clientX:ev.clientX);
-  const startUnits=DUR_UNITS[getChordDur(s)]||12;
+  const startUnits=chordDurUnits(s);
   const {starts}=unitLayout();
   const myStart=starts[i];
   const ni=nextChordIndex(i);
@@ -8204,7 +8221,7 @@ function startRhythmDrag(ev,i,block){
     const deltaUnits=Math.round((x-startX)/RHYTHM_UNIT_PX);
     const raw=Math.max(MIN_UNITS,startUnits+deltaUnits);
     const ceilingUnits=Math.max(MIN_UNITS,wallUnits-myStart);
-    s.dur=unitsToNearestDurCapped(raw,ceilingUnits);
+    s.durUnits=DUR_UNITS[unitsToNearestDurCapped(raw,ceilingUnits)];
   };
   const liveBlock0=document.querySelector(`.rhythm-block[data-idx="${i}"]`);
   if(liveBlock0) liveBlock0.classList.add('dragging');
@@ -8265,10 +8282,13 @@ function startRhythmMove(ev,i,block){
   const isTouch=!!ev.touches;
   const startX=(ev.touches?ev.touches[0].clientX:ev.clientX);
   const {starts}=unitLayout();
+  // Phase 3 (Block 3, Option B): markers are fixed positional authorities and do not follow the
+  // dragged chord, so no pre-drag snapshot is needed. The chord crosses a stationary marker;
+  // resortSeqByTimeline() on release reads each marker's own startUnit directly for the sort.
   const startPos=starts[i];
-  const durUnits=DUR_UNITS[getChordDur(s)]||12;
+  const durUnits=chordDurUnits(s);
   const prevI=trimmablePredecessor(i);
-  const prevStartUnits=prevI>=0?(DUR_UNITS[getChordDur(seq[prevI])]||12):0;
+  const prevStartUnits=prevI>=0?(chordDurUnits(seq[prevI])):0;
   const prevPos=prevI>=0?starts[prevI]:0;
   const ni=nextChordIndex(i);
   const rightWall=(ni>=0) ? seq[ni].startUnit : activeGridLengthUnits(); // next chord (or grid end) is always a fixed wall
@@ -8284,7 +8304,7 @@ function startRhythmMove(ev,i,block){
   const hardPrevI=prevChordIndex(i);
   const floorPos = prevI>=0
     ? prevPos+MIN_UNITS
-    : (hardPrevI>=0 ? (seq[hardPrevI].startUnit||0)+(DUR_UNITS[getChordDur(seq[hardPrevI])]||12) : 0);
+    : (hardPrevI>=0 ? (seq[hardPrevI].startUnit||0)+(chordDurUnits(seq[hardPrevI])) : 0);
   const applyFor=x=>{
     const deltaUnits=Math.round((x-startX)/RHYTHM_UNIT_PX);
     let target=startPos+deltaUnits;
@@ -8294,13 +8314,13 @@ function startRhythmMove(ev,i,block){
     s.startUnit=target;
     if(prevI>=0){
       if(target>=prevPos+prevStartUnits){
-        seq[prevI].dur=unitsToNearestDur(prevStartUnits); // fully restore if this drag had trimmed it — already an exact duration value, safe as-is
+        seq[prevI].durUnits=DUR_UNITS[unitsToNearestDur(prevStartUnits)]; // fully restore if this drag had trimmed it — already an exact duration value, safe as-is
       } else {
         // Cap AT the exact gap available (target-prevPos), never let "nearest" round up
         // past it — that would make the predecessor's end overshoot the chord we're
         // actively pinning, i.e. overlap the very thing this drag is trying to place.
         const gap=Math.max(MIN_UNITS,target-prevPos);
-        seq[prevI].dur=unitsToNearestDurCapped(gap,gap);
+        seq[prevI].durUnits=DUR_UNITS[unitsToNearestDurCapped(gap,gap)];
       }
     }
   };
@@ -8358,12 +8378,13 @@ function startRhythmMove(ev,i,block){
       rhythmMoveDrag=null;
       document.querySelectorAll('.rhythm-block.dragging').forEach(el=>el.classList.remove('dragging'));
       const v=(window._voicings||[])[i];
-      if(v){ Tone.start(); ensureSynth(); const d=durToSeconds(getChordDur(s)); synth.triggerAttackRelease(v.map(midiToNote),d); }
+      if(v){ Tone.start(); ensureSynth(); const d=chordDurSeconds(s); synth.triggerAttackRelease(v.map(midiToNote),d); }
       return;
     }
     if(!rhythmMoveDrag) return;
     applyFor(x);
     rhythmMoveDrag=null;
+    resortSeqByTimeline(); // Phase 3: commit any crossing — array order -> timeline order + identity remap
     cleanup();
     pushHistory();
     renderAll();
@@ -8377,7 +8398,7 @@ function startRhythmMove(ev,i,block){
     cleanup();
     const wasArmed=!!rhythmMoveDrag;
     rhythmMoveDrag=null;
-    if(wasArmed){ pushHistory(); renderAll(); }
+    if(wasArmed){ resortSeqByTimeline(); pushHistory(); renderAll(); } // Phase 3: an armed-then-cancelled gesture still flushed a real position via applyFor — commit its ordering too
   };
   document.addEventListener('mousemove',move);
   document.addEventListener('mouseup',up);
@@ -9198,7 +9219,7 @@ function startLinesLassoOrPlace(ev,laneEl,trackName,minM,maxM,rowPx){
 function linesChordAtUnit(unit){
   for(let i=0;i<seq.length;i++){
     if(isMarker(seq[i])) continue;
-    const s=seq[i], start=s.startUnit||0, end=start+(DUR_UNITS[getChordDur(s)]||12);
+    const s=seq[i], start=s.startUnit||0, end=start+(chordDurUnits(s));
     if(unit>=start && unit<end) return i;
   }
   return -1;
@@ -9368,7 +9389,7 @@ function renderLinesRoll(){
       return;
     }
     const x=linesUnitsToPx(s.startUnit||0);
-    const durUnits=DUR_UNITS[getChordDur(s)]||12;
+    const durUnits=chordDurUnits(s);
     const w=durUnits*RHYTHM_UNIT_PX;
     const ch=lib[s.idx], kc=keyContextAt(i), rn=keySpell(s.root,kc.keyRoot,kc.keyMode);
     const chip=document.createElement('div');
@@ -9614,7 +9635,7 @@ function renderStrip(voicings){
     chip.appendChild(topRow);chip.appendChild(romanEl);
     chip.onclick=()=>{
       if(chip._longPressFired){ chip._longPressFired=false; return; } // long-press already handled this touch/click
-      Tone.start();ensureSynth();const d=durToSeconds(getChordDur(s));synth.triggerAttackRelease(voicings[i].map(midiToNote),d);
+      Tone.start();ensureSynth();const d=chordDurSeconds(s);synth.triggerAttackRelease(voicings[i].map(midiToNote),d);
     };
     // Item 17 — long-press a chip to start playback from that chord, instead of only ever
     // being able to play from the top. A plain tap still does the existing single-chord
@@ -9677,7 +9698,7 @@ function renderStrip(voicings){
     const durNames={'1n':'○ whole','2n':'◐ half','4n':'♩ quarter','8n':'♪ eighth','16n':'♬ sixteenth'};
     const curDur=getChordDur(s);
     const durBtn=document.createElement('select');
-    durBtn.className='chip-dur'+(s.dur?' has-dur':'');
+    durBtn.className='chip-dur'+((chordDurUnits(s)!==(DUR_UNITS[globalDur]||12))?' has-dur':'');
     DUR_ORDER.forEach(d=>{
       const opt=document.createElement('option');
       opt.value=d; opt.textContent=durNames[d];
@@ -10196,7 +10217,7 @@ function renderRoll(voicings){
   const durBeats={'1n':4,'2n':2,'4n':1,'8n':0.5,'16n':0.25,
     '1n_d':6,'2n_d':3,'4n_d':1.5,'8n_d':0.75, '8n_t':1/3,'4n_t':2/3,'16n_t':1/6};
   const MARKER_BEATS=0.5;
-  const beats=seq.map(s=>isMarker(s)?MARKER_BEATS:(durBeats[getChordDur(s)]||2));
+  const beats=seq.map(s=>isMarker(s)?MARKER_BEATS:unitsToBeats(chordDurUnits(s)));
   const totalBeats=beats.reduce((a,b)=>a+b,0);
   const colStarts=[];let cumX=0;beats.forEach(b=>{colStarts.push(cumX);cumX+=b;});
   const usableW=W-padL-padR;
@@ -10400,7 +10421,7 @@ function setVlView(view){
 // so a rearticulation after silence is never merged, even if the pitch happens to match.
 // This is rendering-only: it never reads or writes s.manualVoicing or any chord data.
 function buildNotesSegments(chordIdxs, chordVoicings, slotOfNoteAt, starts){
-  const durUnitsOf=idx=>DUR_UNITS[getChordDur(seq[idx])]||12;
+  const durUnitsOf=idx=>chordDurUnits(seq[idx]);
   const open=new Map(); // slot -> {slot,note,startUnit,endUnit,chordIdxs:[]}
   const finished=[];
   for(let t=0;t<chordVoicings.length;t++){
@@ -10517,7 +10538,7 @@ function renderNotesRoll(voicings){
   // gaps around/between the bars.
   const selIdx=effectiveKeyboardIndex();
   if(selIdx!==null && chordIdxs.includes(selIdx)){
-    const selDurUnits=DUR_UNITS[getChordDur(seq[selIdx])]||12;
+    const selDurUnits=chordDurUnits(seq[selIdx]);
     const band=document.createElement('div');
     band.className='notes-selection-band';
     band.style.left=(starts[selIdx]*pxPerUnit)+'px';
@@ -11517,7 +11538,78 @@ function durToSeconds(dur){
   return (60/bpm)*beats;
 }
 function durToToneNotation(dur){return dur||globalDur;}
-function getChordDur(s){return s.dur||globalDur;}
+// --- Duration authority accessors (Block 3 Phase 1) ---
+// chordDurUnits: the ONE computational read for a chord's duration, in grid units.
+function chordDurUnits(s){ if(s && typeof s.durUnits==='number') return s.durUnits; return DUR_UNITS[(s&&s.dur)||globalDur]||12; }
+function nearestDurKey(units){ let best=null,bd=Infinity; for(const k in DUR_UNITS){ const d=Math.abs(DUR_UNITS[k]-units); if(d<bd){bd=d;best=k;} } return best||'4n'; }
+function unitsToSeconds(units){ return (60/bpm)*(units/GRID_UNITS_PER_QUARTER); }
+function chordDurSeconds(s){ return unitsToSeconds(chordDurUnits(s)); }
+// Display text for a chord's duration: exact notation name when the unit count matches a
+// named value, else a readable beats value (never an invented/rounded label).
+function chordDurText(s){ const u=chordDurUnits(s); const k=UNITS_TO_DUR[u]; return k?(DUR_NAMES[k]||k):fmtBeatsFromUnits(u); }
+// getChordDur now DERIVES a notation key from durUnits (exact when possible, else nearest).
+// Retained for display and for buildMidi's not-yet-migrated read (Phase 2); no longer the
+// stored authority. For every on-grid duration it returns the same key v89 stored.
+function getChordDur(s){ const u=chordDurUnits(s); return UNITS_TO_DUR[u]||nearestDurKey(u); }
+// Phase 1 migration/sync helpers.
+function ensureChordDurUnits(gd){ for(let i=0;i<seq.length;i++){ const s=seq[i]; if(s && !isMarker(s)){ if(typeof s.durUnits!=='number') s.durUnits=DUR_UNITS[s.dur||gd||globalDur]||12; if('dur' in s) delete s.dur; } } }
+// Keep every marker's startUnit equal to its v89-derived position (next chord's startUnit,
+// or 0 for a trailing marker). Phase 1 only: markers are not yet independently positioned,
+// so this preserves identical behaviour while making startUnit the field layout reads.
+// Block 3 Phase 3 (Option B): markers are positional authorities. Every marker carries its own
+// saved startUnit; beatLayout/unitLayout read it directly. This is now a FILL-MISSING pass only:
+// it derives a startUnit (the v89 rule: next chord's start, or 0 if trailing) ONLY for a marker
+// that does not already have one — a legacy pre-v14 marker, or a freshly built demo before its
+// first placement. It never overwrites an existing marker position, so a marker that has been
+// crossed or independently placed keeps its real position. Called once at startup and once per
+// load, never per layout — a chord can therefore move across a fixed marker cleanly.
+function syncMarkerPositions(){ for(let i=0;i<seq.length;i++){ if(isMarker(seq[i]) && typeof seq[i].startUnit!=='number'){ const ni=nextChordIndex(i); seq[i].startUnit = ni>=0 ? (seq[ni].startUnit||0) : 0; } } }
+// =====================================================================================
+// Block 3 (Timeline Architecture) Phase 3, Option B: on-release re-sort + index-identity remap.
+// Markers are now fixed positional authorities (their own startUnit, read directly by the
+// layouts — see syncMarkerPositions above, which no longer re-derives them per layout). So a
+// chord body-drag (startRhythmMove) crosses a STATIONARY marker: nothing re-sorts during the
+// gesture, the marker does not move, and on release this runs exactly once to rebuild
+// array-order == timeline-order. That invariant is what lets the whole context machinery
+// (keyContextAt / meterContextAt / effectiveMapKeyContext and every other backward array scan)
+// stay correct WITHOUT being rewritten into position queries — the load-bearing design-lock
+// invariant. There is no snapshot and no re-couple: with fixed markers the marker's live
+// startUnit already IS the true boundary, so the sort reads it directly and leaves it alone.
+//
+// Tie rule (locked): at an equal startUnit a marker sorts immediately BEFORE a chord, so a
+// chord landing exactly on a boundary belongs to the NEW region. Array.sort is stable in
+// every modern engine, so events that did not cross keep their relative order and a
+// non-crossing commit is a no-op re-sort.
+//
+// Identity remap: every seq-index-based state is captured by object identity BEFORE the sort
+// and rewritten to that object's new index AFTER, so no UI / editor / playback target is left
+// pointing at whatever chord happens to land at its old slot. All of these are seq indices
+// (window._voicings is seq-aligned, so the Voice-Leading strip loop index IS the seq index):
+// insertAt, reviseAt, activeBassIndex, activeInvIndex, activeMelodyIndex, activeKeyboardIndex,
+// editingMarkerIndex (a marker's own seq index), activeChordIndex (playback highlight).
+// analysisSelected is intentionally excluded: it indexes the derived, chord-only
+// data.cards/data.transitions, whose order is invariant under a chord<->marker crossing
+// (chords never reorder among themselves here), and it self-validates on its own render.
+// Undo/redo (restoreFrom) already nulls the index vars, so this pass governs only the live
+// forward edit. No protected function is touched.
+function resortSeqByTimeline(){
+  const cap=idx=>(typeof idx==='number'&&idx>=0&&idx<seq.length)?seq[idx]:null;
+  const rIns=cap(insertAt), rRev=cap(reviseAt), rBass=cap(activeBassIndex), rInv=cap(activeInvIndex),
+        rMel=cap(activeMelodyIndex), rKbd=cap(activeKeyboardIndex), rMark=cap(editingMarkerIndex), rChord=cap(activeChordIndex);
+  seq.sort((a,b)=>{
+    const pa=(a.startUnit||0), pb=(b.startUnit||0);
+    if(pa!==pb) return pa-pb;
+    return (isMarker(a)?0:1)-(isMarker(b)?0:1); // tie: marker (0) before chord (1)
+  });
+  if(rIns) insertAt=seq.indexOf(rIns);
+  if(rRev) reviseAt=seq.indexOf(rRev);
+  if(rBass) activeBassIndex=seq.indexOf(rBass);
+  if(rInv) activeInvIndex=seq.indexOf(rInv);
+  if(rMel) activeMelodyIndex=seq.indexOf(rMel);
+  if(rKbd) activeKeyboardIndex=seq.indexOf(rKbd);
+  if(rMark) editingMarkerIndex=seq.indexOf(rMark);
+  if(rChord) activeChordIndex=seq.indexOf(rChord);
+}
 // Next/previous ACTUAL CHORD index around i, skipping markers — used by duration edits
 // and the Rhythm-tab drag handlers to find the neighbor a placement might collide with.
 function nextChordIndex(i){ for(let j=i+1;j<seq.length;j++){ if(!isMarker(seq[j])) return j; } return -1; }
@@ -11546,7 +11638,7 @@ function setChordDuration(i,newDur){
   const {starts}=unitLayout();
   const ni=nextChordIndex(i);
   const ceilingUnits=(ni>=0) ? Math.max(MIN_UNITS, seq[ni].startUnit-starts[i]) : Infinity;
-  s.dur=unitsToNearestDurCapped(DUR_UNITS[newDur],ceilingUnits);
+  s.durUnits=DUR_UNITS[unitsToNearestDurCapped(DUR_UNITS[newDur],ceilingUnits)];
 }
 // Set chord i's duration to EXACTLY newDur (a triplet/dotted key included), without
 // snapping to the nearest of the five plain DUR_ORDER values the way setChordDuration
@@ -11615,7 +11707,7 @@ function wireRippleToggles(){
 function applyChordShifts(shifts,followLines){
   const wins=shifts.map(sh=>{
     const s=seq[sh.i], lo=s.startUnit||0;
-    return {i:sh.i, lo, hi:lo+(DUR_UNITS[getChordDur(s)]||12), delta:sh.delta};
+    return {i:sh.i, lo, hi:lo+(chordDurUnits(s)), delta:sh.delta};
   });
   let notes=0;
   if(followLines){
@@ -11634,7 +11726,7 @@ function applyChordShifts(shifts,followLines){
 // itself, if nothing had to move) ends afterwards.
 function planRippleShifts(i,newDur){
   const s=seq[i];
-  const oldStart=s.startUnit||0, oldU=DUR_UNITS[getChordDur(s)]||12, newU=DUR_UNITS[newDur];
+  const oldStart=s.startUnit||0, oldU=chordDurUnits(s), newU=DUR_UNITS[newDur];
   const later=[]; for(let j=i+1;j<seq.length;j++){ if(!isMarker(seq[j])) later.push(j); }
   const shifts=[];
   if(newU>oldU){
@@ -11644,7 +11736,7 @@ function planRippleShifts(i,newDur){
       if(cs>=running) break; // free space here absorbs the rest of the push
       const d=running-cs;
       shifts.push({i:j,delta:d});
-      running=cs+d+(DUR_UNITS[getChordDur(seq[j])]||12);
+      running=cs+d+(chordDurUnits(seq[j]));
     }
     return {shifts,endUnit:running};
   }
@@ -11654,7 +11746,7 @@ function planRippleShifts(i,newDur){
     const cs=seq[j].startUnit||0;
     if(cs!==running) break; // a real gap: the chain stops
     shifts.push({i:j,delta});
-    running=cs+(DUR_UNITS[getChordDur(seq[j])]||12);
+    running=cs+(chordDurUnits(seq[j]));
   }
   return {shifts,endUnit:oldStart+newU+(running-(oldStart+oldU))};
 }
@@ -11673,7 +11765,7 @@ function setChordDurationExact(i,newDur){
       return;
     }
     const moved=plan.shifts.length?applyChordShifts(plan.shifts,true):{chords:0,notes:0};
-    s.dur=newDur;
+    s.durUnits=DUR_UNITS[newDur];
     if(moved.chords){
       const amts=plan.shifts.map(x=>Math.abs(x.delta));
       const allSame=amts.every(a=>a===amts[0]);
@@ -11690,13 +11782,13 @@ function setChordDurationExact(i,newDur){
   const {starts}=unitLayout();
   const ni=nextChordIndex(i);
   const ceilingUnits=(ni>=0) ? Math.max(MIN_UNITS, seq[ni].startUnit-starts[i]) : Infinity;
-  if(DUR_UNITS[newDur]<=ceilingUnits){ s.dur=newDur; return; }
-  s.dur=unitsToNearestDurCapped(DUR_UNITS[newDur],ceilingUnits);
+  if(DUR_UNITS[newDur]<=ceilingUnits){ s.durUnits=DUR_UNITS[newDur]; return; }
+  s.durUnits=DUR_UNITS[unitsToNearestDurCapped(DUR_UNITS[newDur],ceilingUnits)];
   const room=fmtBeatsFromUnits(ceilingUnits);
-  if(s.dur===oldDur){
+  if(getChordDur(s)===oldDur){
     setDurEditNote(`Chord ${no} stays ${durWithArticle(oldDur)}. ${capFirst(durWithArticle(newDur))} would run into the next chord, which starts ${room} after it. Turn Ripple on to push the next chord, or move it first.`,false);
   } else {
-    setDurEditNote(`Chord ${no} became ${durWithArticle(s.dur)} instead of ${durWithArticle(newDur)}: only ${room} fit before the next chord. Turn Ripple on to push the next chord, or move it first.`,true);
+    setDurEditNote(`Chord ${no} became ${durWithArticle(getChordDur(s))} instead of ${durWithArticle(newDur)}: only ${room} fit before the next chord. Turn Ripple on to push the next chord, or move it first.`,true);
   }
 }
 
@@ -11733,7 +11825,7 @@ function seqIndexOfChordNumber(n){
   for(let j=0;j<seq.length;j++){ if(!isMarker(seq[j])){ c++; if(c===n) return j; } }
   return -1;
 }
-function chordEndUnit(s){ return (s.startUnit||0)+(DUR_UNITS[getChordDur(s)]||12); }
+function chordEndUnit(s){ return (s.startUnit||0)+(chordDurUnits(s)); }
 function meterText(m){ return m.num+'/'+m.den; }
 // The meter a blank bar in front of seq[i] belongs to: the one in force BEFORE any dividers sitting
 // right ahead of the chord, because those dividers travel with the chord (D2, and the section 3.4
@@ -11766,7 +11858,7 @@ function linesNotesOverlapping(lo,hi){
 // Ripple for a NEW chord at seq[i]: the same walk as lengthening a chord (item 76). Chords the new one now
 // overlaps are pushed to the end of the chord before them; the first real gap absorbs the rest.
 function planInsertPush(i){
-  let running=(seq[i].startUnit||0)+(DUR_UNITS[getChordDur(seq[i])]||12);
+  let running=(seq[i].startUnit||0)+(chordDurUnits(seq[i]));
   const shifts=[];
   for(let j=i+1;j<seq.length;j++){
     if(isMarker(seq[j])) continue;
@@ -11774,7 +11866,7 @@ function planInsertPush(i){
     if(cs>=running) break;
     const d=running-cs;
     shifts.push({i:j,delta:d});
-    running=cs+d+(DUR_UNITS[getChordDur(seq[j])]||12);
+    running=cs+d+(chordDurUnits(seq[j]));
   }
   return {shifts,endUnit:running};
 }
@@ -12416,7 +12508,7 @@ function playProgression(startIndex){
     // using this chord's own real grid position — a no-op at 0% (the default).
     const swingSec=unitsToBeats(swingOffsetUnits(s.startUnit||0,swingAmount))*spq;
     const noteTime=layoutStarts[i]*spq + swingSec;
-    const durSec=durToSeconds(getChordDur(s));
+    const durSec=chordDurSeconds(s);
     // No solo active: play the full voicing, byte-identical to pre-item-26 behaviour.
     // Solo active: keep only the notes whose thread is a soloed slot — anything else in
     // this chord rests for the beat rather than playing muted or substituted.
@@ -12728,7 +12820,9 @@ function updateVoicingNote(){
 function saveState(){
   if(!seq.length){ alert('Nothing to save — add some chords first.'); return; }
   const state={
-    version:13, // .chordspace.json SAVE-SCHEMA version — independent of APP_VERSION above; do not conflate
+    version:14, // .chordspace.json SAVE-SCHEMA version — independent of APP_VERSION above; do not conflate
+    // v14 (Block 3 Phase 1): chords store durUnits (integer grid units) instead of the dur
+    // notation string; markers now carry their own startUnit. Old files migrate on load.
     sessionName, // v12: free-text session label; empty string = untitled, same as before this field existed
     keyRoot, keyMode, currentRoot, mode, bpm, globalDur,
     voicingStyle, voiceRange, maxSpread, preferCloseVL, craftVoiceLeading, loopEnabled, swingAmount,
@@ -12745,8 +12839,8 @@ function saveState(){
     // an authoritative MIDI-import source voicing. Absent means ordinary manual voicing
     // (identified by manualVoicing alone, exactly as before) or no manual voicing at all.
     seq: seq.map(s=> isMarker(s)
-      ? ({marker:true, keyRoot:s.keyRoot, keyMode:s.keyMode, meter:s.meter?{num:s.meter.num,den:s.meter.den}:null})
-      : ({idx:s.idx, root:s.root, bass:s.bass??null, melody:s.melody??null, inv:s.inv??0, invLocked:!!s.invLocked, secDom:s.secDom??null, borrowed:s.borrowed??null, passing:s.passing??null, dur:s.dur??null, startUnit:s.startUnit??0, manualVoicing:Array.isArray(s.manualVoicing)&&s.manualVoicing.length?s.manualVoicing.slice():null, voicingSource:(s.voicingSource==='import')?'import':null})),
+      ? ({marker:true, keyRoot:s.keyRoot, keyMode:s.keyMode, meter:s.meter?{num:s.meter.num,den:s.meter.den}:null, startUnit:s.startUnit??0})
+      : ({idx:s.idx, root:s.root, bass:s.bass??null, melody:s.melody??null, inv:s.inv??0, invLocked:!!s.invLocked, secDom:s.secDom??null, borrowed:s.borrowed??null, passing:s.passing??null, durUnits:s.durUnits??(DUR_UNITS[globalDur]||12), startUnit:s.startUnit??0, manualVoicing:Array.isArray(s.manualVoicing)&&s.manualVoicing.length?s.manualVoicing.slice():null, voicingSource:(s.voicingSource==='import')?'import':null})),
     // v11: Lines (melody/bass counterpoint) tracks — independent absolute-position note
     // arrays, entirely separate from each chord's own melody/bass pick above.
     melodyTrack: melodyTrack.map(n=>({id:n.id,pitch:n.pitch,startUnit:n.startUnit,durUnits:n.durUnits})),
@@ -12854,7 +12948,7 @@ function loadState(file){
       bassTrack=Array.isArray(state.bassTrack)?state.bassTrack.filter(validLinesNote).map(n=>({id:nextLinesNoteId(),pitch:Math.round(n.pitch),startUnit:Math.round(n.startUnit),durUnits:Math.round(n.durUnits)})):[];
       linesSelection=new Set();
       seq=state.seq.map(s=> (s&&s.marker)
-        ? ({marker:true, keyRoot:s.keyRoot, keyMode:s.keyMode, meter:(s.meter&&typeof s.meter.num==='number')?{num:s.meter.num,den:s.meter.den}:null})
+        ? ({marker:true, keyRoot:s.keyRoot, keyMode:s.keyMode, meter:(s.meter&&typeof s.meter.num==='number')?{num:s.meter.num,den:s.meter.den}:null, startUnit:(typeof s.startUnit==='number')?Math.round(s.startUnit):null})
         : ({
         idx:s.idx,
         root:s.root,
@@ -12893,7 +12987,10 @@ function loadState(file){
         // carrying garbage forward — never to gate what gets displayed as borrowed.
         borrowed:(s.borrowed && typeof s.borrowed.mode==='string' && typeof s.borrowed.num==='string')?{mode:s.borrowed.mode, num:s.borrowed.num}:null,
         passing:s.passing??null,
-        dur:s.dur??null,
+        // v14: durUnits is the stored authority. A v14 file has it directly; a v13-or-earlier
+        // file is migrated here from its dur string, falling back to this file's own loaded
+        // globalDur (set above) for a legacy dur:null chord — its exact v89 effective length.
+        durUnits:(typeof s.durUnits==='number')?Math.round(s.durUnits):(DUR_UNITS[s.dur||globalDur]||12),
         // startUnit (v10+): this chord's real, absolute grid position. Older files, or a
         // missing/invalid value, come through as null here and get resolved just below —
         // either via the v9 restBefore-conversion pass, or the general normalization pass
@@ -12930,6 +13027,10 @@ function loadState(file){
         if(isMarker(s)) return;
         if(typeof s.startUnit!=='number') s.startUnit=defaultStartUnitFor(i);
       });
+      // v14 migration: every chord ends with a durUnits (set in the map above), and every
+      // marker takes its v89-derived startUnit now that chord positions are resolved
+      // (next chord's startUnit, or 0 for a trailing marker — the exact v89 rendered spot).
+      ensureChordDurUnits(globalDur); syncMarkerPositions();
       editingMarkerIndex=null;
       activeBassIndex=null; activeInvIndex=null; activeMelodyIndex=null; activeKeyboardIndex=null; insertAt=null;reviseAt=null;
       // Update UI controls to match loaded state
@@ -13630,7 +13731,7 @@ function commitMidiImport(){
     // for every matched cluster in deriveImportPreview, not only exact matches.
     manualVoicing:(Array.isArray(e.rawNotes) && e.rawNotes.length) ? e.rawNotes.slice() : null,
     voicingSource:(Array.isArray(e.rawNotes) && e.rawNotes.length) ? 'import' : null,
-    secDom:null, borrowed:null, dur:(e.dur===gd)?null:e.dur, startUnit:0
+    secDom:null, borrowed:null, durUnits:(DUR_UNITS[e.dur]||12), startUnit:0
   }));
   // Real grid position — each chord's start is now the CUMULATIVE SUM of the real detected
   // onset-to-onset spans (matchedEntries[i].beats, from deriveImportPreview's "tile to next
@@ -13647,7 +13748,7 @@ function commitMidiImport(){
     let cumBeats=0;
     seq.forEach((s,i)=>{
       s.startUnit=beatsToUnits(cumBeats);
-      cumBeats += (matchedEntries[i] && matchedEntries[i].beats) || unitsToBeats(DUR_UNITS[getChordDur(s)]||12);
+      cumBeats += (matchedEntries[i] && matchedEntries[i].beats) || unitsToBeats(chordDurUnits(s));
     });
   }
   // Key
@@ -14586,7 +14687,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     }
     if(pos<sceneData.progression.length-1){
       let durMs=420;
-      try{ durMs=Math.max(160, durToSeconds(getChordDur(seq[idx]))*1000*0.58); }catch(e){}
+      try{ durMs=Math.max(160, chordDurSeconds(seq[idx])*1000*0.58); }catch(e){}
       // v60: look up the actual segment mesh for this A→B move so applySelectionStyles can give
       // the active path itself (not just the traveling orb) a visible glow while it plays.
       const activeSeg=sceneData.segments.find(s=>s.a===pos && s.b===pos+1);

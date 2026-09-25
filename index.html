@@ -2143,7 +2143,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   bottom: 0;
   width: 0;
   border-left: 1.5px dashed var(--secdom);
-  cursor: pointer;
+  cursor: grab;
   z-index: 2;
 }
 .rhythm-marker-label {
@@ -2155,8 +2155,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   font-weight: 600;
   color: var(--secdom);
   white-space: nowrap;
-  cursor: pointer;
+  cursor: grab;
 }
+/* Phase 4a: live feedback while a marker is being dragged (mirrors .rhythm-block.dragging's
+   accent border, kept on its own selector since a marker's own resting style already uses
+   border-left/color rather than box-shadow). */
+.rhythm-marker.dragging { border-left-color: var(--accent); cursor: grabbing; }
+.rhythm-marker-label.dragging { color: var(--accent); cursor: grabbing; }
 
 /* --- Voice Leading roll header + per-voice solo row (item 26) --- */
 .vl-header-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
@@ -6550,6 +6555,27 @@ let swingAmount=0;
 // out of every pitch/voicing path — that's what isMarker() + chordSeq() + the voicing
 // wrapper below are for. Shape: {marker:true, keyRoot:<0-11>, keyMode:<mode name>}.
 function isMarker(s){ return !!(s&&s.marker); }
+// Timeline Geometry Unification (Phase 4a revision, see
+// claude/design_lock_timeline_geometry_unification_v89_phase4a_R.md): the shared collision-
+// resolution authority behind the Option A marker-label lane. Never moves anything
+// horizontally — entries carry their already-fixed x; this only assigns each one a ROW
+// (0 = closest to the timeline) such that no two entries in the same row overlap
+// horizontally, doing a left-to-right greedy scan (entries must already be x-ascending).
+// Two entries at the identical x (the "moved marker wins" tie case) always land in
+// different rows, since the first entry's reserved right edge is strictly greater than the
+// second entry's left edge. Shared by the Rhythm marker-label lane and the Notes marker
+// label so both use one row-assignment rule rather than two parallel ones.
+function computeLabelRows(entries, gapPx){
+  const rowRight=[]; // rowRight[r] = right edge (px) already claimed in row r
+  return entries.map(({x,width})=>{
+    const right=x+width;
+    for(let r=0;r<rowRight.length;r++){
+      if(x>=rowRight[r]+gapPx){ rowRight[r]=right; return r; }
+    }
+    rowRight.push(right);
+    return rowRight.length-1;
+  });
+}
 // Active key context for the chord AT seq index i: scan backward to the nearest marker,
 // falling back to the global key if none precedes it. Used by every function-label /
 // tier / cadence / spelling path so a chord reads in whatever key was live at that point.
@@ -6599,9 +6625,10 @@ function barQuarters(meter){ return (meter&&meter.num&&meter.den) ? meter.num*(4
 // is no second mode where a chord "follows" its neighbor and reflows when something
 // upstream changes. This is what lets "drag one chord onto beat 3" be a permanent fact
 // about that one chord — nothing else in the progression can move it again, ever, except
-// dragging it again. Markers occupy zero units (non-sounding dividers, never part of the
-// real timeline length) and don't have a startUnit of their own — they render at whatever
-// position the chord immediately after them sits at.
+// dragging it again. Markers occupy zero units of sounding time (non-sounding dividers, never
+// part of the real timeline length) but DO carry their own startUnit now (Phase 3 Option B):
+// beatLayout and unitLayout read it directly, so a marker keeps its real position even when a
+// chord crosses it. syncMarkerPositions only fills in a startUnit that is missing.
 // Item 76 (v80): the "nothing can move it again" guarantee above holds with Ripple OFF. With
 // Ripple ON, a note-value change on a neighbor can shift this chord (and its Lines notes)
 // through applyChordShifts — an explicit, user-chosen edit and one undo step, still not a
@@ -7387,6 +7414,10 @@ function addChordAtInsertPoint(entry){
       const who=first===last?`Chord ${first} moved`:`Chords ${first} to ${last} moved`;
       const lines=moved.notes?` ${moved.notes} melody/bass note${moved.notes===1?'':'s'} went with ${moved.chords===1?'it':'them'}.`:'';
       setDurEditNote(`Chord ${chordNumberAt(idx)} added. ${who} ${amount} later to make room.${lines}`,true);
+      // Phase 3 addendum: an insert-push can shove a chord across a marker that stayed fixed;
+      // restore array order == timeline order + identity remap (same machinery as a body-drag
+      // release). Runs AFTER the feedback above, which reads the pre-sort plan.shifts indices.
+      resortSeqByTimeline();
     }
   } else {
     const durBefore=getChordDur(seq[idx]);
@@ -7586,7 +7617,6 @@ const RHYTHM_TOUCH_PROXY_VPAD_PX=8;   // vertical expansion — no neighbor-over
 const RHYTHM_RESIZE_CHIP_MIN_GAP_PX=28; // minimum right-side gap required before the external resize chip is drawn at all — genuinely usable, not merely nonzero
 const RHYTHM_RESIZE_CHIP_WIDTH_PX=22;   // the chip's own footprint once there IS room
 const RHYTHM_UNIT_PX_MIN=4, RHYTHM_UNIT_PX_MAX=32;
-const RHYTHM_MARKER_GUTTER_PX=14; // extra visual spacing reserved around a marker divider
 let rhythmDrag=null;     // {i} while a resize (duration) drag is in progress
 let rhythmMoveDrag=null; // {i} while a reposition (pin) drag is in progress
 
@@ -7844,12 +7874,13 @@ function renderRhythmTab(){
   // Chords can sit past the fixed grid (dragged or stepped there); draw bar lines/ticks
   // across whichever is longer so nothing past the grid-end boundary is left unlabeled.
   const drawUnits=Math.max(gridUnits,totalUnits);
-  // Extra pixel padding around each marker, purely visual — accumulates by marker COUNT,
-  // never by grid units, so it can never desync from the real timeline.
-  const markerPad=[]; let mc=0;
-  seq.forEach((s,i)=>{ markerPad.push(mc*RHYTHM_MARKER_GUTTER_PX); if(isMarker(s)) mc++; });
-  const px=i=>starts[i]*RHYTHM_UNIT_PX+markerPad[i];
-  const totalPx=drawUnits*RHYTHM_UNIT_PX+mc*RHYTHM_MARKER_GUTTER_PX;
+  // Timeline Geometry Unification (Phase 4a revision): x is pure musical time,
+  // startUnit * RHYTHM_UNIT_PX, with no per-marker or per-event pixel offset. Ticks and bar
+  // lines below already used this pure axis; chords and markers now share it too, so nothing
+  // on the Rhythm grid can desync from anything else on it. See
+  // claude/design_lock_timeline_geometry_unification_v89_phase4a_R.md.
+  const px=i=>starts[i]*RHYTHM_UNIT_PX;
+  const totalPx=drawUnits*RHYTHM_UNIT_PX;
   wrap.style.width=Math.max(totalPx,240)+'px';
 
   // Note-grid ticks — visible snap points, every sixteenth note (finest supported value),
@@ -7904,22 +7935,60 @@ function renderRhythmTab(){
     }
   }
 
-  // Marker dividers — key and/or meter change, clickable to open the shared marker editor.
+  // Marker dividers and labels — key and/or meter change. Press-drag-or-tap (Phase 4a): a
+  // plain click (mouse, or touch's synthetic click) opens the shared marker editor exactly
+  // as before; a real mouse drag past MARKER_DRAG_THRESHOLD_PX moves the marker instead.
+  // Both are decided inside startMarkerDrag, wired via mousedown rather than onclick.
+  //
+  // Option A marker-label lane (Timeline Geometry Unification, locked): the divider stays
+  // exactly at the marker's true musical x; its label lives in a dedicated lane ABOVE the
+  // bar-number strip (which owns the existing -18px slot), so the two label systems can
+  // never share a slot or collide. Collisions among marker labels themselves are resolved
+  // PURELY vertically via the shared computeLabelRows scan, never by moving x. Two markers
+  // at the same startUnit share one divider x by construction (both call px(i) on the same
+  // startUnit) and land in different rows, since the first marker's label claims that x
+  // range in row 0 and the second doesn't fit it.
+  const markerEls=[]; // {div,lbl,x} — collected first so labels can be measured (real
+                       // rendered text width) before rows are assigned
   seq.forEach((s,i)=>{
     if(!isMarker(s)) return;
     const x=px(i);
     const div=document.createElement('div');
-    div.className='rhythm-marker'; div.style.left=x+'px'; div.dataset.mi=i;
-    div.title='Click to edit this key/meter change';
-    const openEditor=()=>{editingMarkerIndex=(editingMarkerIndex===i)?null:i;renderMarkerEditor();};
-    div.onclick=openEditor;
+    div.className='rhythm-marker'; div.dataset.mi=i;
+    div.style.left=x+'px';
+    div.title='Click to edit, or drag to move, this key/meter change';
+    div.addEventListener('mousedown',ev=>startMarkerDrag(ev,i));
     wrap.appendChild(div);
     const lbl=document.createElement('span');
-    lbl.className='rhythm-marker-label'+(editingMarkerIndex===i?' editing':''); lbl.style.left=x+'px'; lbl.dataset.mi=i;
+    lbl.className='rhythm-marker-label'+(editingMarkerIndex===i?' editing':'');
+    lbl.style.left=x+'px'; lbl.dataset.mi=i;
     lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
-    lbl.onclick=openEditor;
+    lbl.addEventListener('mousedown',ev=>startMarkerDrag(ev,i));
     wrap.appendChild(lbl);
+    markerEls.push({div,lbl,x});
   });
+
+  // Row assignment: labels are already appended above (so offsetWidth reflects their real
+  // rendered width). seq is startUnit-ascending after resortSeqByTimeline, so markerEls is
+  // already x-ascending, exactly what computeLabelRows requires. Rows beyond
+  // MARKER_LABEL_MAX_ROWS clamp into the last row rather than growing the header
+  // unboundedly under a dense cluster (a real layout tradeoff, flagged for in-browser
+  // confirmation, see the design lock's "unresolved implementation risk").
+  const timelineWrapEl=document.getElementById('rhythm-timeline-wrap');
+  if(markerEls.length){
+    const rows=computeLabelRows(markerEls.map(m=>({x:m.x,width:m.lbl.offsetWidth})), MARKER_LABEL_ROW_GAP_PX);
+    let maxRow=0;
+    markerEls.forEach((m,idx)=>{
+      const row=Math.min(rows[idx],MARKER_LABEL_MAX_ROWS-1);
+      maxRow=Math.max(maxRow,row);
+      const top=-(18+MARKER_LABEL_ROW_PX*(row+1)); // -18 clears the existing bar-number row entirely
+      m.lbl.style.top=top+'px';
+      m.div.style.top=top+'px'; // divider extends up to reach its own label's row
+    });
+    if(timelineWrapEl) timelineWrapEl.style.paddingTop=(26+(maxRow+1)*MARKER_LABEL_ROW_PX)+'px';
+  } else if(timelineWrapEl){
+    timelineWrapEl.style.paddingTop=''; // no markers at all: the CSS default (26px), unchanged
+  }
 
   keyPanelReanchor(); // the divider labels were just rebuilt: an open Key change panel follows its label
   // Chord blocks.
@@ -8170,10 +8239,10 @@ function toggleChordDurMod(i,kind){
 // failure: destroying and recreating the exact node a touch is bound to stops iOS Safari
 // from delivering any further touchmove/touchend for that touch at all.
 function rhythmBlockPx(i){
+  // Timeline Geometry Unification (Phase 4a revision): pure musical time, no per-marker
+  // gutter offset. See claude/design_lock_timeline_geometry_unification_v89_phase4a_R.md.
   const {starts}=unitLayout();
-  let mc=0;
-  for(let j=0;j<i;j++){ if(isMarker(seq[j])) mc++; }
-  return starts[i]*RHYTHM_UNIT_PX + mc*RHYTHM_MARKER_GUTTER_PX;
+  return starts[i]*RHYTHM_UNIT_PX;
 }
 // Same visual-width formula renderRhythmTab's own block loop and repositionRhythmBlockEl
 // both use — pulled out here too so the short-block gap math (which needs a NEIGHBOR's
@@ -8207,6 +8276,132 @@ function repositionRhythmBlockEl(i){
   }
   const chip=document.querySelector(`.rhythm-resize-chip[data-idx="${i}"]`);
   if(chip) chip.style.left=(newLeft+newWidth+2)+'px';
+}
+// --- Phase 4a: direct marker dragging (design lock claude/design_lock_timeline_architecture_v89_phase4.md) ---
+// Below this much pointer movement, a press+release on a marker is a plain click (opens
+// the shared marker editor, same as before); at or beyond it, the gesture is a live drag.
+// Desktop (mouse) only, by design: mobile browsers deliver a marker tap as a single
+// synthetic mousedown/mouseup pair after touchend with no mousemove in between, so a touch
+// tap can never cross this threshold and always falls through to the click behavior — real
+// touch dragging is Phase 4b, out of scope here.
+const MARKER_DRAG_THRESHOLD_PX=4;
+// Locked snap rule (design lock Section 3): normal dragging snaps to the existing 3-unit
+// sixteenth grid (MIN_UNITS); when the marker comes within this many screen pixels of an
+// existing chord's exact startUnit — including a triplet-positioned start — that chord's
+// startUnit becomes the snap target instead. Adds no new timing resolution: every magnet
+// target is a real startUnit unitLayout() already reports, never an invented position.
+const MARKER_SNAP_MAGNET_PX=10;
+// Option A marker-label lane (Timeline Geometry Unification, locked): row height, minimum
+// horizontal gap between two labels sharing a row, and a hard cap on how many rows the lane
+// can grow to under a dense marker cluster (further collisions clamp into the last row rather
+// than growing the Rhythm header unboundedly).
+const MARKER_LABEL_ROW_PX=16;
+const MARKER_LABEL_ROW_GAP_PX=6;
+const MARKER_LABEL_MAX_ROWS=4;
+// Locked snap rule (design lock Section 3): sixteenth-grid normally; chord-start magnetism
+// within MARKER_SNAP_MAGNET_PX of an existing chord's own rendered position. Timeline
+// Geometry Unification removed the marker gutter, so both sides of this comparison are now
+// plain pure-time pixels: the dragged marker's own raw px (rawUnits*RHYTHM_UNIT_PX) against
+// each candidate chord's actual rendered px (rhythmBlockPx(j)), with no gutter adjustment on
+// either side. See claude/design_lock_timeline_geometry_unification_v89_phase4a_R.md.
+function snapMarkerUnits(rawUnits){
+  const grid=MIN_UNITS;
+  const gridSnapped=Math.round(rawUnits/grid)*grid;
+  const rawPx=rawUnits*RHYTHM_UNIT_PX;
+  let best=null, bestDist=Infinity;
+  seq.forEach((o,j)=>{
+    if(isMarker(o)) return; // magnet targets are chord starts only, never another marker
+    const candidatePx=rhythmBlockPx(j);
+    const distPx=Math.abs(candidatePx-rawPx);
+    if(distPx<=MARKER_SNAP_MAGNET_PX && distPx<bestDist){ bestDist=distPx; best=o.startUnit||0; }
+  });
+  return best!==null ? best : gridSnapped;
+}
+// Live-reposition a single marker's divider + label during a drag — mirrors
+// repositionRhythmBlockEl's element-only update (never a full renderRhythmTab() rebuild
+// mid-gesture). Reuses rhythmBlockPx(i) unchanged: that formula is pure musical time
+// (starts[i]*RHYTHM_UNIT_PX), so it's exactly as correct for a marker index as for a chord
+// index, no parallel positioning math needed. This does not touch the marker's label row
+// (top offset), which only changes on a full renderRhythmTab() rebuild.
+function repositionMarkerEl(i){
+  const s=seq[i]; if(!s||!isMarker(s)) return;
+  const x=rhythmBlockPx(i);
+  const div=document.querySelector(`.rhythm-marker[data-mi="${i}"]`);
+  if(div) div.style.left=x+'px';
+  const lbl=document.querySelector(`.rhythm-marker-label[data-mi="${i}"]`);
+  if(lbl) lbl.style.left=x+'px';
+}
+// Direct marker dragging. Commit sequence on release (locked, design lock Section 5/9):
+// final position -> overlap ordering step -> resortSeqByTimeline() -> pushHistory() ->
+// renderAll() — no history pushes during move ticks, one drag is one undo step, same
+// contract as startRhythmMove/startRhythmDrag above.
+function startMarkerDrag(ev,i){
+  const s=seq[i]; if(!s||!isMarker(s)) return;
+  if(ev.button!==undefined && ev.button!==0) return; // primary button only
+  ev.preventDefault();
+  const startX=ev.clientX;
+  const startUnit=s.startUnit||0;
+  const gridUnits=activeGridLengthUnits();
+  const {totalUnits}=unitLayout();
+  // Locked bounds: never below 0; upper bound is whichever is longer, the fixed grid or the
+  // actual content — computed once here since a marker-only drag never moves a chord, so
+  // neither figure can change mid-gesture. A marker alone must never extend the composition.
+  const upperBound=Math.max(gridUnits,totalUnits);
+  let dragged=false;
+  const applyFor=x=>{
+    const rawUnits=startUnit+(x-startX)/RHYTHM_UNIT_PX;
+    let target=snapMarkerUnits(rawUnits);
+    target=Math.max(0,Math.min(target,upperBound));
+    s.startUnit=target;
+  };
+  const cleanup=()=>{
+    document.removeEventListener('mousemove',move);
+    document.removeEventListener('mouseup',up);
+  };
+  const move=e=>{
+    if(!dragged){
+      if(Math.abs(e.clientX-startX)<MARKER_DRAG_THRESHOLD_PX) return;
+      dragged=true;
+      const div=document.querySelector(`.rhythm-marker[data-mi="${i}"]`);
+      const lbl=document.querySelector(`.rhythm-marker-label[data-mi="${i}"]`);
+      if(div) div.classList.add('dragging');
+      if(lbl) lbl.classList.add('dragging');
+    }
+    applyFor(e.clientX);
+    repositionMarkerEl(i);
+  };
+  const up=e=>{
+    cleanup();
+    if(!dragged){
+      // Plain click — open (or close) this marker's editor. Decided here instead of via
+      // onclick so a real drag can suppress it; unchanged behavior for a non-drag tap.
+      editingMarkerIndex=(editingMarkerIndex===i)?null:i;
+      renderMarkerEditor();
+      return;
+    }
+    applyFor(e.clientX); // final position — commits exactly what release itself reports
+    const div=document.querySelector(`.rhythm-marker[data-mi="${i}"]`);
+    const lbl=document.querySelector(`.rhythm-marker-label[data-mi="${i}"]`);
+    if(div) div.classList.remove('dragging');
+    if(lbl) lbl.classList.remove('dragging');
+    // Locked overlap rule (design lock Section 9): the moved marker wins. If it landed
+    // exactly on another marker's unit, splice it to sit immediately after that marker in
+    // array order BEFORE the stable resort below — resortSeqByTimeline() itself, and its
+    // marker-before-chord tie rule, are NOT modified; the unmodified stable sort preserves
+    // this relative order on its own because both entries now share the same startUnit.
+    const movedObj=s;
+    const landedUnit=movedObj.startUnit||0;
+    const collision=seq.find(o=>o!==movedObj && isMarker(o) && (o.startUnit||0)===landedUnit);
+    if(collision){
+      seq.splice(seq.indexOf(movedObj),1);
+      seq.splice(seq.indexOf(collision)+1,0,movedObj);
+    }
+    resortSeqByTimeline();
+    pushHistory();
+    renderAll();
+  };
+  document.addEventListener('mousemove',move);
+  document.addEventListener('mouseup',up);
 }
 function startRhythmDrag(ev,i,block){
   ev.preventDefault();
@@ -8513,26 +8708,17 @@ function lanePitchForY(y,minM,maxM,rowPx){ return Math.round(maxM-y/rowPx); }
 // per marker at or before this position), generalized from a seq index to any absolute
 // unit value so melody/bass notes — which aren't tied to a chord index — line up exactly
 // with the chord-reference strip and the Rhythm tab beneath it.
+// Timeline Geometry Unification (Phase 4a revision): pure musical time, no marker gutter.
+// Lines and Rhythm share RHYTHM_UNIT_PX, so a given startUnit renders at the identical x on
+// both surfaces by construction. See
+// claude/design_lock_timeline_geometry_unification_v89_phase4a_R.md.
 function linesUnitsToPx(units){
-  let mc=0;
-  for(let i=0;i<seq.length;i++){
-    if(!isMarker(seq[i])) continue;
-    const markerUnits=nextChordIndex(i)>=0?(seq[nextChordIndex(i)].startUnit||0):0;
-    if(markerUnits<=units) mc++;
-  }
-  return units*RHYTHM_UNIT_PX+mc*RHYTHM_MARKER_GUTTER_PX;
+  return units*RHYTHM_UNIT_PX;
 }
-// Inverse — only used once per click (to seed where a newly-placed note lands), so exact
-// gutter accounting isn't critical: the sixteenth-note snap immediately afterward absorbs
-// any small discrepancy from a marker gutter near the click point.
+// Inverse — only used once per click (to seed where a newly-placed note lands); the
+// sixteenth-note snap immediately afterward absorbs any rounding.
 function linesPxToUnits(px){
-  let mc=0;
-  for(let i=0;i<seq.length;i++){
-    if(!isMarker(seq[i])) continue;
-    const markerUnits=nextChordIndex(i)>=0?(seq[nextChordIndex(i)].startUnit||0):0;
-    if(markerUnits*RHYTHM_UNIT_PX+mc*RHYTHM_MARKER_GUTTER_PX<=px) mc++;
-  }
-  return Math.max(0,Math.round((px-mc*RHYTHM_MARKER_GUTTER_PX)/RHYTHM_UNIT_PX));
+  return Math.max(0,Math.round(px/RHYTHM_UNIT_PX));
 }
 
 let linesMelodySynth=null, linesBassSynth=null;
@@ -9382,7 +9568,14 @@ function renderLinesRoll(){
 
   seq.forEach((s,i)=>{
     if(isMarker(s)){
-      const x=linesUnitsToPx(nextChordIndex(i)>=0?(seq[nextChordIndex(i)].startUnit||0):0);
+      // Timeline Geometry Unification (Phase 4a revision): pure musical time, no gutter to
+      // double-count. Lines owns its own mapping (linesUnitsToPx), which is now
+      // mathematically identical to Rhythm's rhythmBlockPx since both are
+      // startUnit*RHYTHM_UNIT_PX on the shared RHYTHM_UNIT_PX scale, guaranteeing
+      // byte-identical x between the two tabs for the same marker in every case, including
+      // two markers tied at one unit. See
+      // claude/design_lock_timeline_geometry_unification_v89_phase4a_R.md.
+      const x=linesUnitsToPx(s.startUnit||0);
       const div=document.createElement('div');
       div.className='lines-chord-marker'; div.style.left=x+'px';
       chordStrip.appendChild(div);
@@ -10624,6 +10817,12 @@ function renderNotesRoll(voicings){
   // at the exact absolute position the chord right after it starts at. The vertical dashed
   // line spans the note lane's full height (stays in notes-content); its text label moves
   // to the sticky label strip alongside the chord labels, same horizontal-sync mechanism.
+  // Timeline Geometry Unification, step 7 Notes audit (locked): same vertical-only
+  // collision resolution as Rhythm's Option A lane, applied to this pre-existing,
+  // separately-locked label. The divider stays at exact x either way (unchanged, already
+  // gutter-free). Collect labels first (measuring real offsetWidth) so rows can be assigned
+  // once they're all in the DOM.
+  const notesMarkerLbls=[];
   seq.forEach((s,i)=>{
     if(!isMarker(s)) return;
     const x=starts[i]*pxPerUnit;
@@ -10634,7 +10833,33 @@ function renderNotesRoll(voicings){
     lbl.className='notes-key-marker-label'; lbl.style.left=x+'px';
     lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     labelInner.appendChild(lbl);
+    notesMarkerLbls.push({lbl,x});
   });
+  // Row assignment reuses the same shared computeLabelRows scan as Rhythm's lane (never two
+  // parallel collision-resolution rules). Item 94's tuned three-band layout (row tops
+  // 3/22/41, 72px strip height, see design_lock_item94_notes_bar_position_reference.md) is
+  // left completely untouched in the common case (no same-unit/near-unit markers): row 0
+  // stays at the locked top:22px and the strip stays at its default CSS height. Only when a
+  // real collision needs a second row does the strip grow downward and the chord-name row
+  // (top:41px) shift down by the same amount, so nothing overlaps; this vertical-growth
+  // choice, like the Rhythm lane's row cap, needs in-browser confirmation under a dense
+  // cluster.
+  const NOTES_MARKER_ROW_PX=14, NOTES_MARKER_ROW_GAP_PX=6;
+  const notesStrip=document.getElementById('notes-label-strip');
+  let notesMarkerExtraPx=0;
+  if(notesMarkerLbls.length){
+    const rows=computeLabelRows(notesMarkerLbls.map(m=>({x:m.x,width:m.lbl.offsetWidth})), NOTES_MARKER_ROW_GAP_PX);
+    let maxRow=0;
+    notesMarkerLbls.forEach((m,idx)=>{
+      maxRow=Math.max(maxRow,rows[idx]);
+      m.lbl.style.top=(22+NOTES_MARKER_ROW_PX*rows[idx])+'px';
+    });
+    notesMarkerExtraPx=NOTES_MARKER_ROW_PX*maxRow;
+  }
+  if(notesStrip) notesStrip.style.height=notesMarkerExtraPx>0 ? (72+notesMarkerExtraPx)+'px' : '';
+  if(notesMarkerExtraPx>0){
+    labelInner.querySelectorAll('.notes-chord-label').forEach(el=>{ el.style.top=(41+notesMarkerExtraPx)+'px'; });
+  }
 
   // Note bars — merged per buildNotesSegments, colored by the same voice-identity slot
   // Flow, the solo row, keyboard playback coloring, and solo-filtered playback all use
@@ -11651,8 +11876,10 @@ function setChordDuration(i,newDur){
 //   pulls the chords touching its end earlier. The chain stops at the first real gap, so
 //   deliberate gaps and syncopation survive. Melody/bass notes that START inside a moved
 //   chord move with it (applyChordShifts). On a LOCKED grid length, a push that would run
-//   past the end is refused with a message and nothing changes. Markers occupy no time and
-//   follow their next chord, so nothing extra is done for them.
+//   past the end is refused with a message and nothing changes. A key/meter marker whose own
+//   position sits inside a shifted chord rides with it (applyChordShifts window carry); a
+//   marker a shift pushes a chord across stays fixed and the seq is re-sorted into timeline
+//   order after (Phase 3 addendum), since markers are independent positional authorities now.
 //   Ripple OFF: exactly the v79 behavior (growth clamps at the next chord's start, falling
 //   back to the largest plain value that fits) — plus, new in v80, a message whenever that
 //   clamp changed what the user asked for, so an edit is never silently reverted.
@@ -11701,10 +11928,23 @@ function wireRippleToggles(){
 // moves every melody/bass note whose START sits inside that chord's ORIGINAL window
 // [startUnit, startUnit + duration) by the same delta. Windows are captured before anything
 // moves, so a note is claimed at most once and never chases a chord that already moved. A
-// note starting in a gap (no chord under it) stays put. It never reorders anything, never
-// touches durations, and never renders or pushes history — the caller does that once.
+// note starting in a gap (no chord under it) stays put.
+//
+// Phase 3 addendum (marker carry, compaction family). Markers are independent positional
+// authorities now (each owns its startUnit), so a compaction — Ripple resize, insert-push —
+// must move a key/meter marker only when the timeline material AT the marker's own position
+// actually moves. Inclusion is by the SAME half-open window rule the Lines notes use above,
+// not by marker-to-chord adjacency: a marker whose ORIGINAL startUnit falls inside a shifted
+// chord's window [lo, hi) rides that chord's delta (a marker exactly at a shifted chord's
+// start is included; one sitting in an untouched gap is not, even if a chord later crosses
+// it). A crossed-but-fixed marker is handled by the caller re-sorting into timeline order
+// afterward, NOT by moving the marker here. carryMarkers defaults on; blank-bar insert/remove
+// pass it false because inserting/removing TIME is a clean cut at `split`, a different rule
+// the blank-bar functions own beside their Lines-note handling (window containment would miss
+// a marker in a gap between tail chords). It never reorders anything, never touches durations,
+// and never renders or pushes history — the caller does that once.
 // Written as a standalone primitive so later group-move and blank-measure work can reuse it.
-function applyChordShifts(shifts,followLines){
+function applyChordShifts(shifts,followLines,carryMarkers){
   const wins=shifts.map(sh=>{
     const s=seq[sh.i], lo=s.startUnit||0;
     return {i:sh.i, lo, hi:lo+(chordDurUnits(s)), delta:sh.delta};
@@ -11719,6 +11959,18 @@ function applyChordShifts(shifts,followLines){
     });
   }
   wins.forEach(w=>{ seq[w.i].startUnit=w.lo+w.delta; });
+  if(carryMarkers!==false){
+    // Markers are never members of shifts, so none formed a window above and each marker's
+    // startUnit is still its original value here. Test that original position against the
+    // ORIGINAL windows (find = first match; chord windows do not overlap in a valid state)
+    // and ride the containing chord's delta. A marker in no window is left exactly where it is.
+    for(let k=0;k<seq.length;k++){
+      const m=seq[k];
+      if(!isMarker(m) || typeof m.startUnit!=='number') continue;
+      const w=wins.find(w=>m.startUnit>=w.lo && m.startUnit<w.hi);
+      if(w) m.startUnit+=w.delta;
+    }
+  }
   return {chords:wins.length, notes};
 }
 // Plan (without mutating) the chain of shifts that giving chord i the duration newDur causes
@@ -11776,6 +12028,12 @@ function setChordDurationExact(i,newDur){
       const lines=moved.notes?` ${moved.notes} melody/bass note${moved.notes===1?'':'s'} went with ${moved.chords===1?'it':'them'}.`:'';
       setDurEditNote(`Chord ${no} is now ${durWithArticle(newDur)}. ${who} ${amount} ${dir}.${lines}`,true);
     }
+    // Phase 3 addendum: a Ripple shift can push a chord across a marker that stayed fixed
+    // (markers are independent positional authorities now). Restore array order == timeline
+    // order, with the marker-before-chord tie and identity-remapped UI state, via the same
+    // machinery a body-drag release uses. Runs AFTER the feedback above, which reads the
+    // pre-sort plan.shifts indices; resort never pushes history (the caller does that once).
+    if(moved.chords) resortSeqByTimeline();
     return;
   }
   // Ripple OFF: the v79 rule, with feedback when it clamps.
@@ -11798,8 +12056,10 @@ function setChordDurationExact(i,newDur){
 // 3.4). "Blank bar" here means a whole bar of the meter in force at that spot, opened up as
 // silence in front of a chord.
 //   Insert: the chosen chord and EVERY chord after it (array order) move later by N bars,
-//   through applyChordShifts (the shared primitive item 76 wrote for this). Key and meter
-//   dividers hang off the chord after them, so they travel with it (D2). A locked grid length
+//   through applyChordShifts (the shared primitive item 76 wrote for this). Markers own their
+//   startUnit now (Phase 3), so key/meter dividers are carried by a clean cut, not by the
+//   primitive's chord-window rule: every marker at or after `split` moves by the same +delta
+//   (see below), which keeps a change glued to the section it introduces. A locked grid length
 //   refuses an insert that would run past its end (D3); Auto grows.
 //   Remove: only allowed when N bars of time in front of the chord are already empty (no chord
 //   ends inside it and no melody/bass note touches it). The whole tail then moves earlier, so
@@ -11827,9 +12087,10 @@ function seqIndexOfChordNumber(n){
 }
 function chordEndUnit(s){ return (s.startUnit||0)+(chordDurUnits(s)); }
 function meterText(m){ return m.num+'/'+m.den; }
-// The meter a blank bar in front of seq[i] belongs to: the one in force BEFORE any dividers sitting
-// right ahead of the chord, because those dividers travel with the chord (D2, and the section 3.4
-// limitation: a blank bar at a meter change lands in the old meter until item 19).
+// The meter a blank bar in front of seq[i] belongs to: the one in force BEFORE any markers sitting
+// right ahead of the chord. Those markers sit at the chord's own start, so the blank-bar cut (>= split)
+// carries them by the same delta the chord moves — the change stays with its section (and the section
+// 3.4 limitation still holds: a blank bar at a meter change lands in the old meter until item 19).
 function blankBarMeterBefore(i){
   let k=i; while(k>0 && isMarker(seq[k-1])) k--;
   return meterContextAt(k-1);
@@ -11893,7 +12154,14 @@ function insertBlankBars(from,bars,afterNo){
     return false;
   }
   const aligned=isOnBarLine(split); // measured before anything moves
-  applyChordShifts(tail.map(j=>({i:j,delta})),false);
+  applyChordShifts(tail.map(j=>({i:j,delta})),false,false); // carryMarkers off: the cut rule below owns markers here
+  // Phase 3 addendum (blank-bar marker carry). Inserting TIME is a clean cut at `split`, the
+  // same cut the Lines notes follow: every key/meter marker at or after `split` moves by the
+  // same +delta, so a section boundary stays glued to its music; markers before the cut stay
+  // put. This is the cut authority, deliberately NOT the primitive's chord-window rule, which
+  // would miss a marker sitting in a gap between tail chords. Order is preserved without a
+  // re-sort: everything at or after the cut moves by one delta, everything before it stays.
+  seq.forEach(m=>{ if(isMarker(m) && typeof m.startUnit==='number' && m.startUnit>=split) m.startUnit+=delta; });
   const moved=blankBarFollowLines?shiftLinesFrom(split,delta):0;
   const whereIns=afterNo?`after chord ${afterNo}`:(no===1?'at the start':`before chord ${no}`);
   let msg=`Inserted ${word} (${meterText(meter)}) ${whereIns}. ${blankBarWho(tail)} ${fmtBeatsFromUnits(delta)} later.`;
@@ -11932,8 +12200,21 @@ function removeBlankBars(from,bars,afterNo){
     setDurEditNote(`Nothing moved. ${blocked} melody/bass note${blocked===1?'':'s'} ${blocked===1?'touches':'touch'} the ${bars===1?'bar':'bars'} that would be removed ${whereRem}. Move or delete ${blocked===1?'it':'them'} first.`,false);
     return false;
   }
+  // Phase 3 addendum: a key/meter marker is a semantic musical event, so removing the time it
+  // sits in would silently relocate a key/meter change. Refuse just as occupied Lines material
+  // does above. Checked BEFORE any mutation, so a refusal leaves the sequence untouched.
+  const markerBlocked=seq.some(m=>isMarker(m)&&typeof m.startUnit==='number'&&m.startUnit>=split-delta&&m.startUnit<split);
+  if(markerBlocked){
+    setDurEditNote(`Nothing moved. A key or meter change sits inside the ${bars===1?'bar':'bars'} that would be removed ${whereRem}. Move or delete it first.`,false);
+    return false;
+  }
   const tail=[]; for(let j=ci;j<seq.length;j++){ if(!isMarker(seq[j])) tail.push(j); }
-  applyChordShifts(tail.map(j=>({i:j,delta:-delta})),false);
+  applyChordShifts(tail.map(j=>({i:j,delta:-delta})),false,false); // carryMarkers off: the cut rule below owns markers here
+  // Phase 3 addendum (blank-bar marker carry). Removing TIME is the inverse cut: every marker
+  // at or after `split` moves by -delta, matching the tail chords and the Lines notes. A marker
+  // inside the removed region [split-delta, split) was refused above, so none is crossed, and
+  // order holds without a re-sort.
+  seq.forEach(m=>{ if(isMarker(m) && typeof m.startUnit==='number' && m.startUnit>=split) m.startUnit-=delta; });
   const moved=blankBarFollowLines?shiftLinesFrom(split,-delta):0;
   let msg=`Removed ${bars===1?'1 empty bar':emptyWord} (${meterText(meter)}) ${whereRem}. ${blankBarWho(tail)} ${fmtBeatsFromUnits(delta)} earlier.`;
   if(blankBarFollowLines){

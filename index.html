@@ -15397,21 +15397,27 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   background: #222; color: #0f0; border: 1px solid #0f0; border-radius: 3px;
 }
 #diag4b-overlay.diag4b-collapsed .diag4b-body { display: none; }
+#diag4b-overlay .diag4b-copystatus { color:#ff0; margin-top:4px; }
 </style>
 <div id="diag4b-overlay">
   <div class="diag4b-hdr">
     <span>DIAG4b</span>
     <span>
       <button id="diag4b-toggle" type="button">_</button>
+      <button id="diag4b-copy" type="button">copy</button>
       <button id="diag4b-clear" type="button">clr</button>
     </span>
   </div>
   <div class="diag4b-body" id="diag4b-log"></div>
+  <div class="diag4b-copystatus" id="diag4b-copystatus"></div>
+  <textarea id="diag4b-copyarea" readonly style="position:absolute;left:-9999px;top:-9999px;"></textarea>
 </div>
 <script>
 (function(){
   const logEl = document.getElementById('diag4b-log');
   const overlay = document.getElementById('diag4b-overlay');
+  const copyStatusEl = document.getElementById('diag4b-copystatus');
+  const copyAreaEl = document.getElementById('diag4b-copyarea');
   const lines = [];
   function render(){
     logEl.textContent = lines.slice(-60).reverse().join('\n');
@@ -15426,7 +15432,42 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     overlay.classList.toggle('diag4b-collapsed');
   });
   document.getElementById('diag4b-clear').addEventListener('click', function(){
-    lines.length = 0; render();
+    lines.length = 0; copyStatusEl.textContent=''; render();
+  });
+  // Copy the FULL raw log (oldest-first, everything currently retained — not just the
+  // last-60 view rendered on screen) so it can be pasted back verbatim rather than
+  // transcribed from a photo. Tries the async Clipboard API first (needs the https
+  // context + this button's own user-gesture, both satisfied here); falls back to
+  // selecting the text in the hidden textarea via execCommand('copy') for older WebKit,
+  // and as a last resort just selects it on screen so a manual copy still works.
+  document.getElementById('diag4b-copy').addEventListener('click', function(){
+    const full = lines.join('\n');
+    copyAreaEl.value = full;
+    function done(how){ copyStatusEl.textContent = 'copied ' + lines.length + ' lines (' + how + ')'; }
+    function manualFallback(err){
+      copyAreaEl.style.position = 'fixed';
+      copyAreaEl.style.left = '4px'; copyAreaEl.style.top = '4px';
+      copyAreaEl.style.width = '90vw'; copyAreaEl.style.height = '30vh';
+      copyAreaEl.style.zIndex = 2147483647;
+      copyAreaEl.style.background = '#000'; copyAreaEl.style.color = '#0f0';
+      copyAreaEl.focus(); copyAreaEl.setSelectionRange(0, full.length);
+      copyStatusEl.textContent = (err?('auto-copy failed: '+err+'. '):'') + 'text box opened below — tap it, Select All, Copy';
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(full).then(function(){ done('clipboard API'); }).catch(function(e){
+        try {
+          copyAreaEl.focus(); copyAreaEl.setSelectionRange(0, full.length);
+          const ok = document.execCommand('copy');
+          if(ok) done('execCommand fallback'); else manualFallback(e.message);
+        } catch(e2){ manualFallback(e2.message); }
+      });
+    } else {
+      try {
+        copyAreaEl.focus(); copyAreaEl.setSelectionRange(0, full.length);
+        const ok = document.execCommand('copy');
+        if(ok) done('execCommand'); else manualFallback('execCommand returned false');
+      } catch(e2){ manualFallback(e2.message); }
+    }
   });
 
   // Item 1: coarse-pointer match, checked once at load.
@@ -15504,7 +15545,13 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
       + ' | elementFromPoint=' + describeTarget(efp)
       + ' | isTouchSiblingTarget=' + isTouchSibling
       + ' | clientX=' + t.clientX.toFixed(1) + ' clientY=' + t.clientY.toFixed(1));
-    logGeometry('#'+id+' geom', t.clientX, t.clientY);
+    // Guarded: an exception in the geometry pass must not silently swallow this evidence —
+    // if it throws, log the error itself rather than losing the rest of the diagnostic.
+    try {
+      logGeometry('#'+id+' geom', t.clientX, t.clientY);
+    } catch(geomErr) {
+      log('#'+id+' geom pass THREW: ' + geomErr.name + ': ' + geomErr.message);
+    }
   }, {capture:true, passive:true});
 
   // Items 7/8: capture-phase touchmove on document — whether it reaches the document

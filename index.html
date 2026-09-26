@@ -2076,6 +2076,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .rhythm-resize-handle:hover::after, .rhythm-block.dragging .rhythm-resize-handle::after { background: var(--accent); }
 .rhythm-resize-handle:hover::before { opacity: 0.9; }
+/* Phase 4b: transparent touch-only sibling, the sole touch entry point for dragging a
+   marker (see the @media(pointer:coarse) rule below). Never a mouse target — display:none
+   base, display:block only under coarse pointer, mirroring .rhythm-block-touch-proxy's
+   pattern exactly. Positioned per-instance in renderRhythmTab from the label's own row/x/
+   width with a per-row half-real-gap overlap cap, so it never needs its own base
+   left/top/width/height here. z-index sits above the marker divider (2) and the chord
+   resize chip (3); this is safe because the sibling lives only in the label lane's
+   negative-top space and never overlaps a chord block's own positive-top footprint.
+   CASCADE-ORDER FIX (diagnosed via real-device instrumentation): this base rule must be
+   declared BEFORE the @media(pointer:coarse) block below, not after it. Both rules share
+   identical specificity (a single class selector), so with equal specificity the LATER
+   declaration wins regardless of the media query — a later, unconditional `display:none`
+   here would always beat the media-guarded `display:block`, keeping the sibling
+   display:none even when the coarse-pointer query matches. Moving this rule earlier (no
+   selector, value, or property changed) lets the guarded override legitimately win when
+   the query matches, and still lose to nothing when it doesn't (mouse/desktop unaffected,
+   since display:none is simply the only rule that applies there either way). */
+.rhythm-marker-label-touch {
+  position: absolute;
+  z-index: 4;
+  display: none;
+  background: transparent;
+}
 @media (pointer: coarse) {
   /* Item 7/mobile touch-input pass: widens only the invisible touch-catchable hit zone.
      `right` stays pinned at -8px (unchanged from the base rule above), so the box grows
@@ -2173,20 +2196,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
    border-left/color rather than box-shadow). */
 .rhythm-marker.dragging { border-left-color: var(--accent); cursor: grabbing; }
 .rhythm-marker-label.dragging { color: var(--accent); cursor: grabbing; }
-/* Phase 4b: transparent touch-only sibling, the sole touch entry point for dragging a
-   marker (see the @media(pointer:coarse) rule above). Never a mouse target — display:none
-   base, display:block only under coarse pointer, mirroring .rhythm-block-touch-proxy's
-   pattern exactly. Positioned per-instance in renderRhythmTab from the label's own row/x/
-   width with a per-row half-real-gap overlap cap, so it never needs its own base
-   left/top/width/height here. z-index sits above the marker divider (2) and the chord
-   resize chip (3); this is safe because the sibling lives only in the label lane's
-   negative-top space and never overlaps a chord block's own positive-top footprint. */
-.rhythm-marker-label-touch {
-  position: absolute;
-  z-index: 4;
-  display: none;
-  background: transparent;
-}
 
 /* --- Voice Leading roll header + per-voice solo row (item 26) --- */
 .vl-header-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }

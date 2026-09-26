@@ -2089,6 +2089,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   .rhythm-resize-handle { width: 34px; }
   .rhythm-block.rhythm-block-short-touch .rhythm-resize-handle { pointer-events: none; opacity: 0; }
   .rhythm-block-touch-proxy, .rhythm-resize-chip { display: block; }
+  /* Phase 4b (design lock claude/design_lock_timeline_architecture_v89_phase4b_touch.md
+     Sections 2/3): touch grabs a marker from its label-lane sibling ONLY, never the
+     divider. The divider sits at the marker's true musical x, which after the gutter
+     removal (Timeline Geometry Unification) can be directly on top of a chord block — so
+     on a coarse pointer the divider and visible label go pointer-events:none and the
+     transparent .rhythm-marker-label-touch sibling above the timeline becomes the sole
+     touch entry point. A touch landing on the divider over a chord block therefore falls
+     through to that chord's own touch proxy, and a touch on the divider in a gap does
+     nothing; markers are managed from the lane. Mouse never sees any of this. */
+  .rhythm-marker, .rhythm-marker-label { pointer-events: none; }
+  .rhythm-marker-label-touch { display: block; }
 }
 /* Short-block touch model (mobile touch-input pass — reopened after on-device report that
    short chords can't separate tap/move/resize inside their own visual footprint). Both
@@ -2162,6 +2173,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
    border-left/color rather than box-shadow). */
 .rhythm-marker.dragging { border-left-color: var(--accent); cursor: grabbing; }
 .rhythm-marker-label.dragging { color: var(--accent); cursor: grabbing; }
+/* Phase 4b: transparent touch-only sibling, the sole touch entry point for dragging a
+   marker (see the @media(pointer:coarse) rule above). Never a mouse target — display:none
+   base, display:block only under coarse pointer, mirroring .rhythm-block-touch-proxy's
+   pattern exactly. Positioned per-instance in renderRhythmTab from the label's own row/x/
+   width with a per-row half-real-gap overlap cap, so it never needs its own base
+   left/top/width/height here. z-index sits above the marker divider (2) and the chord
+   resize chip (3); this is safe because the sibling lives only in the label lane's
+   negative-top space and never overlaps a chord block's own positive-top footprint. */
+.rhythm-marker-label-touch {
+  position: absolute;
+  z-index: 4;
+  display: none;
+  background: transparent;
+}
 
 /* --- Voice Leading roll header + per-voice solo row (item 26) --- */
 .vl-header-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
@@ -7936,9 +7961,16 @@ function renderRhythmTab(){
   }
 
   // Marker dividers and labels — key and/or meter change. Press-drag-or-tap (Phase 4a): a
-  // plain click (mouse, or touch's synthetic click) opens the shared marker editor exactly
-  // as before; a real mouse drag past MARKER_DRAG_THRESHOLD_PX moves the marker instead.
-  // Both are decided inside startMarkerDrag, wired via mousedown rather than onclick.
+  // plain click (mouse) opens the shared marker editor exactly as before; a real mouse
+  // drag past MARKER_DRAG_THRESHOLD_PX moves the marker instead. Both are decided inside
+  // startMarkerDrag, wired via mousedown rather than onclick.
+  //
+  // Phase 4b (design lock claude/design_lock_timeline_architecture_v89_phase4b_touch.md):
+  // real touch dragging enters through a SEPARATE transparent .rhythm-marker-label-touch
+  // sibling built below, once row assignment is known, never through the divider or the
+  // visible label — on a coarse pointer those two go pointer-events:none (see CSS), so a
+  // touch on the divider over a chord block falls through to that chord's own touch proxy
+  // instead of the marker. The touch sibling wires touchstart to this same startMarkerDrag.
   //
   // Option A marker-label lane (Timeline Geometry Unification, locked): the divider stays
   // exactly at the marker's true musical x; its label lives in a dedicated lane ABOVE the
@@ -7965,7 +7997,7 @@ function renderRhythmTab(){
     lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     lbl.addEventListener('mousedown',ev=>startMarkerDrag(ev,i));
     wrap.appendChild(lbl);
-    markerEls.push({div,lbl,x});
+    markerEls.push({div,lbl,x,i}); // i carried through for the Phase 4b touch-sibling pass below
   });
 
   // Row assignment: labels are already appended above (so offsetWidth reflects their real
@@ -7978,14 +8010,65 @@ function renderRhythmTab(){
   if(markerEls.length){
     const rows=computeLabelRows(markerEls.map(m=>({x:m.x,width:m.lbl.offsetWidth})), MARKER_LABEL_ROW_GAP_PX);
     let maxRow=0;
+    const clampedRows=[]; // Phase 4b: the post-clamp row per marker, reused below so the
+                           // touch-sibling overlap cap only ever compares markers that
+                           // actually share a row on screen (not the pre-clamp row index)
     markerEls.forEach((m,idx)=>{
       const row=Math.min(rows[idx],MARKER_LABEL_MAX_ROWS-1);
+      clampedRows.push(row);
       maxRow=Math.max(maxRow,row);
       const top=-(18+MARKER_LABEL_ROW_PX*(row+1)); // -18 clears the existing bar-number row entirely
       m.lbl.style.top=top+'px';
       m.div.style.top=top+'px'; // divider extends up to reach its own label's row
     });
     if(timelineWrapEl) timelineWrapEl.style.paddingTop=(26+(maxRow+1)*MARKER_LABEL_ROW_PX)+'px';
+
+    // Phase 4b (design lock claude/design_lock_timeline_architecture_v89_phase4b_touch.md
+    // Sections 2 and 4): a transparent touch-only sibling per marker is the sole touch
+    // entry point for dragging that marker (the divider and visible label go
+    // pointer-events:none for a coarse pointer — see CSS). Grouped by the SAME clamped row
+    // just assigned above, so the overlap cap only ever compares markers that actually
+    // share a row on screen. Padding on each side is capped at half the REAL gap to the
+    // nearest same-row neighbor (the v65 half-real-gap rule already proven for the chord
+    // touch proxy/chip), so two touch targets sharing a row can never overlap — every
+    // touch resolves to exactly one marker. Vertical extent is intentionally ZERO padding:
+    // unlike the v65 chord touch proxy (one block per row, free vertical margin above and
+    // below), label-lane rows sit at a contiguous MARKER_LABEL_ROW_PX pitch with no gap
+    // between them, so any vertical expansion here would cross into a neighboring row's
+    // sibling — confirmed by review: a same-unit marker pair (adjacent rows) overlapped and
+    // a tap resolved to the wrong marker when this carried the v65-style half-row pad. Each
+    // sibling's vertical extent is exactly its own row band. This pass runs once per full
+    // render, same as the row assignment above; it is never re-run mid-gesture (see
+    // repositionMarkerEl, which moves only left/top of the existing divider/label and never
+    // rebuilds or repositions this sibling during a drag).
+    const rowGroups=new Map();
+    markerEls.forEach((m,idx)=>{
+      const row=clampedRows[idx];
+      if(!rowGroups.has(row)) rowGroups.set(row,[]);
+      rowGroups.get(row).push({m,row}); // markerEls is x-ascending, so each row's group is too
+    });
+    rowGroups.forEach(group=>{
+      group.forEach((entry,pos)=>{
+        const {m,row}=entry;
+        const w=m.lbl.offsetWidth;
+        const prev=pos>0?group[pos-1].m:null;
+        const next=pos<group.length-1?group[pos+1].m:null;
+        const leftGap=prev?Math.max(0,m.x-(prev.x+prev.lbl.offsetWidth)):Infinity;
+        const rightGap=next?Math.max(0,next.x-(m.x+w)):Infinity;
+        const padL=Math.min(RHYTHM_TOUCH_PROXY_HPAD_PX,leftGap/2);
+        const padR=Math.min(RHYTHM_TOUCH_PROXY_HPAD_PX,rightGap/2);
+        const top=-(18+MARKER_LABEL_ROW_PX*(row+1));
+        const touchEl=document.createElement('div');
+        touchEl.className='rhythm-marker-label-touch';
+        touchEl.dataset.mi=String(m.i);
+        touchEl.style.left=(m.x-padL)+'px';
+        touchEl.style.top=top+'px';
+        touchEl.style.width=(w+padL+padR)+'px';
+        touchEl.style.height=MARKER_LABEL_ROW_PX+'px';
+        touchEl.addEventListener('touchstart',ev=>{startMarkerDrag(ev,m.i);},{passive:false});
+        wrap.appendChild(touchEl);
+      });
+    });
   } else if(timelineWrapEl){
     timelineWrapEl.style.paddingTop=''; // no markers at all: the CSS default (26px), unchanged
   }
@@ -8280,10 +8363,15 @@ function repositionRhythmBlockEl(i){
 // --- Phase 4a: direct marker dragging (design lock claude/design_lock_timeline_architecture_v89_phase4.md) ---
 // Below this much pointer movement, a press+release on a marker is a plain click (opens
 // the shared marker editor, same as before); at or beyond it, the gesture is a live drag.
-// Desktop (mouse) only, by design: mobile browsers deliver a marker tap as a single
-// synthetic mousedown/mouseup pair after touchend with no mousemove in between, so a touch
-// tap can never cross this threshold and always falls through to the click behavior — real
-// touch dragging is Phase 4b, out of scope here.
+// MOUSE threshold only. Phase 4b (design lock
+// claude/design_lock_timeline_architecture_v89_phase4b_touch.md) added real touch dragging
+// via a separate touch-only entry point (the .rhythm-marker-label-touch sibling, wired to
+// startMarkerDrag same as the divider/label), and touch uses its own existing coarse-
+// pointer threshold, RHYTHM_TOUCH_TAP_THRESH, not this constant. The two thresholds are
+// intentionally different (this one, 4px, is a fine-pointer click-vs-drag gate tuned for a
+// mouse; RHYTHM_TOUCH_TAP_THRESH, 10px, is the touch tap-vs-drag gate already proven across
+// every other coarse-pointer gesture in this file) and startMarkerDrag picks between them
+// by the gesture's own pointer type, decided once at gesture start.
 const MARKER_DRAG_THRESHOLD_PX=4;
 // Locked snap rule (design lock Section 3): normal dragging snaps to the existing 3-unit
 // sixteenth grid (MIN_UNITS); when the marker comes within this many screen pixels of an
@@ -8335,11 +8423,27 @@ function repositionMarkerEl(i){
 // final position -> overlap ordering step -> resortSeqByTimeline() -> pushHistory() ->
 // renderAll() — no history pushes during move ticks, one drag is one undo step, same
 // contract as startRhythmMove/startRhythmDrag above.
+//
+// Phase 4b (design lock claude/design_lock_timeline_architecture_v89_phase4b_touch.md)
+// extends this SAME function with a touch lifecycle rather than a competing marker-drag
+// system, mirroring how startRhythmDrag/startRhythmMove already handle mouse and touch in
+// one function. The mouse branch below is unchanged in behavior: same 4px threshold
+// (MARKER_DRAG_THRESHOLD_PX), same listeners, same commit sequence. Touch enters only
+// through the new .rhythm-marker-label-touch sibling (never the divider — see the CSS
+// pointer-events:none rule), uses the existing coarse-pointer tap threshold
+// (RHYTHM_TOUCH_TAP_THRESH, 10px) instead of the mouse threshold, and adds touchcancel:
+// per the locked contract, a cancelled gesture that had already crossed the drag threshold
+// flushes whatever the last successful touchmove tick already wrote into s.startUnit via
+// the real commit sequence (the data mutation already happened; only the DOM/history/
+// render need to catch up) — a cancelled sub-threshold tap commits nothing and does not
+// open the editor, matching the existing rhythm-block/resize cancel contract.
 function startMarkerDrag(ev,i){
   const s=seq[i]; if(!s||!isMarker(s)) return;
-  if(ev.button!==undefined && ev.button!==0) return; // primary button only
+  const isTouch=!!ev.touches;
+  if(!isTouch && ev.button!==undefined && ev.button!==0) return; // primary button only (mouse)
   ev.preventDefault();
-  const startX=ev.clientX;
+  const startX=(isTouch?ev.touches[0].clientX:ev.clientX);
+  const threshold=isTouch?RHYTHM_TOUCH_TAP_THRESH:MARKER_DRAG_THRESHOLD_PX;
   const startUnit=s.startUnit||0;
   const gridUnits=activeGridLengthUnits();
   const {totalUnits}=unitLayout();
@@ -8357,29 +8461,27 @@ function startMarkerDrag(ev,i){
   const cleanup=()=>{
     document.removeEventListener('mousemove',move);
     document.removeEventListener('mouseup',up);
+    document.removeEventListener('touchmove',move);
+    document.removeEventListener('touchend',up);
+    document.removeEventListener('touchcancel',cancelTouch);
   };
   const move=e=>{
+    const x=(e.touches?e.touches[0].clientX:e.clientX);
     if(!dragged){
-      if(Math.abs(e.clientX-startX)<MARKER_DRAG_THRESHOLD_PX) return;
+      if(Math.abs(x-startX)<threshold) return;
       dragged=true;
       const div=document.querySelector(`.rhythm-marker[data-mi="${i}"]`);
       const lbl=document.querySelector(`.rhythm-marker-label[data-mi="${i}"]`);
       if(div) div.classList.add('dragging');
       if(lbl) lbl.classList.add('dragging');
     }
-    applyFor(e.clientX);
-    repositionMarkerEl(i);
+    applyFor(x);
+    repositionMarkerEl(i); // horizontal-only, element-only — no label-row restack mid-gesture (locked)
+    if(e.cancelable) e.preventDefault();
   };
-  const up=e=>{
-    cleanup();
-    if(!dragged){
-      // Plain click — open (or close) this marker's editor. Decided here instead of via
-      // onclick so a real drag can suppress it; unchanged behavior for a non-drag tap.
-      editingMarkerIndex=(editingMarkerIndex===i)?null:i;
-      renderMarkerEditor();
-      return;
-    }
-    applyFor(e.clientX); // final position — commits exactly what release itself reports
+  // Shared release commit (locked, design lock Section 5/9), extracted so touchcancel can
+  // run the identical sequence per Section 8 rather than duplicating it.
+  const commitDraggedRelease=()=>{
     const div=document.querySelector(`.rhythm-marker[data-mi="${i}"]`);
     const lbl=document.querySelector(`.rhythm-marker-label[data-mi="${i}"]`);
     if(div) div.classList.remove('dragging');
@@ -8396,12 +8498,38 @@ function startMarkerDrag(ev,i){
       seq.splice(seq.indexOf(movedObj),1);
       seq.splice(seq.indexOf(collision)+1,0,movedObj);
     }
-    resortSeqByTimeline();
+    resortSeqByTimeline(); // the label-row rescan happens inside the renderAll() this triggers
     pushHistory();
     renderAll();
   };
+  const up=e=>{
+    cleanup();
+    if(!dragged){
+      // Plain click/tap — open (or close) this marker's editor. Decided here instead of via
+      // onclick so a real drag can suppress it; unchanged behavior for a non-drag tap.
+      editingMarkerIndex=(editingMarkerIndex===i)?null:i;
+      renderMarkerEditor();
+      return;
+    }
+    const x=(e.changedTouches?e.changedTouches[0].clientX:e.clientX);
+    applyFor(x); // final position — commits exactly what release itself reports
+    commitDraggedRelease();
+  };
+  const cancelTouch=()=>{
+    // touchcancel (design lock Section 8): if the gesture had already crossed the drag
+    // threshold, the last successful touchmove tick already wrote s.startUnit via applyFor,
+    // so flush it through the real commit sequence — no fresh coordinate is needed or read.
+    // If the gesture never crossed the threshold, a cancel commits nothing and does not
+    // open the editor (a cancelled tap is a no-op).
+    cleanup();
+    if(!dragged) return;
+    commitDraggedRelease();
+  };
   document.addEventListener('mousemove',move);
   document.addEventListener('mouseup',up);
+  document.addEventListener('touchmove',move,{passive:false});
+  document.addEventListener('touchend',up);
+  document.addEventListener('touchcancel',cancelTouch);
 }
 function startRhythmDrag(ev,i,block){
   ev.preventDefault();
@@ -10415,6 +10543,24 @@ function renderRoll(voicings){
   const colStarts=[];let cumX=0;beats.forEach(b=>{colStarts.push(cumX);cumX+=b;});
   const usableW=W-padL-padR;
   const colCenter=i=>padL+((colStarts[i]+beats[i]/2)/totalBeats)*usableW;
+  // Marker boundary x (Phase 4a Flow correction, locked): markers still reserve a
+  // MARKER_BEATS-wide slot in beats[]/colStarts[]/totalBeats above, so chord and voice-line
+  // positions (all of which read colCenter for a CHORD index) are completely unaffected by
+  // this. But a marker's OWN divider must not sit at the center of its own reserved slot
+  // (that's an array-index artifact, not a musical boundary) — it belongs at colStarts[i],
+  // the cumulative point BEFORE this marker's slot-width is added, which is exactly where
+  // the previous chord's column ends. For a run of consecutive markers sharing one
+  // startUnit (resortSeqByTimeline keeps ties like this contiguous, marker-before-chord),
+  // every marker in the run must land on ONE shared x: the run's FIRST marker's colStarts,
+  // since that is the single value computed before ANY of the run's slot-widths were added.
+  // Walking back through same-startUnit markers only (not just "any marker") keeps two
+  // markers with genuinely different startUnit values, even if adjacent in seq with no
+  // chord between them, at their own distinct boundaries.
+  const flowMarkerX=i=>{
+    let j=i;
+    while(j>0 && isMarker(seq[j-1]) && (seq[j-1].startUnit||0)===(seq[i].startUnit||0)) j--;
+    return padL+(colStarts[j]/totalBeats)*usableW;
+  };
   const y=m=>padTop+(1-(m-lo)/(hi-lo))*(H-padTop-padBot);
   // Long progressions pack columns tightly — below these widths, per-note text labels
   // (and eventually the Δ readout) would overlap the neighbouring column, so they're
@@ -10448,16 +10594,56 @@ function renderRoll(voicings){
   // quality-name/Δ header stack below it — it used to sit at the same y as the Δ readout
   // (padTop-8, both at 50), which is the overlap Ricky's screenshots showed. Nothing here
   // is dropped or shrunk; the stack below just moved down 14px to make room above it.
+  // Phase 4a presentation-consistency correction (locked): the divider's x is now
+  // flowMarkerX(i) (see above), the marker's musical boundary, not colCenter(i) (an
+  // array-index/own-slot artifact). Every column-width/timing computation feeding CHORD and
+  // voice-line positions is UNCHANGED by this block; only the marker divider's x and the
+  // label's y are affected. Label collisions still resolve via the SAME shared
+  // computeLabelRows helper Rhythm's Option A lane and the Notes audit both use, so Flow,
+  // Rhythm, and Notes share one row-assignment rule instead of three parallel ones. The
+  // existing 72px header (padTop) already reserves room above the divider's start
+  // (padTop-2) for several stacked rows, so this never needs to grow the SVG canvas or move
+  // padTop/colCenter/the divider's vertical span.
+  const flowMarkerEls=[];
   seq.forEach((s,i)=>{
     if(!isMarker(s)) return;
-    const x=colCenter(i);
+    const x=flowMarkerX(i);
     roll.appendChild(mk('line',{x1:x,y1:padTop-2,x2:x,y2:H-padBot,
       stroke:'var(--secdom)','stroke-width':1.5,'stroke-dasharray':'4 3',opacity:0.85}));
-    const lbl=mk('text',{x:x,y:10,'text-anchor':'middle',fill:'var(--secdom)',
+    // text-anchor 'start' (not 'middle'): the label's left edge sits exactly at x, the same
+    // authority the divider line uses, matching Rhythm's and Notes' left-anchored marker
+    // labels. 'middle' (pre-migration) centered the glyph over x instead, so two stacked
+    // labels of different lengths appeared to drift left of the divider even though both
+    // shared the same x internally, a rendering choice, not an x mismatch.
+    const lbl=mk('text',{x:x,y:10,'text-anchor':'start',fill:'var(--secdom)',
       'font-family':'var(--font-mono)','font-size':'10','font-weight':'600'});
     lbl.textContent='\u2192 '+keySpell(s.keyRoot,s.keyRoot,s.keyMode)+' '+s.keyMode+(s.meter?' \u00B7 '+s.meter.num+'/'+s.meter.den:'');
     roll.appendChild(lbl);
+    flowMarkerEls.push({lbl,x});
   });
+  // Row assignment: measured after each label is appended so getBBox() reflects its real
+  // rendered width (falls back to a character-count estimate on a render that happens while
+  // the Flow tab itself is hidden behind Notes, where a bbox can read 0 \u2014 harmless, since
+  // setVlView re-renders Flow fresh, while visible, the moment the user switches to it).
+  // computeLabelRows wants each entry's LEFT edge in x-ascending order; now that the label is
+  // left-anchored (text-anchor:start) its left edge IS x, the same value the divider uses,
+  // no conversion needed. seq is already startUnit-ascending, so flowMarkerEls is already
+  // x-ascending.
+  const FLOW_MARKER_ROW_PX=14, FLOW_MARKER_ROW_GAP_PX=6, FLOW_MARKER_LABEL_MAX_ROWS=4;
+  if(flowMarkerEls.length){
+    const widths=flowMarkerEls.map(m=>{
+      let w=0;
+      try{ w=m.lbl.getBBox().width; }catch(e){ w=0; }
+      if(!w) w=(m.lbl.textContent||'').length*6.2; // rough JetBrains Mono 10px fallback estimate
+      return w;
+    });
+    const entries=flowMarkerEls.map((m,idx)=>({x:m.x, width:widths[idx]}));
+    const rows=computeLabelRows(entries, FLOW_MARKER_ROW_GAP_PX);
+    flowMarkerEls.forEach((m,idx)=>{
+      const row=Math.min(rows[idx],FLOW_MARKER_LABEL_MAX_ROWS-1);
+      m.lbl.setAttribute('y', 10+FLOW_MARKER_ROW_PX*row);
+    });
+  }
   // Dots + key-aware note labels. Every dot gets a <title> (native hover tooltip) so the
   // note name stays discoverable even when the text label is suppressed for density.
   // Dots are also the manual-voicing editor: drag a chord-tone dot up or down and it snaps

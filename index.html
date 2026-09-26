@@ -15444,6 +15444,52 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     return cls + (mi!==undefined ? (' mi='+mi) : '');
   }
 
+  // Added for the second diagnostic pass: real-device geometry of each visible marker
+  // label versus its .rhythm-marker-label-touch sibling, read at touchstart time via
+  // getBoundingClientRect()/getComputedStyle() only — no geometry, CSS, or z-index is
+  // changed anywhere by this instrumentation; it only reads and logs what is already there.
+  function rectOf(el){
+    if(!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
+  }
+  function styleOf(el, props){
+    if(!el) return null;
+    const cs = getComputedStyle(el);
+    const out = {};
+    props.forEach(function(p){ out[p] = cs[p]; });
+    return out;
+  }
+  function rectsOverlapArea(a, b){
+    if(!a || !b) return null;
+    const ox = Math.max(0, Math.min(a.right,b.right) - Math.max(a.left,b.left));
+    const oy = Math.max(0, Math.min(a.bottom,b.bottom) - Math.max(a.top,b.top));
+    return ox * oy;
+  }
+  function pointInRect(x, y, r){
+    if(!r) return null;
+    return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;
+  }
+  function fmtRect(r){
+    return r ? ('L'+r.left.toFixed(1)+' T'+r.top.toFixed(1)+' R'+r.right.toFixed(1)+' B'+r.bottom.toFixed(1)+' W'+r.width.toFixed(1)+' H'+r.height.toFixed(1)) : 'MISSING';
+  }
+  function logGeometry(prefix, tx, ty){
+    const labels = document.querySelectorAll('.rhythm-marker-label');
+    if(!labels.length){ log(prefix+' no .rhythm-marker-label elements found in DOM'); return; }
+    labels.forEach(function(lbl){
+      const mi = lbl.dataset.mi;
+      const touchEl = document.querySelector('.rhythm-marker-label-touch[data-mi="'+mi+'"]');
+      const lr = rectOf(lbl);
+      const tr = rectOf(touchEl);
+      const ts = styleOf(touchEl, ['display','pointerEvents','position','left','top','width','height','zIndex']);
+      log(prefix+' mi='+mi+' label rect: '+fmtRect(lr));
+      log(prefix+' mi='+mi+' touch rect: '+fmtRect(tr));
+      log(prefix+' mi='+mi+' touch computed style: '+(ts?JSON.stringify(ts):'MISSING (element not found)'));
+      log(prefix+' mi='+mi+' label/touch rects overlap area=' + rectsOverlapArea(lr,tr));
+      log(prefix+' mi='+mi+' touch point ('+tx.toFixed(1)+','+ty.toFixed(1)+') inside touch rect=' + pointInRect(tx,ty,tr) + ' inside label rect=' + pointInRect(tx,ty,lr));
+    });
+  }
+
   // Items 2/3/4/6: capture-phase touchstart on document — observation only, passive, no
   // preventDefault/stopPropagation, so it cannot alter what the real gesture does.
   document.addEventListener('touchstart', function(e){
@@ -15458,6 +15504,7 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
       + ' | elementFromPoint=' + describeTarget(efp)
       + ' | isTouchSiblingTarget=' + isTouchSibling
       + ' | clientX=' + t.clientX.toFixed(1) + ' clientY=' + t.clientY.toFixed(1));
+    logGeometry('#'+id+' geom', t.clientX, t.clientY);
   }, {capture:true, passive:true});
 
   // Items 7/8: capture-phase touchmove on document — whether it reaches the document

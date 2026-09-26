@@ -15359,5 +15359,157 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   };
 })();
 </script>
+<!-- ============ DIAG4B-START — TEMPORARY diagnostic instrumentation for the Phase 4b
+     real-device touch failure (iPhone Safari: marker-label tap/drag produce no response).
+     Purely observational: document-level CAPTURE-phase listeners only, all {passive:true},
+     never call preventDefault/stopPropagation, so nothing about touch-action, scrolling,
+     or the real gesture is altered. startMarkerDrag is WRAPPED, not modified — the wrapper
+     logs entry then calls the original function unchanged with the same arguments/return.
+     Does not touch marker geometry, pointer-events, z-index, thresholds, protected
+     functions, APP_VERSION, or the changelog. Delete this entire block (through
+     DIAG4B-END) to remove the instrumentation; nothing else in the file references it. -->
+<style>
+#diag4b-overlay {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 2147483647;
+  width: 220px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.88);
+  color: #6f6;
+  font-family: monospace;
+  font-size: 9px;
+  line-height: 1.35;
+  padding: 6px;
+  border: 1px solid #0f0;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#diag4b-overlay .diag4b-hdr {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 4px; color: #fff; font-weight: bold;
+}
+#diag4b-overlay button {
+  font-size: 9px; padding: 2px 5px; margin-left: 4px;
+  background: #222; color: #0f0; border: 1px solid #0f0; border-radius: 3px;
+}
+#diag4b-overlay.diag4b-collapsed .diag4b-body { display: none; }
+</style>
+<div id="diag4b-overlay">
+  <div class="diag4b-hdr">
+    <span>DIAG4b</span>
+    <span>
+      <button id="diag4b-toggle" type="button">_</button>
+      <button id="diag4b-clear" type="button">clr</button>
+    </span>
+  </div>
+  <div class="diag4b-body" id="diag4b-log"></div>
+</div>
+<script>
+(function(){
+  const logEl = document.getElementById('diag4b-log');
+  const overlay = document.getElementById('diag4b-overlay');
+  const lines = [];
+  function render(){
+    logEl.textContent = lines.slice(-60).reverse().join('\n');
+  }
+  function log(s){
+    const t = new Date().toISOString().slice(11,23);
+    lines.push('['+t+'] '+s);
+    if(lines.length>300) lines.splice(0, lines.length-300);
+    render();
+  }
+  document.getElementById('diag4b-toggle').addEventListener('click', function(){
+    overlay.classList.toggle('diag4b-collapsed');
+  });
+  document.getElementById('diag4b-clear').addEventListener('click', function(){
+    lines.length = 0; render();
+  });
+
+  // Item 1: coarse-pointer match, checked once at load.
+  let coarseMatch;
+  try { coarseMatch = matchMedia('(pointer:coarse)').matches; } catch(e){ coarseMatch = 'ERR:'+e.message; }
+  log('coarse match = ' + coarseMatch);
+
+  let gestureId = 0;
+  let activeGesture = null; // {id, startX, startY, crossedThreshold, loggedFirstMove}
+
+  function describeTarget(el){
+    if(!el) return 'null';
+    const cls = (el.className && el.className.baseVal !== undefined) ? el.className.baseVal : (el.className || '(no class)');
+    const mi = el.dataset ? el.dataset.mi : undefined;
+    return cls + (mi!==undefined ? (' mi='+mi) : '');
+  }
+
+  // Items 2/3/4/6: capture-phase touchstart on document — observation only, passive, no
+  // preventDefault/stopPropagation, so it cannot alter what the real gesture does.
+  document.addEventListener('touchstart', function(e){
+    gestureId++;
+    const id = gestureId;
+    const t = e.touches[0];
+    const target = e.target;
+    const efp = document.elementFromPoint(t.clientX, t.clientY);
+    const isTouchSibling = !!(target.classList && target.classList.contains('rhythm-marker-label-touch'));
+    activeGesture = { id: id, startX: t.clientX, startY: t.clientY, crossedThreshold: false, loggedFirstMove: false };
+    log('#'+id+' touchstart target=' + describeTarget(target)
+      + ' | elementFromPoint=' + describeTarget(efp)
+      + ' | isTouchSiblingTarget=' + isTouchSibling
+      + ' | clientX=' + t.clientX.toFixed(1) + ' clientY=' + t.clientY.toFixed(1));
+  }, {capture:true, passive:true});
+
+  // Items 7/8: capture-phase touchmove on document — whether it reaches the document
+  // handler at all, and whether it has crossed the app's OWN existing tap/drag threshold
+  // (read live from the page's own RHYTHM_TOUCH_TAP_THRESH constant; never redefined here).
+  document.addEventListener('touchmove', function(e){
+    if(!activeGesture) return;
+    const t = e.touches[0];
+    const dx = Math.abs(t.clientX - activeGesture.startX);
+    let thresh;
+    try { thresh = RHYTHM_TOUCH_TAP_THRESH; } catch(err){ thresh = 'unavailable ('+err.message+')'; }
+    const crossedNow = (typeof thresh === 'number') && dx >= thresh;
+    if(crossedNow && !activeGesture.crossedThreshold){
+      activeGesture.crossedThreshold = true;
+      log('#'+activeGesture.id+' touchmove reached document; dx=' + dx.toFixed(1) + ' CROSSED threshold(' + thresh + ')');
+    } else if(!activeGesture.loggedFirstMove){
+      activeGesture.loggedFirstMove = true;
+      log('#'+activeGesture.id+' touchmove reached document; dx=' + dx.toFixed(1) + ' threshold=' + thresh + ' crossed=' + crossedNow);
+    }
+  }, {capture:true, passive:true});
+
+  // Item 9: capture-phase touchend on document.
+  document.addEventListener('touchend', function(e){
+    const id = activeGesture ? activeGesture.id : '?';
+    log('#'+id+' touchend reached document');
+    activeGesture = null;
+  }, {capture:true, passive:true});
+
+  // Item 5: non-invasive WRAP of startMarkerDrag — logs entry + marker index, then calls
+  // straight through to the real function with the same arguments/this/return value.
+  // Everything inside startMarkerDrag (behavior, thresholds, drag logic) is untouched.
+  try {
+    if(typeof window.startMarkerDrag === 'function' && !window.startMarkerDrag.__diag4bWrapped){
+      const originalStartMarkerDrag = window.startMarkerDrag;
+      const wrapped = function(ev, i){
+        const id = activeGesture ? activeGesture.id : '?';
+        log('#'+id+' startMarkerDrag ENTERED, i=' + i + ' (touch=' + (!!ev.touches) + ')');
+        return originalStartMarkerDrag.apply(this, arguments);
+      };
+      wrapped.__diag4bWrapped = true;
+      window.startMarkerDrag = wrapped;
+      log('startMarkerDrag wrap installed OK');
+    } else {
+      log('startMarkerDrag wrap FAILED: not found as window.startMarkerDrag');
+    }
+  } catch(e) {
+    log('startMarkerDrag wrap FAILED: ' + e.message);
+  }
+
+  log('diagnostic overlay ready — tap the toggle (_) to collapse/expand, clr to clear');
+})();
+</script>
+<!-- ============ DIAG4B-END ============ -->
 </body>
 </html>

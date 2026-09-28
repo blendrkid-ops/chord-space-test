@@ -15382,6 +15382,7 @@ function diagAdd(msg) {
 document.addEventListener('touchstart', e => {
   const touch = e.touches[0];
   const target = document.elementFromPoint(touch.clientX, touch.clientY);
+  window.__touchStartX = touch.clientX; // FIX: this was never set before, so dx always read 0
   diagAdd(`touchstart @ ${touch.clientX},${touch.clientY} -> ${target?.className || 'null'}`);
   if (target?.dataset?.mi) diagAdd(`  marker i=${target.dataset.mi}`);
 }, true);
@@ -15389,17 +15390,20 @@ document.addEventListener('touchstart', e => {
 document.addEventListener('touchmove', e => {
   if (e.touches.length) {
     const touch = e.touches[0];
-    const deltaX = Math.abs(touch.clientX - (window.__touchStartX || touch.clientX));
+    const startX = (window.__touchStartX !== undefined) ? window.__touchStartX : touch.clientX;
+    const deltaX = touch.clientX - startX; // signed, so direction is visible too
     diagAdd(`touchmove dx=${deltaX}px`);
   }
 }, true);
 
 document.addEventListener('touchend', e => {
   diagAdd('touchend');
+  window.__touchStartX = undefined;
 }, true);
 
 document.addEventListener('touchcancel', e => {
   diagAdd('touchcancel');
+  window.__touchStartX = undefined;
 }, true);
 
 // Hook startMarkerDrag to log entry

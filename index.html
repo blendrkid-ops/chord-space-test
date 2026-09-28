@@ -2076,29 +2076,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .rhythm-resize-handle:hover::after, .rhythm-block.dragging .rhythm-resize-handle::after { background: var(--accent); }
 .rhythm-resize-handle:hover::before { opacity: 0.9; }
-/* Phase 4b: transparent touch-only sibling, the sole touch entry point for dragging a
-   marker (see the @media(pointer:coarse) rule below). Never a mouse target — display:none
-   base, display:block only under coarse pointer, mirroring .rhythm-block-touch-proxy's
-   pattern exactly. Positioned per-instance in renderRhythmTab from the label's own row/x/
-   width with a per-row half-real-gap overlap cap, so it never needs its own base
-   left/top/width/height here. z-index sits above the marker divider (2) and the chord
-   resize chip (3); this is safe because the sibling lives only in the label lane's
-   negative-top space and never overlaps a chord block's own positive-top footprint.
-   CASCADE-ORDER FIX (diagnosed via real-device instrumentation): this base rule must be
-   declared BEFORE the @media(pointer:coarse) block below, not after it. Both rules share
-   identical specificity (a single class selector), so with equal specificity the LATER
-   declaration wins regardless of the media query — a later, unconditional `display:none`
-   here would always beat the media-guarded `display:block`, keeping the sibling
-   display:none even when the coarse-pointer query matches. Moving this rule earlier (no
-   selector, value, or property changed) lets the guarded override legitimately win when
-   the query matches, and still lose to nothing when it doesn't (mouse/desktop unaffected,
-   since display:none is simply the only rule that applies there either way). */
 .rhythm-marker-label-touch {
   position: absolute;
   z-index: 4;
   display: none;
   background: transparent;
 }
+
 @media (pointer: coarse) {
   /* Item 7/mobile touch-input pass: widens only the invisible touch-catchable hit zone.
      `right` stays pinned at -8px (unchanged from the base rule above), so the box grows
@@ -2196,6 +2180,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
    border-left/color rather than box-shadow). */
 .rhythm-marker.dragging { border-left-color: var(--accent); cursor: grabbing; }
 .rhythm-marker-label.dragging { color: var(--accent); cursor: grabbing; }
+/* Phase 4b: transparent touch-only sibling, the sole touch entry point for dragging a
+   marker (see the @media(pointer:coarse) rule above). Never a mouse target — display:none
+   base, display:block only under coarse pointer, mirroring .rhythm-block-touch-proxy's
+   pattern exactly. Positioned per-instance in renderRhythmTab from the label's own row/x/
+   width with a per-row half-real-gap overlap cap, so it never needs its own base
+   left/top/width/height here. z-index sits above the marker divider (2) and the chord
+   resize chip (3); this is safe because the sibling lives only in the label lane's
+   negative-top space and never overlaps a chord block's own positive-top footprint. */
+
 
 /* --- Voice Leading roll header + per-voice solo row (item 26) --- */
 .vl-header-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
@@ -15368,251 +15361,57 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   };
 })();
 </script>
-<!-- ============ DIAG4B-START — TEMPORARY diagnostic instrumentation for the Phase 4b
-     real-device touch failure (iPhone Safari: marker-label tap/drag produce no response).
-     Purely observational: document-level CAPTURE-phase listeners only, all {passive:true},
-     never call preventDefault/stopPropagation, so nothing about touch-action, scrolling,
-     or the real gesture is altered. startMarkerDrag is WRAPPED, not modified — the wrapper
-     logs entry then calls the original function unchanged with the same arguments/return.
-     Does not touch marker geometry, pointer-events, z-index, thresholds, protected
-     functions, APP_VERSION, or the changelog. Delete this entire block (through
-     DIAG4B-END) to remove the instrumentation; nothing else in the file references it. -->
-<style>
-#diag4b-overlay {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  z-index: 2147483647;
-  width: 220px;
-  max-height: 40vh;
-  overflow-y: auto;
-  background: rgba(0,0,0,0.88);
-  color: #6f6;
-  font-family: monospace;
-  font-size: 9px;
-  line-height: 1.35;
-  padding: 6px;
-  border: 1px solid #0f0;
-  border-radius: 4px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-#diag4b-overlay .diag4b-hdr {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 4px; color: #fff; font-weight: bold;
-}
-#diag4b-overlay button {
-  font-size: 9px; padding: 2px 5px; margin-left: 4px;
-  background: #222; color: #0f0; border: 1px solid #0f0; border-radius: 3px;
-}
-#diag4b-overlay.diag4b-collapsed .diag4b-body { display: none; }
-#diag4b-overlay .diag4b-copystatus { color:#ff0; margin-top:4px; }
-</style>
-<div id="diag4b-overlay">
-  <div class="diag4b-hdr">
-    <span>DIAG4b</span>
-    <span>
-      <button id="diag4b-toggle" type="button">_</button>
-      <button id="diag4b-copy" type="button">copy</button>
-      <button id="diag4b-clear" type="button">clr</button>
-    </span>
-  </div>
-  <div class="diag4b-body" id="diag4b-log"></div>
-  <div class="diag4b-copystatus" id="diag4b-copystatus"></div>
-  <textarea id="diag4b-copyarea" readonly style="position:absolute;left:-9999px;top:-9999px;"></textarea>
+
+<!-- DIAG4B-START: touch lifecycle diagnostic overlay -->
+<div id="diag4b-log" style="position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.9); color: #0f0; font-family: monospace; font-size: 10px; padding: 8px; max-width: 300px; max-height: 200px; overflow-y: auto; z-index: 9999; border: 1px solid #0f0;">
+  <div style="margin-bottom: 4px; font-weight: bold;">Touch Diagnostic Log:</div>
+  <div id="diag4b-content"></div>
 </div>
 <script>
-(function(){
-  const logEl = document.getElementById('diag4b-log');
-  const overlay = document.getElementById('diag4b-overlay');
-  const copyStatusEl = document.getElementById('diag4b-copystatus');
-  const copyAreaEl = document.getElementById('diag4b-copyarea');
-  const lines = [];
-  function render(){
-    logEl.textContent = lines.slice(-60).reverse().join('\n');
+const diagLog = [];
+function diagAdd(msg) {
+  diagLog.push(msg);
+  const el = document.getElementById('diag4b-content');
+  if (el) {
+    el.innerHTML = diagLog.slice(-15).map(m => '<div>' + m + '</div>').join('');
+    el.parentElement.scrollTop = el.parentElement.scrollHeight;
   }
-  function log(s){
-    const t = new Date().toISOString().slice(11,23);
-    lines.push('['+t+'] '+s);
-    if(lines.length>300) lines.splice(0, lines.length-300);
-    render();
-  }
-  document.getElementById('diag4b-toggle').addEventListener('click', function(){
-    overlay.classList.toggle('diag4b-collapsed');
-  });
-  document.getElementById('diag4b-clear').addEventListener('click', function(){
-    lines.length = 0; copyStatusEl.textContent=''; render();
-  });
-  // Copy the FULL raw log (oldest-first, everything currently retained — not just the
-  // last-60 view rendered on screen) so it can be pasted back verbatim rather than
-  // transcribed from a photo. Tries the async Clipboard API first (needs the https
-  // context + this button's own user-gesture, both satisfied here); falls back to
-  // selecting the text in the hidden textarea via execCommand('copy') for older WebKit,
-  // and as a last resort just selects it on screen so a manual copy still works.
-  document.getElementById('diag4b-copy').addEventListener('click', function(){
-    const full = lines.join('\n');
-    copyAreaEl.value = full;
-    function done(how){ copyStatusEl.textContent = 'copied ' + lines.length + ' lines (' + how + ')'; }
-    function manualFallback(err){
-      copyAreaEl.style.position = 'fixed';
-      copyAreaEl.style.left = '4px'; copyAreaEl.style.top = '4px';
-      copyAreaEl.style.width = '90vw'; copyAreaEl.style.height = '30vh';
-      copyAreaEl.style.zIndex = 2147483647;
-      copyAreaEl.style.background = '#000'; copyAreaEl.style.color = '#0f0';
-      copyAreaEl.focus(); copyAreaEl.setSelectionRange(0, full.length);
-      copyStatusEl.textContent = (err?('auto-copy failed: '+err+'. '):'') + 'text box opened below — tap it, Select All, Copy';
-    }
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(full).then(function(){ done('clipboard API'); }).catch(function(e){
-        try {
-          copyAreaEl.focus(); copyAreaEl.setSelectionRange(0, full.length);
-          const ok = document.execCommand('copy');
-          if(ok) done('execCommand fallback'); else manualFallback(e.message);
-        } catch(e2){ manualFallback(e2.message); }
-      });
-    } else {
-      try {
-        copyAreaEl.focus(); copyAreaEl.setSelectionRange(0, full.length);
-        const ok = document.execCommand('copy');
-        if(ok) done('execCommand'); else manualFallback('execCommand returned false');
-      } catch(e2){ manualFallback(e2.message); }
-    }
-  });
+}
 
-  // Item 1: coarse-pointer match, checked once at load.
-  let coarseMatch;
-  try { coarseMatch = matchMedia('(pointer:coarse)').matches; } catch(e){ coarseMatch = 'ERR:'+e.message; }
-  log('coarse match = ' + coarseMatch);
+// Hook touch events at document level
+document.addEventListener('touchstart', e => {
+  const touch = e.touches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY);
+  diagAdd(`touchstart @ ${touch.clientX},${touch.clientY} -> ${target?.className || 'null'}`);
+  if (target?.dataset?.mi) diagAdd(`  marker i=${target.dataset.mi}`);
+}, true);
 
-  let gestureId = 0;
-  let activeGesture = null; // {id, startX, startY, crossedThreshold, loggedFirstMove}
+document.addEventListener('touchmove', e => {
+  if (e.touches.length) {
+    const touch = e.touches[0];
+    const deltaX = Math.abs(touch.clientX - (window.__touchStartX || touch.clientX));
+    diagAdd(`touchmove dx=${deltaX}px`);
+  }
+}, true);
 
-  function describeTarget(el){
-    if(!el) return 'null';
-    const cls = (el.className && el.className.baseVal !== undefined) ? el.className.baseVal : (el.className || '(no class)');
-    const mi = el.dataset ? el.dataset.mi : undefined;
-    return cls + (mi!==undefined ? (' mi='+mi) : '');
-  }
+document.addEventListener('touchend', e => {
+  diagAdd('touchend');
+}, true);
 
-  // Added for the second diagnostic pass: real-device geometry of each visible marker
-  // label versus its .rhythm-marker-label-touch sibling, read at touchstart time via
-  // getBoundingClientRect()/getComputedStyle() only — no geometry, CSS, or z-index is
-  // changed anywhere by this instrumentation; it only reads and logs what is already there.
-  function rectOf(el){
-    if(!el) return null;
-    const r = el.getBoundingClientRect();
-    return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height };
-  }
-  function styleOf(el, props){
-    if(!el) return null;
-    const cs = getComputedStyle(el);
-    const out = {};
-    props.forEach(function(p){ out[p] = cs[p]; });
-    return out;
-  }
-  function rectsOverlapArea(a, b){
-    if(!a || !b) return null;
-    const ox = Math.max(0, Math.min(a.right,b.right) - Math.max(a.left,b.left));
-    const oy = Math.max(0, Math.min(a.bottom,b.bottom) - Math.max(a.top,b.top));
-    return ox * oy;
-  }
-  function pointInRect(x, y, r){
-    if(!r) return null;
-    return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;
-  }
-  function fmtRect(r){
-    return r ? ('L'+r.left.toFixed(1)+' T'+r.top.toFixed(1)+' R'+r.right.toFixed(1)+' B'+r.bottom.toFixed(1)+' W'+r.width.toFixed(1)+' H'+r.height.toFixed(1)) : 'MISSING';
-  }
-  function logGeometry(prefix, tx, ty){
-    const labels = document.querySelectorAll('.rhythm-marker-label');
-    if(!labels.length){ log(prefix+' no .rhythm-marker-label elements found in DOM'); return; }
-    labels.forEach(function(lbl){
-      const mi = lbl.dataset.mi;
-      const touchEl = document.querySelector('.rhythm-marker-label-touch[data-mi="'+mi+'"]');
-      const lr = rectOf(lbl);
-      const tr = rectOf(touchEl);
-      const ts = styleOf(touchEl, ['display','pointerEvents','position','left','top','width','height','zIndex']);
-      log(prefix+' mi='+mi+' label rect: '+fmtRect(lr));
-      log(prefix+' mi='+mi+' touch rect: '+fmtRect(tr));
-      log(prefix+' mi='+mi+' touch computed style: '+(ts?JSON.stringify(ts):'MISSING (element not found)'));
-      log(prefix+' mi='+mi+' label/touch rects overlap area=' + rectsOverlapArea(lr,tr));
-      log(prefix+' mi='+mi+' touch point ('+tx.toFixed(1)+','+ty.toFixed(1)+') inside touch rect=' + pointInRect(tx,ty,tr) + ' inside label rect=' + pointInRect(tx,ty,lr));
-    });
-  }
+document.addEventListener('touchcancel', e => {
+  diagAdd('touchcancel');
+}, true);
 
-  // Items 2/3/4/6: capture-phase touchstart on document — observation only, passive, no
-  // preventDefault/stopPropagation, so it cannot alter what the real gesture does.
-  document.addEventListener('touchstart', function(e){
-    gestureId++;
-    const id = gestureId;
-    const t = e.touches[0];
-    const target = e.target;
-    const efp = document.elementFromPoint(t.clientX, t.clientY);
-    const isTouchSibling = !!(target.classList && target.classList.contains('rhythm-marker-label-touch'));
-    activeGesture = { id: id, startX: t.clientX, startY: t.clientY, crossedThreshold: false, loggedFirstMove: false };
-    log('#'+id+' touchstart target=' + describeTarget(target)
-      + ' | elementFromPoint=' + describeTarget(efp)
-      + ' | isTouchSiblingTarget=' + isTouchSibling
-      + ' | clientX=' + t.clientX.toFixed(1) + ' clientY=' + t.clientY.toFixed(1));
-    // Guarded: an exception in the geometry pass must not silently swallow this evidence —
-    // if it throws, log the error itself rather than losing the rest of the diagnostic.
-    try {
-      logGeometry('#'+id+' geom', t.clientX, t.clientY);
-    } catch(geomErr) {
-      log('#'+id+' geom pass THREW: ' + geomErr.name + ': ' + geomErr.message);
-    }
-  }, {capture:true, passive:true});
-
-  // Items 7/8: capture-phase touchmove on document — whether it reaches the document
-  // handler at all, and whether it has crossed the app's OWN existing tap/drag threshold
-  // (read live from the page's own RHYTHM_TOUCH_TAP_THRESH constant; never redefined here).
-  document.addEventListener('touchmove', function(e){
-    if(!activeGesture) return;
-    const t = e.touches[0];
-    const dx = Math.abs(t.clientX - activeGesture.startX);
-    let thresh;
-    try { thresh = RHYTHM_TOUCH_TAP_THRESH; } catch(err){ thresh = 'unavailable ('+err.message+')'; }
-    const crossedNow = (typeof thresh === 'number') && dx >= thresh;
-    if(crossedNow && !activeGesture.crossedThreshold){
-      activeGesture.crossedThreshold = true;
-      log('#'+activeGesture.id+' touchmove reached document; dx=' + dx.toFixed(1) + ' CROSSED threshold(' + thresh + ')');
-    } else if(!activeGesture.loggedFirstMove){
-      activeGesture.loggedFirstMove = true;
-      log('#'+activeGesture.id+' touchmove reached document; dx=' + dx.toFixed(1) + ' threshold=' + thresh + ' crossed=' + crossedNow);
-    }
-  }, {capture:true, passive:true});
-
-  // Item 9: capture-phase touchend on document.
-  document.addEventListener('touchend', function(e){
-    const id = activeGesture ? activeGesture.id : '?';
-    log('#'+id+' touchend reached document');
-    activeGesture = null;
-  }, {capture:true, passive:true});
-
-  // Item 5: non-invasive WRAP of startMarkerDrag — logs entry + marker index, then calls
-  // straight through to the real function with the same arguments/this/return value.
-  // Everything inside startMarkerDrag (behavior, thresholds, drag logic) is untouched.
-  try {
-    if(typeof window.startMarkerDrag === 'function' && !window.startMarkerDrag.__diag4bWrapped){
-      const originalStartMarkerDrag = window.startMarkerDrag;
-      const wrapped = function(ev, i){
-        const id = activeGesture ? activeGesture.id : '?';
-        log('#'+id+' startMarkerDrag ENTERED, i=' + i + ' (touch=' + (!!ev.touches) + ')');
-        return originalStartMarkerDrag.apply(this, arguments);
-      };
-      wrapped.__diag4bWrapped = true;
-      window.startMarkerDrag = wrapped;
-      log('startMarkerDrag wrap installed OK');
-    } else {
-      log('startMarkerDrag wrap FAILED: not found as window.startMarkerDrag');
-    }
-  } catch(e) {
-    log('startMarkerDrag wrap FAILED: ' + e.message);
-  }
-
-  log('diagnostic overlay ready — tap the toggle (_) to collapse/expand, clr to clear');
-})();
+// Hook startMarkerDrag to log entry
+const originalStart = window.startMarkerDrag;
+if (originalStart) {
+  window.startMarkerDrag = function(ev, i) {
+    diagAdd(`startMarkerDrag ENTERED, i=${i}, touch=${ev.touches ? 'yes' : 'no'}`);
+    return originalStart.apply(this, arguments);
+  };
+}
 </script>
-<!-- ============ DIAG4B-END ============ -->
+<!-- DIAG4B-END -->
+
 </body>
 </html>

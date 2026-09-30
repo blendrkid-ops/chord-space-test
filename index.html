@@ -2801,6 +2801,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .cyl-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .cyl-sub { color: var(--text-muted); font-size: 13px; margin: 0; font-family: 'JetBrains Mono', monospace; }
 .cyl-controls { display: flex; gap: 8px; flex-shrink: 0; }
+/* v96: wrapper divs around the control groups; display:contents keeps them invisible to layout
+   on desktop, so .cyl-controls still sees the same 4 flex children it always has. The mobile
+   breakpoint below overrides this to stack the two rows. */
+.cyl-controls-row { display: contents; }
 .cyl-btn {
   font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-secondary);
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
@@ -2946,6 +2950,14 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
   .cyl-detail-grid { grid-template-columns: 1fr; }
   .cyl-ov-label.root, .cyl-ov-label.seg { display: none; }
   .cyl-readout { max-width: none; }
+  /* v96: Cylinder control row overflowed on mobile once item 90 added Fit/-/+ to the same
+     row as chromatic-order/auto-rotate/reset view. Stack into two rows instead: row 1 is
+     chromatic-order + auto-rotate, row 2 is the zoom group + reset view. No zoom logic here,
+     layout only. */
+  .cyl-controls { flex-direction: column; align-items: stretch; }
+  .cyl-controls-row { display: flex; gap: 8px; width: 100%; }
+  .cyl-controls-row > .cyl-btn { flex: 1 1 0; min-width: 0; }
+  .cyl-controls-row > .cyl-zoom-group { flex: 0 0 auto; }
 }
 </style>
 </head>
@@ -3379,17 +3391,21 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
         </div>
       </div>
       <div class="cyl-controls">
-        <select id="cyl-angle-mode" class="cyl-btn" title="How roots are arranged around the rim">
-          <option value="chromatic">chromatic order</option>
-          <option value="fifths">circle of fifths</option>
-        </select>
-        <button id="cyl-autorotate" class="cyl-btn" aria-pressed="false" title="Slowly spin the field">auto-rotate</button>
-        <div class="cyl-zoom-group" role="group" aria-label="Zoom">
-          <button id="cyl-zoom-out" class="cyl-btn cyl-zoom-btn" title="Zoom out">&minus;</button>
-          <button id="cyl-fit" class="cyl-btn" title="Restore default viewing distance (keeps current rotation and focus)">fit</button>
-          <button id="cyl-zoom-in" class="cyl-btn cyl-zoom-btn" title="Zoom in">+</button>
+        <div class="cyl-controls-row">
+          <select id="cyl-angle-mode" class="cyl-btn" title="How roots are arranged around the rim">
+            <option value="chromatic">chromatic order</option>
+            <option value="fifths">circle of fifths</option>
+          </select>
+          <button id="cyl-autorotate" class="cyl-btn" aria-pressed="false" title="Slowly spin the field">auto-rotate</button>
         </div>
-        <button id="cyl-reset" class="cyl-btn" title="Restore the complete default view (orientation, focus, and distance)">reset view</button>
+        <div class="cyl-controls-row">
+          <div class="cyl-zoom-group" role="group" aria-label="Zoom">
+            <button id="cyl-zoom-out" class="cyl-btn cyl-zoom-btn" title="Zoom out">&minus;</button>
+            <button id="cyl-fit" class="cyl-btn" title="Restore default viewing distance (keeps current rotation and focus)">fit</button>
+            <button id="cyl-zoom-in" class="cyl-btn cyl-zoom-btn" title="Zoom in">+</button>
+          </div>
+          <button id="cyl-reset" class="cyl-btn" title="Restore the complete default view (orientation, focus, and distance)">reset view</button>
+        </div>
       </div>
     </div>
 
@@ -3722,7 +3738,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v95";
+const APP_VERSION = "v96";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};

@@ -3687,7 +3687,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v91";
+const APP_VERSION = "v92";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -4292,6 +4292,32 @@ const instrumentDefs={
   piano:   {osc:{type:'triangle'},env:{attack:0.004,decay:0.35, sustain:0.05,release:1.0 }, vol:-9,  filterHz:null},
   strings: {osc:{type:'sawtooth'},env:{attack:0.4,  decay:0.2,  sustain:0.85,release:1.4 }, vol:-14, filterHz:2200}
 };
+// Shared audio-readiness gate. Every audition/playback path used to call the bare
+// Tone.start() and then immediately touch the synth/scheduler in the same tick, without
+// waiting for the returned promise. Tone.start() wraps AudioContext.resume(), and on iOS
+// Safari that resume can take long enough that anything scheduled before it actually
+// completes gets silently dropped (no error, just silence); desktop browsers usually
+// resume fast enough that the same race goes unnoticed. This is the single place that
+// race is closed: callers await/`.then()` ensureAudioReady() before building a synth node
+// or scheduling a note, instead of racing Tone.start() individually.
+// - Returns immediately (a resolved promise) once the context is already running, so this
+//   adds no delay on the very next audition after the first one.
+// - Concurrent callers share one in-flight startup attempt rather than each calling
+//   Tone.start() again (Tone.start() is idempotent, but sharing one promise keeps the
+//   "who resolves first" story simple and avoids relying on that idempotency).
+// - A rejected attempt clears the cached promise rather than leaving it permanently
+//   poisoned, so a later, genuine user gesture can retry from a clean state.
+let audioReadyPromise=null;
+function ensureAudioReady(){
+  if(Tone.context && Tone.context.state==='running') return Promise.resolve();
+  if(!audioReadyPromise){
+    audioReadyPromise=Tone.start().then(
+      ()=>{ audioReadyPromise=null; },
+      (err)=>{ audioReadyPromise=null; console.warn('Chord Space: audio context failed to start', err); }
+    );
+  }
+  return audioReadyPromise;
+}
 function ensureMasterLimiter(){
   // Stacked chord voices can sum past 0dB and clip at the output; a limiter on the
   // shared bus catches that regardless of instrument or chord density.
@@ -4321,7 +4347,7 @@ function setInstrument(name){
   ensureSynth();
 }
 function midiToNote(m){return Tone.Frequency(m,"midi").toNote();}
-function previewChord(ri,q){Tone.start();ensureSynth();const notes=intervalMap[q].map(iv=>midiToNote(60+ri+iv));synth.triggerAttackRelease(notes,"1n");}
+function previewChord(ri,q){ensureAudioReady().then(()=>{ensureSynth();const notes=intervalMap[q].map(iv=>midiToNote(60+ri+iv));synth.triggerAttackRelease(notes,"1n");});}
 // Shared click-to-audition pattern for every "suggested next chord" button (ranked
 // suggestions, quick-diatonic list, secondary dominants, borrowed chords — backlog
 // items: audition suggested chords / related chord function). First click previews the
@@ -7076,7 +7102,7 @@ function buildRoots(){
     if(i===currentRoot) cls+=' selected';
     b.className=cls;
     b.title=t.reason;
-    b.onclick=()=>{currentRoot=i;Tone.start();ensureSynth();synth.triggerAttackRelease([midiToNote(60+i)],"8n");buildRoots();renderDots();};
+    b.onclick=()=>{currentRoot=i;ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease([midiToNote(60+i)],"8n");});buildRoots();renderDots();};
     rootsWrap.appendChild(b);
   });
 }
@@ -7908,19 +7934,21 @@ function auditionTransition(seqIdxA,seqIdxB){
   stopAnalysisAudition();
   const v=window._voicings||[];
   const sA=seq[seqIdxA]; if(!sA) return;
-  Tone.start(); ensureSynth();
-  const notesA=(v[seqIdxA]||[]).map(midiToNote);
   const durA=chordDurSeconds(sA);
-  if(notesA.length) synth.triggerAttackRelease(notesA, durA);
-  flashAuditionGlow(seqIdxA);
-  if(seqIdxB==null) return;
-  analysisAuditionTimer=setTimeout(()=>{
-    analysisAuditionTimer=null;
-    const sB=seq[seqIdxB]; if(!sB) return;
-    const notesB=(v[seqIdxB]||[]).map(midiToNote);
-    if(notesB.length) synth.triggerAttackRelease(notesB, chordDurSeconds(sB));
-    flashAuditionGlow(seqIdxB);
-  }, Math.max(durA*1000, 150));
+  ensureAudioReady().then(()=>{
+    ensureSynth();
+    const notesA=(v[seqIdxA]||[]).map(midiToNote);
+    if(notesA.length) synth.triggerAttackRelease(notesA, durA);
+    flashAuditionGlow(seqIdxA);
+    if(seqIdxB==null) return;
+    analysisAuditionTimer=setTimeout(()=>{
+      analysisAuditionTimer=null;
+      const sB=seq[seqIdxB]; if(!sB) return;
+      const notesB=(v[seqIdxB]||[]).map(midiToNote);
+      if(notesB.length) synth.triggerAttackRelease(notesB, chordDurSeconds(sB));
+      flashAuditionGlow(seqIdxB);
+    }, Math.max(durA*1000, 150));
+  });
 }
 
 function renderAnalysisTab(){
@@ -8058,9 +8086,8 @@ function renderAnalysisTab(){
     const ci=parseInt(el.dataset.ci,10);
     const activate=()=>{
       stopAnalysisAudition();
-      Tone.start(); ensureSynth();
       const v=(window._voicings||[])[idx]||[];
-      if(v.length) synth.triggerAttackRelease(v.map(midiToNote),'2n');
+      ensureAudioReady().then(()=>{ ensureSynth(); if(v.length) synth.triggerAttackRelease(v.map(midiToNote),'2n'); });
       flashAuditionGlow(idx);
       analysisSelected={type:'chord', idx:ci};
       timelineWrap.querySelectorAll('.an-block.an-selected, .an-connector.an-selected').forEach(x=>x.classList.remove('an-selected'));
@@ -8899,13 +8926,13 @@ function startRhythmMove(ev,i,block){
     const x=(e.changedTouches?e.changedTouches[0].clientX:e.clientX);
     if(!crossed){
       // Never crossed the threshold: a tap (touch) or a click (mouse), not a move. Audition the
-      // chord instead of committing any position change — same call the Build-tab chord chip's
-      // own tap already uses (Tone.start/ensureSynth/triggerAttackRelease), for consistency.
+      // chord instead of committing any position change, same call the Build-tab chord chip's
+      // own tap already uses (ensureAudioReady/ensureSynth/triggerAttackRelease), for consistency.
       cleanup();
       rhythmMoveDrag=null;
       document.querySelectorAll('.rhythm-block.dragging').forEach(el=>el.classList.remove('dragging'));
       const v=(window._voicings||[])[i];
-      if(v){ Tone.start(); ensureSynth(); const d=chordDurSeconds(s); synth.triggerAttackRelease(v.map(midiToNote),d); }
+      if(v){ const d=chordDurSeconds(s); ensureAudioReady().then(()=>{ ensureSynth(); synth.triggerAttackRelease(v.map(midiToNote),d); }); }
       return;
     }
     if(!rhythmMoveDrag) return;
@@ -9283,8 +9310,7 @@ function renderLinesKeyboard(container,minM,maxM,rowPx,which){
     key.style.top=y+'px'; key.style.height=rowPx+'px';
     key.title=midiToNote(p);
     key.onclick=()=>{
-      Tone.start(); ensureLinesSynths();
-      linesSynthFor(which).triggerAttackRelease([midiToNote(p)],'8n');
+      ensureAudioReady().then(()=>{ ensureLinesSynths(); linesSynthFor(which).triggerAttackRelease([midiToNote(p)],'8n'); });
     };
     if(pc===0){
       const lbl=document.createElement('span');
@@ -9470,8 +9496,8 @@ function startLinesGroupMove(ev,grabbedTrack,grabbedId){
     });
     if(grabNote.pitch!==lastSoundedPitch){
       lastSoundedPitch=grabNote.pitch;
-      Tone.start(); ensureLinesSynths();
-      linesSynthFor(grabbedTrack).triggerAttackRelease([midiToNote(grabNote.pitch)],'16n');
+      const pitchToSound=grabNote.pitch; // captured now — the drag can move on before this resolves
+      ensureAudioReady().then(()=>{ ensureLinesSynths(); linesSynthFor(grabbedTrack).triggerAttackRelease([midiToNote(pitchToSound)],'16n'); });
     }
   };
   linesMoveDrag={track:grabbedTrack,id:grabbedId};
@@ -9611,8 +9637,7 @@ function placeLinesNoteFromClick(clientX,clientY,laneEl,trackName,minM,maxM,rowP
   const note={id:nextLinesNoteId(),pitch,startUnit:units,durUnits:DUR_UNITS['4n']};
   linesTrackArr(trackName).push(note);
   linesSelection=new Set([linesSelKey(trackName,note.id)]);
-  Tone.start(); ensureLinesSynths();
-  linesSynthFor(trackName).triggerAttackRelease([midiToNote(pitch)],'8n');
+  ensureAudioReady().then(()=>{ ensureLinesSynths(); linesSynthFor(trackName).triggerAttackRelease([midiToNote(pitch)],'8n'); });
   pushHistory();
   renderLinesRoll();
 }
@@ -10162,7 +10187,8 @@ function renderStrip(voicings){
     chip.appendChild(topRow);chip.appendChild(romanEl);
     chip.onclick=()=>{
       if(chip._longPressFired){ chip._longPressFired=false; return; } // long-press already handled this touch/click
-      Tone.start();ensureSynth();const d=chordDurSeconds(s);synth.triggerAttackRelease(voicings[i].map(midiToNote),d);
+      const d=chordDurSeconds(s);
+      ensureAudioReady().then(()=>{ ensureSynth(); synth.triggerAttackRelease(voicings[i].map(midiToNote),d); });
     };
     // Item 17 — long-press a chip to start playback from that chord, instead of only ever
     // being able to play from the top. A plain tap still does the existing single-chord
@@ -10347,7 +10373,7 @@ function renderBassPanel(voicings){
     if(isCT) cls+=' chord-tone';
     if(active) cls+=' selected';
     b.className=cls;
-    b.onclick=()=>{s.bass=active?null:pc;Tone.start();ensureSynth();if(!active)synth.triggerAttackRelease([midiToNote(48+pc)],"8n");renderAll();renderBassPanel(window._voicings);};
+    b.onclick=()=>{s.bass=active?null:pc;if(!active)ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease([midiToNote(48+pc)],"8n");});renderAll();renderBassPanel(window._voicings);};
     row.appendChild(b);
   });
   const clr=document.createElement('button');
@@ -10379,7 +10405,7 @@ function renderMelodyPanel(voicings){
     let cls='melody-btn-note chord-tone';
     if(active) cls+=' selected';
     b.className=cls;
-    b.onclick=()=>{s.melody=active?null:pc;Tone.start();ensureSynth();if(!active)synth.triggerAttackRelease([midiToNote(72+pc)],"8n");renderAll();renderMelodyPanel(window._voicings);};
+    b.onclick=()=>{s.melody=active?null:pc;if(!active)ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease([midiToNote(72+pc)],"8n");});renderAll();renderMelodyPanel(window._voicings);};
     row.appendChild(b);
   });
   const clr=document.createElement('button');
@@ -10459,11 +10485,10 @@ function buildInvOptionsRow(s, ch){
       s.inv=inv;
       s.invLocked=true; // any inversion click locks the bass, root (inv=0) included (item 30)
       if(mvSet){ s.manualVoicing=null; s.voicingSource=null; s.manualVoicingChordKey=null; } // clear notes AND provenance so the click has an immediate, audible effect
-      Tone.start();ensureSynth();
       // Audition the inverted chord (single chord, so the VL search never runs regardless)
       const tmpSeq=[{idx:s.idx,root:s.root,bass:null,inv:inv,invLocked:true}];
       const tmpV=computeVoicings(tmpSeq);
-      synth.triggerAttackRelease(tmpV[0].map(midiToNote),"2n");
+      ensureAudioReady().then(()=>{ ensureSynth(); synth.triggerAttackRelease(tmpV[0].map(midiToNote),"2n"); });
       renderAll();
     };
     row.appendChild(b);
@@ -10936,7 +10961,7 @@ function renderRoll(voicings){
         ? `Pivot chord — ${piv.roman} in ${keySpell(piv.keyRoot,piv.keyRoot,piv.keyMode)} ${piv.keyMode}, reads as ${rom} once the key changes here. Click to hear it and open the keyboard for this chord.`
         : 'Click to hear it and open the keyboard for this chord';
       r.appendChild(rt);
-      r.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
+      r.onclick=()=>{ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');});if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
       roll.appendChild(r);
     }
     if(!ultraDense){
@@ -10944,7 +10969,7 @@ function renderRoll(voicings){
       const nm=mk('text',{x:x,y:50,'text-anchor':'middle',fill:'var(--text-secondary)','font-family':'var(--font-body)','font-size':'11',class:'roll-head'+(kbActive?' kb-active':''),'data-chord-idx':i});
       nm.textContent=`${keySpell(s.root,kc.keyRoot,kc.keyMode)} ${ch.n}`;
       const nt=mk('title',{});nt.textContent='Click to hear it and open the keyboard for this chord';nm.appendChild(nt);
-      nm.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
+      nm.onclick=()=>{ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease(v.map(midiToNote),'2n');});if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
       roll.appendChild(nm);
     }
   });
@@ -11214,7 +11239,7 @@ function renderNotesRoll(voicings){
       lbl.textContent = romText;
     }
     lbl.title='Click to hear it and open the keyboard for this chord';
-    lbl.onclick=()=>{Tone.start();ensureSynth();synth.triggerAttackRelease((voicings[i]||[]).map(midiToNote),'2n');if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
+    lbl.onclick=()=>{ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease((voicings[i]||[]).map(midiToNote),'2n');});if(!kbActive)activeKeyboardIndex=i;renderAll();flashAuditionGlow(i);};
     labelInner.appendChild(lbl);
   });
 
@@ -11288,7 +11313,7 @@ function renderNotesRoll(voicings){
     bar.onclick=()=>{
       const i=seg.chordIdxs[0];
       const kbActive=effectiveKeyboardIndex()===i;
-      Tone.start();ensureSynth();synth.triggerAttackRelease((voicings[i]||[]).map(midiToNote),'2n');
+      ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease((voicings[i]||[]).map(midiToNote),'2n');});
       if(!kbActive)activeKeyboardIndex=i;
       renderAll();
       flashAuditionGlow(i); // same audition click as a label, so the same glow (item A)
@@ -11416,7 +11441,7 @@ function startRollDrag(ev,chordIdx,origNote,dotEl){
     s.manualVoicing=next;
     s.voicingSource=null; // item 53: a hand edit ends imported-source authority; this is now an ordinary manual voicing
     s.manualVoicingChordKey=chordIdentityKey(s); // item 100: authored against this exact chord identity, right now
-    Tone.start();ensureSynth();synth.triggerAttackRelease([midiToNote(snapped)],"8n");
+    ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease([midiToNote(snapped)],"8n");});
     renderAll();
   };
   document.addEventListener('mousemove',onMove);
@@ -11447,7 +11472,7 @@ function toggleKeyboardNote(chordIdx,n,computed){
   const idx=base.indexOf(n);
   let next;
   if(idx>=0){ next=base.slice(); next.splice(idx,1); }
-  else { next=base.concat([n]).sort((a,b)=>a-b); Tone.start();ensureSynth();synth.triggerAttackRelease([midiToNote(n)],"8n"); }
+  else { next=base.concat([n]).sort((a,b)=>a-b); ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease([midiToNote(n)],"8n");}); }
   s.manualVoicing=next.length?next:null;
   s.voicingSource=null; // item 53: a hand edit ends imported-source authority (also correct for the clear-to-null case)
   s.manualVoicingChordKey=next.length?chordIdentityKey(s):null; // item 100: stamp on a real edit, clear alongside a clear-to-null
@@ -11646,8 +11671,7 @@ function renderKeyboardPanel(voicings){
     // Preview can no longer disagree with them about a stale/rejected manual voicing.
     const toPlay=computed;
     if(!toPlay.length) return;
-    Tone.start();ensureSynth();
-    synth.triggerAttackRelease(toPlay.map(midiToNote),"2n");
+    ensureAudioReady().then(()=>{ensureSynth();synth.triggerAttackRelease(toPlay.map(midiToNote),"2n");});
   };
   const clearBtn=document.createElement('button');
   clearBtn.textContent='clear manual voicing';
@@ -12890,9 +12914,11 @@ function passingAuditionVoicings(c){
 }
 function auditionPassing(c){
   const trio=passingAuditionVoicings(c); if(!trio) return;
-  Tone.start(); ensureSynth();
-  const step=(60/bpm)*2, t0=Tone.now()+0.05; // each chord a half note: before, the passing chord, after
-  trio.forEach((notes,k)=>synth.triggerAttackRelease(notes.map(midiToNote),step*0.92,t0+k*step));
+  ensureAudioReady().then(()=>{
+    ensureSynth();
+    const step=(60/bpm)*2, t0=Tone.now()+0.05; // each chord a half note: before, the passing chord, after
+    trio.forEach((notes,k)=>synth.triggerAttackRelease(notes.map(midiToNote),step*0.92,t0+k*step));
+  });
 }
 function commitPassing(c){
   const idx=lib.findIndex(l=>l.n===c.quality); if(idx<0) return;
@@ -12963,17 +12989,18 @@ function hearParallelPreview(i, result){
   stopParallelHear();
   if(!result || !result.ok) return;
   const s=seq[i]; if(!s) return;
-  Tone.start(); ensureSynth();
   const dur=chordDurSeconds(s);
   const notesA=(result.sourceVoicing||[]).map(midiToNote);
-  if(notesA.length) synth.triggerAttackRelease(notesA,dur);
   const notesB=(result.entry.manualVoicing||[]).map(midiToNote);
-  if(!notesB.length) return;
-  parallelHearTimer=setTimeout(()=>{
-    parallelHearTimer=null;
-    Tone.start(); ensureSynth();
-    synth.triggerAttackRelease(notesB,dur);
-  }, Math.max(dur*1000,150));
+  ensureAudioReady().then(()=>{
+    ensureSynth();
+    if(notesA.length) synth.triggerAttackRelease(notesA,dur);
+    if(!notesB.length) return;
+    parallelHearTimer=setTimeout(()=>{
+      parallelHearTimer=null;
+      ensureAudioReady().then(()=>{ ensureSynth(); synth.triggerAttackRelease(notesB,dur); });
+    }, Math.max(dur*1000,150));
+  });
 }
 function ensureParallelPanel(){
   let p=document.getElementById('parallel-panel'); if(p) return p;
@@ -13115,7 +13142,18 @@ function wireBlankBarTools(){
 }
 
 
+// Shared request counter for the two Transport-driving entry points below (playProgression,
+// auditionScale). Both start from a Tone.Transport.start() that can now only happen after
+// ensureAudioReady() resolves, so a Stop (or a second Play, or an auditionScale) pressed
+// while that resolution is still pending must stop the FIRST request's continuation from
+// starting the Transport out from under whatever the user just did instead. stopPlayback()
+// bumps this counter every time it runs; each deferred continuation captures its own
+// generation right after calling stopPlayback() and checks it's still current before
+// touching the Transport. Whichever request resolves last while still current is the one
+// that actually plays; anything superseded in the meantime quietly does nothing.
+let transportRequestGen=0;
 function stopPlayback(){
+  transportRequestGen++; // invalidate any in-flight deferred Play/Scale-audition request
   Tone.Transport.stop();
   Tone.Transport.cancel();
   Tone.Transport.loop=false;
@@ -13132,30 +13170,33 @@ function stopPlayback(){
 // any chords are built. Uses interval offsets directly (not mod-12 pitch classes) so the
 // notes climb correctly regardless of which pitch class the root lands on.
 function auditionScale(){
-  Tone.start();
-  ensureSynth();
-  stopPlayback();
-  Tone.Transport.bpm.value=bpm;
-  isPlaying=true;
-  const degs=modeDegrees[keyMode]||modeDegrees.Ionian;
-  const tonicMidi=60+keyRoot;
-  const notes=degs.map(d=>tonicMidi+d.off).concat([tonicMidi+12]);
-  const spq=60/bpm;
-  const noteGap=spq*0.5; // eighth-note pace, independent of any chord's own duration setting
-  notes.forEach((m,idx)=>{
-    const t=idx*noteGap;
+  stopPlayback(); // stop whatever was playing immediately; doesn't need audio readiness
+  const myGen=++transportRequestGen;
+  ensureAudioReady().then(()=>{
+    if(myGen!==transportRequestGen) return; // superseded by a later Play/Stop/Scale request
+    ensureSynth();
+    Tone.Transport.bpm.value=bpm;
+    isPlaying=true;
+    const degs=modeDegrees[keyMode]||modeDegrees.Ionian;
+    const tonicMidi=60+keyRoot;
+    const notes=degs.map(d=>tonicMidi+d.off).concat([tonicMidi+12]);
+    const spq=60/bpm;
+    const noteGap=spq*0.5; // eighth-note pace, independent of any chord's own duration setting
+    notes.forEach((m,idx)=>{
+      const t=idx*noteGap;
+      Tone.Transport.schedule(time=>{
+        synth.triggerAttackRelease([midiToNote(m)],noteGap*0.9,time);
+      },t);
+    });
+    const cumTime=notes.length*noteGap;
     Tone.Transport.schedule(time=>{
-      synth.triggerAttackRelease([midiToNote(m)],noteGap*0.9,time);
-    },t);
+      if(!Tone.Transport.loop){
+        Tone.Draw.schedule(()=>{ isPlaying=false; },time);
+      }
+    },cumTime);
+    Tone.Transport.loop=false;
+    Tone.Transport.start();
   });
-  const cumTime=notes.length*noteGap;
-  Tone.Transport.schedule(time=>{
-    if(!Tone.Transport.loop){
-      Tone.Draw.schedule(()=>{ isPlaying=false; },time);
-    }
-  },cumTime);
-  Tone.Transport.loop=false;
-  Tone.Transport.start();
 }
 
 function clearPlaybackHighlights(){
@@ -13294,10 +13335,12 @@ function highlightChord(idx){
 function playProgression(startIndex){
   const wantStart = (typeof startIndex==='number' && startIndex>=0) ? startIndex : 0;
   if(!seq.length)return;
-  Tone.start();
+  stopPlayback(); // stop whatever was playing immediately; doesn't need audio readiness
+  const myGen=++transportRequestGen;
+  ensureAudioReady().then(()=>{
+  if(myGen!==transportRequestGen) return; // superseded by a later Play/Stop/Scale request
   ensureSynth();
   ensureLinesSynths();
-  stopPlayback();
   const v=window._voicings||[];
   if(!v.length)return;
 
@@ -13429,6 +13472,7 @@ function playProgression(startIndex){
   // through, then loop the whole thing" — the simplest of the two options raised when this
   // item was scoped, going with it as a default rather than adding a second loop mode.
   Tone.Transport.start("+0", startOffsetSec);
+  });
 }
 // --- Metronome ---------------------------------------------------------------------
 // A click on every quarter-note-equivalent beat, synced to whichever time signature is
@@ -13644,9 +13688,8 @@ function updateVoicingNote(){
   const instSel=document.getElementById('instrument-select');
   if(!instSel) return;
   instSel.onchange=function(){
-    Tone.start();
     setInstrument(this.value);
-    synth.triggerAttackRelease(["C4","E4","G4"],"4n");
+    ensureAudioReady().then(()=>{ synth.triggerAttackRelease(["C4","E4","G4"],"4n"); });
   };
 })();
 
@@ -14882,7 +14925,6 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   }
   function audition3DChord(d){
     try{
-      Tone.start(); ensureSynth();
       let seqIdx = (typeof d.seqIdx==='number') ? d.seqIdx : -1;
       if(seqIdx<0){
         const match=sceneData.progression.find(p=>p.root===d.root && p.libIdx===d.libIdx);
@@ -14890,7 +14932,10 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
       }
       const v=(seqIdx>=0 && window._voicings) ? window._voicings[seqIdx] : null;
       if(v && v.length){
-        synth.triggerAttackRelease(v.map(midiToNote),'1n');
+        ensureAudioReady().then(()=>{
+          try{ ensureSynth(); synth.triggerAttackRelease(v.map(midiToNote),'1n'); }
+          catch(e){ console.error('Cylinder Map: 3D audition failed',e); }
+        });
         if(readout) readout.textContent=`${d.chordName || d.label} · exact Voice Leading voicing: ${v.map(midiToNote).join(' · ')}`;
         return true;
       }

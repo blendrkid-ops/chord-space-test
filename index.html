@@ -4477,7 +4477,11 @@ function computeVoicings(seq, tendencyInfo){
     // NOT widened — see the design lock (item53) for why a provenance-blind widening was
     // rejected. Because the accepted voicing becomes `prev` either way, a computed chord
     // that follows an imported one voice-leads against the notes actually heard.
-    if(s.manualVoicing && (s.voicingSource==='import' || manualVoicingValid(s.manualVoicing, orderedPCs))){
+    // Item 100: dispatches to manualVoicingActive(), which adds a provenance-keyed carve-out
+    // (an intentionally incomplete hand-edited voicing, confirmed against this exact chord
+    // identity) alongside the same import and manualVoicingValid() checks this line used to
+    // inline directly — see manualVoicingActive's own comment for the full acceptance rule.
+    if(s.manualVoicing && manualVoicingActive(s, orderedPCs)){
       const mv=s.manualVoicing.slice().sort((a,b)=>a-b);
       vs.push(mv); prev=mv; caveats.push(cav); seedHome(mv,true); return;
     }
@@ -4818,6 +4822,41 @@ function manualVoicingValid(mv, pcs){
   if(have.size!==pcs.length) return false;
   for(const p of pcs){ if(!have.has(((p%12)+12)%12)) return false; }
   return true;
+}
+// --- Item 100: intentional-partial manual voicings ---------------------------------
+// manualVoicingValid() above is untouched (still the strict "covers every chord tone,
+// nothing foreign" check) — it stays the fallback for legacy data with no authorship
+// signal. These three functions add a provenance-aware acceptance path alongside it,
+// the same pattern Item 53 used for imports: a carve-out keyed on WHERE the data came
+// from, not a loosening of manualVoicingValid's own definition of "complete."
+//
+// idx+root fully determine the abstract chord-tone pitch-class set computeVoicings and
+// manualVoicingValid check (verified against computeVoicings: intervalMap[q] + s.root
+// is the only input to orderedPCs; inv only rotates which pc sits at the bottom, never
+// adds/removes a pc; secDom/borrowed/passing are display-only provenance, never consulted
+// by computeVoicings; s.bass adds an independent note AFTER the Level-3 manual-voicing
+// return, so it never participates in this check either way). idx+root is therefore
+// sufficient as the chord-identity key.
+function chordIdentityKey(s){ return s.idx+'|'+s.root; }
+// True when every note of mv belongs to some pitch class in pcs — no foreign tones —
+// WITHOUT requiring pcs to be fully covered. This is the "omitted 5th" case: a proper
+// subset of the chord's own tones is fine, a tone from outside the chord never is.
+function noForeignPitchClasses(mv, pcs){
+  if(!Array.isArray(mv) || !mv.length) return false;
+  const have=new Set(pcs.map(p=>((p%12)+12)%12));
+  return mv.every(n=>have.has(((n%12)+12)%12));
+}
+// Single authoritative answer to "is this chord's manual voicing active right now" —
+// called identically by computeVoicings (Level-3 dispatch, protected) and by every UI
+// site that reports active/stale status, so Preview, header audition, Transport, and
+// every badge/caveat/status line agree on the same chord. pcs must be the chord's own
+// pitch-class set (computeVoicings passes orderedPCs; UI call sites pass pcsOf(...)) —
+// same underlying set either way, per the chordIdentityKey comment above.
+function manualVoicingActive(s, pcs){
+  if(!Array.isArray(s.manualVoicing) || !s.manualVoicing.length) return false;
+  if(s.voicingSource==='import') return true; // Item 53, unchanged
+  if(s.manualVoicingChordKey===chordIdentityKey(s) && noForeignPitchClasses(s.manualVoicing, pcs)) return true;
+  return manualVoicingValid(s.manualVoicing, pcs); // legacy/no-signature fallback, byte-identical check
 }
 // Level-2 melody-pinned fill. Fixes the TOP voice to melodyPC (a chord tone, fork 2), picks its
 // octave by nearest-register smoothing against the previous chord's top, then Voice Range for the
@@ -7393,6 +7432,7 @@ function addChordAtInsertPoint(entry){
   if(!entry.hasOwnProperty('invLocked')) entry.invLocked=false; // item 30: new chords start unlocked
   if(!entry.hasOwnProperty('manualVoicing')) entry.manualVoicing=null;
   if(!entry.hasOwnProperty('voicingSource')) entry.voicingSource=null; // item 53: provenance defaults to none (ordinary chord)
+  if(!entry.hasOwnProperty('manualVoicingChordKey')) entry.manualVoicingChordKey=null; // item 100: no authorship confirmation yet
   // Item 18 revisit (Ricky's call): a brand-new chord's duration is decided below, once
   // its real position and real next-neighbor are known — applyDefaultChordDuration(idx)
   // does the actual choosing. wantsDurDefault just remembers whether the caller left dur
@@ -9890,11 +9930,13 @@ function renderStrip(voicings){
     // Item 53: an imported source voicing (s.voicingSource==='import') is active/overriding
     // exactly like a valid manual voicing — the notes are authoritative even when Chord
     // Space's own chord-quality match for the label is approximate — so it counts toward
-    // mvValid here too, mirroring the same OR the computeVoicings gate uses. It is never
-    // "stale": mvStale below is reachable only for an ordinary (non-import) manual voicing.
+    // mvValid here too. It is never "stale": mvStale below is reachable only for an
+    // ordinary (non-import) manual voicing. Item 100: mvValid is now manualVoicingActive() —
+    // the same composite predicate computeVoicings' playback dispatch uses — so this badge
+    // and Preview/header/Transport can never disagree about whether a voicing is active.
     const mvSet=Array.isArray(s.manualVoicing)&&s.manualVoicing.length>0;
     const mvImported=mvSet&&s.voicingSource==='import';
-    const mvValid=mvSet&&(mvImported||manualVoicingValid(s.manualVoicing,pcsOf(s.root,ch.n)));
+    const mvValid=manualVoicingActive(s,pcsOf(s.root,ch.n));
     const mvStale=mvSet&&!mvValid;
     const kc=keyContextAt(i);
     const rn=keySpell(s.root,kc.keyRoot,kc.keyMode);
@@ -10113,7 +10155,7 @@ function renderStrip(voicings){
   // doesn't count here — that's still surfaced per-chord via .mv-stale above.
   const mvDisclosure=document.getElementById('mv-shared-disclosure');
   if(mvDisclosure){
-    const hasValidMv=seq.some(s=>!isMarker(s)&&Array.isArray(s.manualVoicing)&&s.manualVoicing.length>0&&(s.voicingSource==='import'||manualVoicingValid(s.manualVoicing,pcsOf(s.root,lib[s.idx].n))));
+    const hasValidMv=seq.some(s=>!isMarker(s)&&manualVoicingActive(s,pcsOf(s.root,lib[s.idx].n)));
     mvDisclosure.hidden=!hasValidMv;
   }
   updateInsertNote();
@@ -10250,7 +10292,7 @@ function buildInvOptionsRow(s, ch){
     b.onclick=()=>{
       s.inv=inv;
       s.invLocked=true; // any inversion click locks the bass, root (inv=0) included (item 30)
-      if(mvSet){ s.manualVoicing=null; s.voicingSource=null; } // clear notes AND provenance so the click has an immediate, audible effect
+      if(mvSet){ s.manualVoicing=null; s.voicingSource=null; s.manualVoicingChordKey=null; } // clear notes AND provenance so the click has an immediate, audible effect
       Tone.start();ensureSynth();
       // Audition the inverted chord (single chord, so the VL search never runs regardless)
       const tmpSeq=[{idx:s.idx,root:s.root,bass:null,inv:inv,invLocked:true}];
@@ -10670,7 +10712,7 @@ function renderRoll(voicings){
     // voicing (never mv-stale) even when its pitch classes don't equal chordPcs — that
     // mismatch is expected when the label is approximate, not a fault of the voicing.
     const mvImported=mvSet&&s.voicingSource==='import';
-    const mvValid=mvSet&&(mvImported||manualVoicingValid(s.manualVoicing,chordPcs));
+    const mvValid=manualVoicingActive(s,chordPcs); // item 100: same composite predicate as playback
     const mvStale=mvSet&&!mvValid;
     let lastLabelY=-Infinity; // vertical-collision guard: skip a label too close to the previous one in this column
     v.slice().sort((a,b)=>a-b).forEach(n=>{
@@ -10694,7 +10736,7 @@ function renderRoll(voicings){
       if(!isForeignBass){
         c.addEventListener('mousedown',ev=>startRollDrag(ev,i,n,c));
         c.addEventListener('touchstart',ev=>startRollDrag(ev,i,n,c),{passive:false});
-        c.addEventListener('dblclick',()=>{ if(Array.isArray(s.manualVoicing)&&s.manualVoicing.length){ s.manualVoicing=null; s.voicingSource=null; renderAll(); } });
+        c.addEventListener('dblclick',()=>{ if(Array.isArray(s.manualVoicing)&&s.manualVoicing.length){ s.manualVoicing=null; s.voicingSource=null; s.manualVoicingChordKey=null; renderAll(); } });
       }
       const ny=y(n);
       if(!dense && ny-lastLabelY>=9){
@@ -11207,6 +11249,7 @@ function startRollDrag(ev,chordIdx,origNote,dotEl){
     next.sort((a,b)=>a-b);
     s.manualVoicing=next;
     s.voicingSource=null; // item 53: a hand edit ends imported-source authority; this is now an ordinary manual voicing
+    s.manualVoicingChordKey=chordIdentityKey(s); // item 100: authored against this exact chord identity, right now
     Tone.start();ensureSynth();synth.triggerAttackRelease([midiToNote(snapped)],"8n");
     renderAll();
   };
@@ -11241,6 +11284,7 @@ function toggleKeyboardNote(chordIdx,n,computed){
   else { next=base.concat([n]).sort((a,b)=>a-b); Tone.start();ensureSynth();synth.triggerAttackRelease([midiToNote(n)],"8n"); }
   s.manualVoicing=next.length?next:null;
   s.voicingSource=null; // item 53: a hand edit ends imported-source authority (also correct for the clear-to-null case)
+  s.manualVoicingChordKey=next.length?chordIdentityKey(s):null; // item 100: stamp on a real edit, clear alongside a clear-to-null
   renderAll();
 }
 // Manual Voicing keyboard — opened by clicking a chord's name above its column on the
@@ -11308,10 +11352,18 @@ function renderKeyboardPanel(voicings){
     status.className='voicing-status ok';
     status.textContent='Imported source · label approximate. This voicing is active now — edit a key to take manual control.';
   } else {
+    // Item 100: "active" here must match manualVoicingActive() — the same predicate
+    // computeVoicings' playback dispatch uses — so this status line never contradicts
+    // what Preview/header audition/Transport are actually sounding.
     const vmsg=voicingValidityMessage(s.manualVoicing,chordPcs,keyRoot,keyMode);
     if(vmsg&&vmsg.ok){
       status.className='voicing-status ok';
       status.textContent='✓ Valid — every chord tone is covered. This voicing is active now.';
+    } else if(manualVoicingActive(s,chordPcs)){
+      // Confirmed against this exact chord identity, no foreign tones — an intentional
+      // omission (e.g. leaving out the 5th), not staleness. Honored verbatim.
+      status.className='voicing-status ok';
+      status.textContent=`Intentionally partial — ${vmsg?vmsg.text:'incomplete'}. This voicing is active now.`;
     } else {
       status.className='voicing-status incomplete';
       status.textContent=`Not active — ${vmsg?vmsg.text:'incomplete'}. Falling back to the computed voicing until this is fixed.`;
@@ -11422,14 +11474,18 @@ function renderKeyboardPanel(voicings){
   const previewBtn=document.createElement('button');
   previewBtn.textContent='▸ preview voicing';
   previewBtn.onclick=()=>{
-    const toPlay=(Array.isArray(s.manualVoicing)&&s.manualVoicing.length)?s.manualVoicing:computed;
+    // Item 100 fix: route through `computed` (voicings[i], already resolved by
+    // computeVoicings/voicingsForSeq) instead of reading s.manualVoicing directly — this
+    // is the same value the Voice Leading header audition and Transport already play, so
+    // Preview can no longer disagree with them about a stale/rejected manual voicing.
+    const toPlay=computed;
     if(!toPlay.length) return;
     Tone.start();ensureSynth();
     synth.triggerAttackRelease(toPlay.map(midiToNote),"2n");
   };
   const clearBtn=document.createElement('button');
   clearBtn.textContent='clear manual voicing';
-  clearBtn.onclick=()=>{s.manualVoicing=null;s.voicingSource=null;renderAll();};
+  clearBtn.onclick=()=>{s.manualVoicing=null;s.voicingSource=null;s.manualVoicingChordKey=null;renderAll();};
   // No "close keyboard" button — the panel is always open (see renderKeyboardPanel's
   // fallback-to-first-chord logic above), so there's no longer a hidden state to close to.
   actions.appendChild(previewBtn);actions.appendChild(clearBtn);
@@ -13298,9 +13354,16 @@ function updateVoicingNote(){
 function saveState(){
   if(!seq.length){ alert('Nothing to save — add some chords first.'); return; }
   const state={
-    version:14, // .chordspace.json SAVE-SCHEMA version — independent of APP_VERSION above; do not conflate
+    version:15, // .chordspace.json SAVE-SCHEMA version — independent of APP_VERSION above; do not conflate
     // v14 (Block 3 Phase 1): chords store durUnits (integer grid units) instead of the dur
     // notation string; markers now carry their own startUnit. Old files migrate on load.
+    // v15 (item 100): adds an optional per-chord manualVoicingChordKey — the idx+root the
+    // manual voicing was last hand-edited against, letting an intentionally incomplete
+    // manual voicing (e.g. an omitted 5th) be honored without weakening stale detection.
+    // Absent/non-matching means "no authorship confirmation for the CURRENT chord" and
+    // falls through to the same strict manualVoicingValid() check as every prior version —
+    // never backfilled on load (Option A design lock): a file with no key, or a key that
+    // doesn't match the loaded chord's own idx/root, behaves exactly as pre-v15.
     sessionName, // v12: free-text session label; empty string = untitled, same as before this field existed
     keyRoot, keyMode, currentRoot, mode, bpm, globalDur,
     voicingStyle, voiceRange, maxSpread, preferCloseVL, craftVoiceLeading, loopEnabled, swingAmount,
@@ -13318,7 +13381,7 @@ function saveState(){
     // (identified by manualVoicing alone, exactly as before) or no manual voicing at all.
     seq: seq.map(s=> isMarker(s)
       ? ({marker:true, keyRoot:s.keyRoot, keyMode:s.keyMode, meter:s.meter?{num:s.meter.num,den:s.meter.den}:null, startUnit:s.startUnit??0})
-      : ({idx:s.idx, root:s.root, bass:s.bass??null, melody:s.melody??null, inv:s.inv??0, invLocked:!!s.invLocked, secDom:s.secDom??null, borrowed:s.borrowed??null, passing:s.passing??null, durUnits:s.durUnits??(DUR_UNITS[globalDur]||12), startUnit:s.startUnit??0, manualVoicing:Array.isArray(s.manualVoicing)&&s.manualVoicing.length?s.manualVoicing.slice():null, voicingSource:(s.voicingSource==='import')?'import':null})),
+      : ({idx:s.idx, root:s.root, bass:s.bass??null, melody:s.melody??null, inv:s.inv??0, invLocked:!!s.invLocked, secDom:s.secDom??null, borrowed:s.borrowed??null, passing:s.passing??null, durUnits:s.durUnits??(DUR_UNITS[globalDur]||12), startUnit:s.startUnit??0, manualVoicing:Array.isArray(s.manualVoicing)&&s.manualVoicing.length?s.manualVoicing.slice():null, voicingSource:(s.voicingSource==='import')?'import':null, manualVoicingChordKey:(typeof s.manualVoicingChordKey==='string'&&Array.isArray(s.manualVoicing)&&s.manualVoicing.length)?s.manualVoicingChordKey:null})),
     // v11: Lines (melody/bass counterpoint) tracks — independent absolute-position note
     // arrays, entirely separate from each chord's own melody/bass pick above.
     melodyTrack: melodyTrack.map(n=>({id:n.id,pitch:n.pitch,startUnit:n.startUnit,durUnits:n.durUnits})),
@@ -13480,7 +13543,17 @@ function loadState(file){
         // Same safe-default pattern as every prior version bump: a v12-or-earlier file, or
         // any file with no manualVoicing notes, carries no provenance and loads as null,
         // which is exactly today's/pre-item-53 behavior (ordinary manual voicing, or none).
-        voicingSource:(s.voicingSource==='import' && Array.isArray(s.manualVoicing) && s.manualVoicing.length) ? 'import' : null
+        voicingSource:(s.voicingSource==='import' && Array.isArray(s.manualVoicing) && s.manualVoicing.length) ? 'import' : null,
+        // manualVoicingChordKey (v15+, item 100). Option A design lock: a v14-or-earlier file,
+        // or any file with the field absent/malformed, loads as null — NOT backfilled from
+        // the chord's own idx/root just because a manualVoicing is present. That absence
+        // means "no authorship confirmation," so an incomplete legacy manual voicing falls
+        // through to the existing strict manualVoicingValid() check exactly as it did before
+        // this feature existed; only an actual hand-edit (Voicing Editor) stamps a fresh key.
+        // Extra defensive check: even a present string is kept only when it already matches
+        // THIS entry's own idx/root — a key that names a different chord is meaningless and
+        // is loaded as null rather than carried forward inert.
+        manualVoicingChordKey:(typeof s.manualVoicingChordKey==='string' && s.manualVoicingChordKey===(s.idx+'|'+s.root)) ? s.manualVoicingChordKey : null
       }));
       // v9 compatibility: that version stored a RELATIVE `restBefore` (silence before a
       // chord, relative to wherever the previous chord happened to end) rather than an
@@ -14209,6 +14282,9 @@ function commitMidiImport(){
     // for every matched cluster in deriveImportPreview, not only exact matches.
     manualVoicing:(Array.isArray(e.rawNotes) && e.rawNotes.length) ? e.rawNotes.slice() : null,
     voicingSource:(Array.isArray(e.rawNotes) && e.rawNotes.length) ? 'import' : null,
+    // item 100: import provenance is carried by voicingSource alone, never by chord-identity
+    // authorship — explicitly null so no stale key can ever be read for an imported chord.
+    manualVoicingChordKey:null,
     secDom:null, borrowed:null, durUnits:(DUR_UNITS[e.dur]||12), startUnit:0
   }));
   // Real grid position — each chord's start is now the CUMULATIVE SUM of the real detected

@@ -898,6 +898,32 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   color: #fff;
 }
 .chord-card-buttons button:disabled, .chord-card-buttons button.overridden { opacity: .35; }
+/* Desktop-only density pass toward the ~150px chord-card target. Mobile is untouched:
+   this block only applies at min-width 761px, the complement of the app's existing
+   max-width 760px mobile breakpoint, so nothing here can affect phone layout or touch
+   targets. Resting-state values only shrink padding/gaps/margins, never font sizes.
+   Active-state override below: bass/melody/inv/revise each carry their own larger
+   .active padding (from their standalone, non-card usage elsewhere), which has higher
+   specificity than the compact resting rule above and would otherwise make a button
+   visibly grow, shift the card width, or force a new wrap the moment it's clicked.
+   The values here (1px 4px) are chosen so each button's OUTER box stays identical to
+   its compact resting size even though its border grows from 1px to 2px on activation;
+   only padding changes, the existing active border width and color are left alone.
+   para needs no equivalent rule: it has no dedicated CSS class of its own, so its
+   active state is governed only by the shared button.active rule above, which never
+   touches padding or border width. */
+@media (min-width: 761px) {
+  .chord-card { min-width: 150px; max-width: 176px; padding: 6px 8px; }
+  .chord-card-top { gap: 5px; }
+  .chord-card-buttons { gap: 2px; margin-top: 2px; }
+  .chord-card-buttons button { padding: 2px 5px; line-height: 1.2; }
+  .chord-card-dur-row { gap: 5px; margin-top: 5px; }
+  .chip-dur { padding: 2px 5px; }
+  .chord-card-buttons button.bass-btn.active,
+  .chord-card-buttons button.melody-btn.active,
+  .chord-card-buttons button.inv-btn.active,
+  .chord-card-buttons button.revise-btn.active { padding: 1px 4px; }
+}
 /* Badges: borrowed/passing/voicing-status, previously each their own
    full-width row (borrow-chip-tag, passing-chip-tag) or, for voicing, a
    pill sharing the button row, then briefly an overlay hanging off the card's corner.
@@ -2782,6 +2808,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .cyl-btn:hover { background: var(--surface-1); border-color: var(--border-strong); color: var(--text-primary); }
 .cyl-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #1a1408; }
+/* item 90: touch-friendly zoom controls, grouped with the same .cyl-btn language as the rest
+   of the Cylinder header so they read as one control row rather than a new pattern. */
+.cyl-zoom-group { display: flex; gap: 4px; }
+.cyl-zoom-btn { min-width: 40px; min-height: 40px; padding: 8px 10px; text-align: center; font-size: 15px; }
 select.cyl-btn { -webkit-appearance: none; appearance: none; }
 select.cyl-btn option { background: var(--surface-2); color: var(--text-primary); }
 /* v78: Key + Mode pulldowns in the Cylinder header (replace the old static "C Ionian" text).
@@ -3354,7 +3384,12 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
           <option value="fifths">circle of fifths</option>
         </select>
         <button id="cyl-autorotate" class="cyl-btn" aria-pressed="false" title="Slowly spin the field">auto-rotate</button>
-        <button id="cyl-reset" class="cyl-btn" title="Return to the front view">reset view</button>
+        <div class="cyl-zoom-group" role="group" aria-label="Zoom">
+          <button id="cyl-zoom-out" class="cyl-btn cyl-zoom-btn" title="Zoom out">&minus;</button>
+          <button id="cyl-fit" class="cyl-btn" title="Restore default viewing distance (keeps current rotation and focus)">fit</button>
+          <button id="cyl-zoom-in" class="cyl-btn cyl-zoom-btn" title="Zoom in">+</button>
+        </div>
+        <button id="cyl-reset" class="cyl-btn" title="Restore the complete default view (orientation, focus, and distance)">reset view</button>
       </div>
     </div>
 
@@ -3687,7 +3722,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v92";
+const APP_VERSION = "v95";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -13073,7 +13108,14 @@ function refreshParallelPanel(){
     const destLabel=keySpell(result.entry.root,kc.keyRoot,kc.keyMode)+(qualitySymbol[lib[result.entry.idx].n]||lib[result.entry.idx].n);
     readout.textContent=`to ${destLabel}`;
     readout.classList.remove('bb-where-empty');
-    reasonEl.hidden=true;
+    // The active mode (always Exact here, since Diatonic never stays selected while the gate
+    // is closed) is working fine, but a disabled Diatonic button's own title tooltip doesn't
+    // reliably show on hover, Chrome and Safari suppress hover/title on disabled controls
+    // entirely, since they never receive the pointer event that would trigger it. Surfacing
+    // the same gate.reason here, as plain visible text, is what actually gets it in front of
+    // the person: the alternative-unavailable case, not just the current-mode-failed case.
+    if(!gate.ok){ reasonEl.hidden=false; reasonEl.textContent=gate.reason||'Diatonic is not available for this chord.'; }
+    else reasonEl.hidden=true;
     hearBtn.disabled=false; addBtn.disabled=false;
   } else {
     readout.textContent='';
@@ -15564,6 +15606,19 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   if(arBtn) arBtn.addEventListener('click',function(){ autoRotate=!autoRotate; this.setAttribute('aria-pressed',autoRotate?'true':'false'); });
   const resetBtn=document.getElementById('cyl-reset');
   if(resetBtn) resetBtn.addEventListener('click',()=>{ clearSelection(); target={az:DEF_AZ,el:DEF_EL,dist:DEF_DIST,fx:0,fy:0,fz:0}; });
+  // item 90: Fit / − / + reuse camDist, the same zoom authority the desktop wheel handler uses,
+  // with the same [2.2,7] clamp. +/− nudge camDist directly (matching the wheel's immediacy,
+  // not an eased tween) and cancel any in-flight target so a zoom tap can't fight a camera move.
+  // Fit is distance-only: it goes through the existing target-easing mechanism but seeds az/el/
+  // focus from their CURRENT values, so rotation and focus are preserved, unlike "reset view",
+  // which seeds the full default state. Item 33's activePointerId logic is untouched by any of this.
+  const ZOOM_STEP=0.5, ZOOM_MIN=2.2, ZOOM_MAX=7;
+  const zoomOutBtn=document.getElementById('cyl-zoom-out');
+  if(zoomOutBtn) zoomOutBtn.addEventListener('click',()=>{ camDist=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,camDist+ZOOM_STEP)); target=null; });
+  const zoomInBtn=document.getElementById('cyl-zoom-in');
+  if(zoomInBtn) zoomInBtn.addEventListener('click',()=>{ camDist=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,camDist-ZOOM_STEP)); target=null; });
+  const fitBtn=document.getElementById('cyl-fit');
+  if(fitBtn) fitBtn.addEventListener('click',()=>{ target={az,el,dist:DEF_DIST,fx:focus.x,fy:focus.y,fz:focus.z}; });
   window.addEventListener('resize',()=>{ if(running) resize(); });
 
   // --- public hooks (guarded calls from the main script) ---

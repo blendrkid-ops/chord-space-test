@@ -3687,7 +3687,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v90";
+const APP_VERSION = "v91";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -6391,6 +6391,10 @@ ${adChordTableHtml(D)}
 //               inversion click releases it back to Auto.
 // Ricky clears this before his own final save, per standing delivery rule.
 let currentRoot=0,keyRoot=0,keyMode="Ionian",mode="functional",activeBassIndex=null,insertAt=null,activeInvIndex=null,activeMelodyIndex=null,borrowMode=null,activeKeyboardIndex=null,reviseAt=null;
+// Item 101 (Parallel Harmony / Planing): which chord's "para" popover is open (or pending),
+// its mode, and its signed step. Reset to sensible defaults every time the popover opens on
+// a chord (see toggleParallelPanel); these persist only while it stays open on that chord.
+let parallelPanelSourceIndex=null,parallelPanelMode='exact',parallelPanelStep=1,parallelHearTimer=null;
 // Session name (added for export continuity): a free-text label the user can set for the
 // current sketch. Purely cosmetic — carries into the .chordspace.json save, the MIDI
 // filename + conductor track name, and the theory export doc/filename. Empty string means
@@ -6457,7 +6461,18 @@ let seq=[
   // "Remove empty bar" works on this chord as loaded, and "Insert blank bar" works anywhere. The
   // G4 melody note and C2 bass note added to the Lines tracks below start at 288 too, so
   // "Move melody/bass too" has something to carry. Nothing else in the demo moved.
-  {idx:9,  root:0, startUnit:288, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Cm(maj7) — i, final resolution, one blank bar after the Fmaj7
+  {idx:9,  root:0, startUnit:288, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cm(maj7) — i, final resolution, one blank bar after the Fmaj7
+  // Item 101 demo (v91): appended, nothing above touched. Back to C Ionian per standing
+  // practice (every pre-loaded demo parks in C Ionian unless a mode-specific feature
+  // genuinely needs otherwise); Parallel itself isn't mode-specific. Two plain native-
+  // diatonic chords so planing either one is one click away: open the new "para" button on
+  // Cmaj7 (I): Diatonic +1 lands on Dm7 (ii), Exact +1 lands on Dbmaj7 (borrowed/chromatic
+  // here), or on Am7 (vi) the same way. Neither chord is pre-planed; the demo just parks the
+  // cursor somewhere the feature is immediately reachable, exactly as it would be on any
+  // native-diatonic chord in any progression.
+  {marker:true, keyRoot:0, keyMode:'Ionian', meter:null},
+  {idx:4,  root:0, startUnit:300, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cmaj7 (I), native diatonic: try "para" here
+  {idx:6,  root:9, startUnit:312, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Am7   (vi), native diatonic: try "para" here too
 ];
 // Whole-progression register bias, in octaves (each unit = ±12 semitones). Applied as a
 // post-process in voicingsForSeq() — never touches computeVoicings (protected) or the
@@ -7509,6 +7524,140 @@ function addChordAtInsertPoint(entry){
   activeKeyboardIndex=null;
   renderAll();
 }
+
+// --- Item 101: Parallel Harmony / Planing (Phase 1) -------------------------------------
+// Constructs one new chord by planing the chord it is invoked on, in two modes, both
+// producing an AUDIBLE pinned parallel voicing. See design lock
+// claude/design_lock_item101_parallel_harmony_planing_phase1.md for the full spec. Every
+// function below is new and unprotected; none of the 11 protected functions are touched.
+// The load-bearing idea: read the SOURCE chord's already-computed realized voicing
+// (voicings[sourceIndex] from window._voicings), transform every note, and PIN the result
+// as the new chord's manualVoicing with manualVoicingChordKey stamped (item 100's own
+// mechanism), so computeVoicings honors it verbatim via the existing manualVoicingActive
+// path and the parallel motion is heard exactly rather than re-smoothed away.
+
+// Pure scale-rung transform, deliberately free of any seq/lib dependency so it can be
+// exercised directly by the validation harness. scaleOffsets is the 7 unmodded semitone
+// offsets from the tonic (kr), strictly increasing, scaleOffsets[0]===0, the "ladder of
+// rungs" the design lock describes: rung ordinal = octaveNumber*7 + degreeIndexWithinScale.
+// Shifting a note by K rungs preserves octave contour by construction. If a note cannot be
+// located exactly on a rung (not a semitone-for-semitone match to kr+scaleOffsets[j] for
+// any j, at any octave), this is an INVARIANT FAILURE per the approved design lock: it does
+// not snap or approximate. It refuses, returning {ok:false, note}. The native-diatonic gate
+// (parallelDiatonicGate below) is what guarantees this never fires for a genuinely allowed
+// source; this function itself makes no such assumption.
+function diatonicRungShift(scaleOffsets, kr, K, notes){
+  const midiToRung=(midi)=>{
+    const pc=((midi%12)+12)%12;
+    const target=((pc-kr)%12+12)%12;
+    const j=scaleOffsets.indexOf(target);
+    if(j<0) return null;
+    const octave=(midi-kr-scaleOffsets[j])/12;
+    if(!Number.isInteger(octave)) return null;
+    return octave*7+j;
+  };
+  const rungToMidi=(rung)=>{
+    const octave=Math.floor(rung/7);
+    const j=((rung%7)+7)%7;
+    return kr+12*octave+scaleOffsets[j];
+  };
+  const out=[];
+  for(const n of notes){
+    const r=midiToRung(n);
+    if(r===null) return {ok:false, note:n};
+    out.push(rungToMidi(r+K));
+  }
+  return {ok:true, notes:out};
+}
+// Whether Diatonic planing is offered for the chord at seq index i: native-diatonic sources
+// only (root AND quality both native, via the existing nativeDegreeByFunction against
+// diatonicChords(keyContextAt(i)), the same authority borrowedStatusAt/the chip's own
+// native-first display logic already use). Passing, secondary-dominant, borrowed and
+// chromatic sources all get Exact only, each with its own stated reason surfaced in the
+// popover. Returns {ok, reason, ds, dm}; ds/dm are only meaningful when ok is true (ds is
+// the mode's 7 diatonicChords() entries, dm is the matched entry, both reused by
+// parallelChord so the label and the transform can never disagree about the source degree).
+function parallelDiatonicGate(i){
+  const s=seq[i];
+  if(!s || isMarker(s)) return {ok:false, reason:'', ds:null, dm:null};
+  if(s.passing){
+    return {ok:false, reason:'This chord was added as a passing chord, a connective step, not a diatonic function here. Use Exact.', ds:null, dm:null};
+  }
+  const ch=lib[s.idx];
+  const kc=keyContextAt(i);
+  const ds=diatonicChords(kc.keyRoot,kc.keyMode);
+  const dm=nativeDegreeByFunction(s.root,ch.n,ds);
+  if(dm) return {ok:true, reason:null, ds, dm};
+  const sd=secDomStatusAt(i);
+  if(sd.isSecDom){
+    return {ok:false, reason:'This is a secondary dominant, not a native diatonic chord here. Diatonic would lose the tonicization. Use Exact.', ds:null, dm:null};
+  }
+  return {ok:false, reason:'This chord is borrowed or chromatic here, not native to the key. Use Exact.', ds:null, dm:null};
+}
+// Builds the planed chord entry for seq index i, without inserting it. mode is 'exact' or
+// 'diatonic'; step is a signed integer (semitones for Exact, scale degrees for Diatonic).
+// Returns {ok:true, entry, sourceVoicing, previewVoicing} or {ok:false, error, invariantFailure?}.
+// entry is ready to hand to addChordAtInsertPoint as-is. Never mutates seq, voicings, or any
+// panel/UI state, purely a builder, exactly like passingAuditionVoicings/commitPassing keep
+// preview and commit as two separate steps.
+function parallelChord(i, mode, step){
+  const s=seq[i];
+  if(!s || isMarker(s)) return {ok:false, error:'No source chord to plane.'};
+  const voicings=window._voicings||[];
+  const srcVoicing=voicings[i];
+  if(!Array.isArray(srcVoicing) || !srcVoicing.length) return {ok:false, error:'No realized voicing available for this chord yet.'};
+  const ch=lib[s.idx];
+  let newIdx, newRoot, newVoicing;
+  if(mode==='exact'){
+    const N=step|0;
+    newIdx=s.idx;
+    newRoot=((s.root+N)%12+12)%12;
+    newVoicing=srcVoicing.map(n=>n+N);
+  } else if(mode==='diatonic'){
+    const gate=parallelDiatonicGate(i);
+    if(!gate.ok) return {ok:false, error:gate.reason||'Diatonic is not available for this chord.'};
+    const {ds,dm}=gate;
+    const kc=keyContextAt(i);
+    const kr=kc.keyRoot;
+    const scaleOffsets=ds.map(d=>((d.root-kr)%12+12)%12);
+    const sourceDegreeIndex=ds.indexOf(dm);
+    if(sourceDegreeIndex<0) return {ok:false, error:'Could not resolve this chord’s scale degree.'};
+    const K=step|0;
+    const shifted=diatonicRungShift(scaleOffsets,kr,K,srcVoicing);
+    if(!shifted.ok){
+      return {ok:false, error:'A note in this chord’s voicing does not land exactly on a scale degree, so this refuses rather than approximating.', invariantFailure:true, note:shifted.note};
+    }
+    newVoicing=shifted.notes;
+    const destDegreeIndex=(((sourceDegreeIndex+K)%7)+7)%7;
+    const destDeg=ds[destDegreeIndex];
+    const li=lib.findIndex(l=>l.n===destDeg.quality);
+    if(li<0) return {ok:false, error:'Destination quality not found.'};
+    newRoot=destDeg.root;
+    newIdx=li;
+  } else {
+    return {ok:false, error:'Unknown mode.'};
+  }
+  const entry={
+    idx:newIdx, root:newRoot, bass:null, inv:0, invLocked:false,
+    secDom:null, borrowed:null, passing:null,
+    manualVoicing:newVoicing.slice(),
+    voicingSource:null
+  };
+  entry.manualVoicingChordKey=chordIdentityKey(entry); // item 100: stamped so it is honored verbatim, no re-edit needed
+  return {ok:true, entry, sourceVoicing:srcVoicing, previewVoicing:newVoicing};
+}
+// Commits a planed chord built by parallelChord, inserting it immediately AFTER the source
+// via the existing addChordAtInsertPoint path (same insert, ripple, and duration-defaulting
+// behavior as any inserted chord. Phase 1 offers no Before/After choice, insert-after-source
+// only). Mirrors commitPassing's own pattern: close the panel first, then insert.
+function commitParallelChord(i, mode, step){
+  const result=parallelChord(i, mode, step);
+  if(!result.ok) return result;
+  insertAt=i+1;
+  reviseAt=null;
+  addChordAtInsertPoint(result.entry);
+  return {ok:true};
+}
 // Insert a key-change marker at the pending insert point (or at the end). It seeds with
 // the key context active at that position, so "add key change" then "pick a new key" is
 // the natural flow — the marker starts as a no-op copy of the current region until edited.
@@ -7547,6 +7696,10 @@ function deleteChord(i){
   else if(activeMelodyIndex!==null && activeMelodyIndex>i) activeMelodyIndex--;
   if(activeKeyboardIndex===i) activeKeyboardIndex=null;
   else if(activeKeyboardIndex!==null && activeKeyboardIndex>i) activeKeyboardIndex--;
+  // Item 101: keep an open/pending Parallel popover pointed at the right chord after a delete
+  // shifts indices, same bookkeeping as the four active-panel indices just above.
+  if(parallelPanelSourceIndex===i){ parallelPanelSourceIndex=null; if(typeof floatIsOpen==='function' && floatIsOpen('parallel')) closeFloatPanel(); }
+  else if(parallelPanelSourceIndex!==null && parallelPanelSourceIndex>i) parallelPanelSourceIndex--;
   insertAt=null;reviseAt=null;
   renderAll();
 }
@@ -10098,7 +10251,16 @@ function renderStrip(voicings){
     reviseBtn.className='revise-btn'+(isReviseActive?' active':'');
     reviseBtn.title=isReviseActive?'Cancel revise':'Revise this chord — pick a replacement on the map';
     reviseBtn.onclick=()=>setReviseAt(i);
-    btnRow.appendChild(bassBtn);btnRow.appendChild(melodyBtn);btnRow.appendChild(invBtn);btnRow.appendChild(reviseBtn);
+    // Item 101: Parallel Harmony / Planing, per-chip button opening an anchored popover.
+    // Never disabled by mvValid: Parallel reads whatever voicing is currently sounding
+    // (manual or computed) and transforms it, so a manual/imported source voicing on THIS
+    // chord is exactly what gets planed, not something it conflicts with.
+    const paraBtn=document.createElement('button');
+    paraBtn.textContent='para';
+    paraBtn.className='para-btn'+(floatIsOpen('parallel')&&parallelPanelSourceIndex===i?' active':'');
+    paraBtn.title='Plane this chord: build a parallel copy at another pitch or scale degree, voice-led from this one.';
+    paraBtn.onclick=(e)=>{ e.stopPropagation(); toggleParallelPanel(paraBtn,i); };
+    btnRow.appendChild(bassBtn);btnRow.appendChild(melodyBtn);btnRow.appendChild(invBtn);btnRow.appendChild(reviseBtn);btnRow.appendChild(paraBtn);
     chip.appendChild(btnRow);
     if(mvSet){
       // See .chip-badges' own comment (CSS) for why these small badges — borrowed,
@@ -10159,6 +10321,10 @@ function renderStrip(voicings){
     mvDisclosure.hidden=!hasValidMv;
   }
   updateInsertNote();
+  // Item 101: keep an open Parallel popover in step with the fresh voicings/seq this render
+  // just produced (self-closes via refreshParallelPanel's own guard if its source chord is
+  // gone or became a marker).
+  if(typeof floatIsOpen==='function' && floatIsOpen('parallel')) refreshParallelPanel();
 }
 
 function renderBassPanel(voicings){
@@ -12774,6 +12940,140 @@ function togglePassingPanel(trigger){
   if(floatCur) closeFloatPanel();
   fillPassingPanel();
   openFloatPanel('passing',ensurePassingPanel(),trigger,null);
+}
+// --- Item 101: Parallel Harmony / Planing panel. Reuses the .bb-panel floating-panel
+// pattern verbatim (same CSS, same one-open-at-a-time/outside-click/Escape/bottom-sheet
+// behavior as Blank bars and Passing chords) rather than inventing a new popover mechanism.
+function clampParallelStep(mode,v){
+  return mode==='exact' ? Math.max(-12,Math.min(12,v)) : Math.max(-6,Math.min(6,v));
+}
+function computeParallelPreview(){
+  if(parallelPanelSourceIndex===null) return {ok:false, error:''};
+  return parallelChord(parallelPanelSourceIndex, parallelPanelMode, parallelPanelStep);
+}
+// Stops a pending second chord of a Hear preview (mirrors stopAnalysisAudition, a separate
+// timer, deliberately, so a Parallel preview can never collide with or get cancelled by the
+// Full Theory connector audition or vice versa).
+function stopParallelHear(){ if(parallelHearTimer){ clearTimeout(parallelHearTimer); parallelHearTimer=null; } }
+// Hear button: audition the SOURCE voicing then the PLANED voicing back to back, via the
+// same synth/triggerAttackRelease + plain-setTimeout short-delay pattern auditionTransition
+// already uses, no new audio path. The planed chord isn't in seq yet, so this sequences two
+// raw note arrays directly rather than two seq indices.
+function hearParallelPreview(i, result){
+  stopParallelHear();
+  if(!result || !result.ok) return;
+  const s=seq[i]; if(!s) return;
+  Tone.start(); ensureSynth();
+  const dur=chordDurSeconds(s);
+  const notesA=(result.sourceVoicing||[]).map(midiToNote);
+  if(notesA.length) synth.triggerAttackRelease(notesA,dur);
+  const notesB=(result.entry.manualVoicing||[]).map(midiToNote);
+  if(!notesB.length) return;
+  parallelHearTimer=setTimeout(()=>{
+    parallelHearTimer=null;
+    Tone.start(); ensureSynth();
+    synth.triggerAttackRelease(notesB,dur);
+  }, Math.max(dur*1000,150));
+}
+function ensureParallelPanel(){
+  let p=document.getElementById('parallel-panel'); if(p) return p;
+  const el=floatMake;
+  p=el('div','bb-panel parallel-panel'); p.id='parallel-panel'; p.hidden=true;
+  p.setAttribute('role','dialog'); p.setAttribute('aria-label','Parallel harmony');
+  p.appendChild(floatCloseButton());
+  p.appendChild(el('div','bb-lbl parallel-title'));
+  const modeField=el('div','bb-field');
+  modeField.appendChild(el('div','bb-lbl','Mode'));
+  const modeSide=el('div','bb-side'); modeSide.setAttribute('role','group'); modeSide.setAttribute('aria-label','Exact or Diatonic');
+  ['exact','diatonic'].forEach(m=>{
+    const b=el('button','bb-side-btn',m==='exact'?'Exact':'Diatonic'); b.type='button'; b.dataset.mode=m;
+    b.onclick=()=>{ if(b.disabled) return; parallelPanelMode=m; parallelPanelStep=1; refreshParallelPanel(); };
+    modeSide.appendChild(b);
+  });
+  modeField.appendChild(modeSide);
+  p.appendChild(modeField);
+  const stepField=el('div','bb-field');
+  stepField.appendChild(el('div','bb-lbl','Step'));
+  const step=el('span','bb-stepper');
+  const dec=el('button','bb-step-btn bb-dec','−'); dec.type='button'; dec.title='Step down one';
+  const cnt=el('span','bb-count');
+  const inc=el('button','bb-step-btn bb-inc','+'); inc.type='button'; inc.title='Step up one';
+  dec.onclick=()=>{ parallelPanelStep=clampParallelStep(parallelPanelMode,parallelPanelStep-1); refreshParallelPanel(); };
+  inc.onclick=()=>{ parallelPanelStep=clampParallelStep(parallelPanelMode,parallelPanelStep+1); refreshParallelPanel(); };
+  step.appendChild(dec); step.appendChild(cnt); step.appendChild(inc);
+  stepField.appendChild(step);
+  p.appendChild(stepField);
+  p.appendChild(el('div','bb-where parallel-readout'));
+  const reason=el('div','bb-panel-note parallel-reason'); reason.hidden=true;
+  p.appendChild(reason);
+  const acts=el('div','bb-actions');
+  const hear=el('button','bb-btn parallel-hear'); hear.type='button'; hear.textContent='Hear';
+  hear.onclick=()=>{ hearParallelPreview(parallelPanelSourceIndex, computeParallelPreview()); };
+  const add=el('button','bb-btn parallel-add'); add.type='button'; add.textContent='Add';
+  add.onclick=()=>{ commitParallelFromPanel(); };
+  acts.appendChild(hear); acts.appendChild(add);
+  p.appendChild(acts);
+  document.body.appendChild(p);
+  return p;
+}
+// Keeps the panel truthful: recomputes the gate, the live "to <chord>" destination readout
+// (via the real parallelChord builder, so the readout and what Add actually inserts can
+// never disagree), and enables/disables Hear and Add. Self-closes if its source chord is
+// gone or has become a marker (e.g. after a delete elsewhere left it stale).
+function refreshParallelPanel(){
+  const p=document.getElementById('parallel-panel'); if(!p) return;
+  const i=parallelPanelSourceIndex;
+  if(i===null || !seq[i] || isMarker(seq[i])){ if(floatIsOpen('parallel')) closeFloatPanel(); return; }
+  const s=seq[i], kc=keyContextAt(i);
+  const srcLabel=keySpell(s.root,kc.keyRoot,kc.keyMode)+(qualitySymbol[lib[s.idx].n]||lib[s.idx].n);
+  p.querySelector('.parallel-title').textContent=`Parallel · chord ${chordNumberAt(i)}: ${srcLabel}`;
+  const gate=parallelDiatonicGate(i);
+  if(parallelPanelMode==='diatonic' && !gate.ok) parallelPanelMode='exact'; // fell out of the gate (e.g. the chord changed underneath the open panel)
+  p.querySelectorAll('.bb-side-btn').forEach(b=>{
+    const isDiatonicBtn=(b.dataset.mode==='diatonic');
+    b.disabled=isDiatonicBtn && !gate.ok;
+    b.title=(isDiatonicBtn && !gate.ok) ? gate.reason : '';
+    b.setAttribute('aria-pressed', parallelPanelMode===b.dataset.mode ? 'true' : 'false');
+  });
+  parallelPanelStep=clampParallelStep(parallelPanelMode,parallelPanelStep);
+  const cnt=p.querySelector('.bb-count'); if(cnt) cnt.textContent=(parallelPanelStep>0?'+':'')+parallelPanelStep;
+  const result=computeParallelPreview();
+  const readout=p.querySelector('.parallel-readout');
+  const reasonEl=p.querySelector('.parallel-reason');
+  const hearBtn=p.querySelector('.parallel-hear');
+  const addBtn=p.querySelector('.parallel-add');
+  if(result.ok){
+    const destLabel=keySpell(result.entry.root,kc.keyRoot,kc.keyMode)+(qualitySymbol[lib[result.entry.idx].n]||lib[result.entry.idx].n);
+    readout.textContent=`to ${destLabel}`;
+    readout.classList.remove('bb-where-empty');
+    reasonEl.hidden=true;
+    hearBtn.disabled=false; addBtn.disabled=false;
+  } else {
+    readout.textContent='';
+    readout.classList.add('bb-where-empty');
+    reasonEl.hidden=false; reasonEl.textContent=result.error||'Not available.';
+    hearBtn.disabled=true; addBtn.disabled=true;
+  }
+}
+// Add button: commits via the shared commitParallelChord builder, closing the panel first,
+// same order as commitPassing (close, then insert) so the result and the chips are in view.
+function commitParallelFromPanel(){
+  const i=parallelPanelSourceIndex; if(i===null) return;
+  const result=computeParallelPreview();
+  if(!result.ok) return;
+  stopParallelHear();
+  closeFloatPanel();
+  commitParallelChord(i, parallelPanelMode, parallelPanelStep);
+}
+function toggleParallelPanel(trigger,i){
+  const p=ensureParallelPanel();
+  if(floatIsOpen('parallel') && parallelPanelSourceIndex===i){ closeFloatPanel(); return; }
+  if(floatCur) closeFloatPanel();
+  parallelPanelSourceIndex=i;
+  parallelPanelMode='exact';
+  parallelPanelStep=1;
+  refreshParallelPanel();
+  openFloatPanel('parallel',p,trigger,null);
 }
 // --- Key change panel (Build pills and Rhythm dividers). State lives in editingMarkerIndex, as before. ---
 const KEY_PANEL_EXEMPT='.key-marker-chip, .rhythm-marker-label, .rhythm-marker'; // clicks on these toggle or switch the edit themselves

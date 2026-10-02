@@ -1113,6 +1113,30 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .insert-btn:hover { border-color: var(--accent); color: var(--accent); border-style: solid; }
 .insert-btn.active { border: 2px solid var(--accent); color: var(--accent); background: var(--accent-dim); }
+/* Transition Lens (Phase 1 desktop prototype). The target is a 30px-wide hit area as tall as the chord row (so the popover anchors clear of both cards) around a small dot that wears the
+   colour of the chord it leads into (--tl-col, set from that chord's own library colour, the same field its card
+   uses). The lens itself is an anchored floating popover (.bb-panel family: body-level, fixed, positioned by
+   floatPosition), so opening it never reflows the progression strip. */
+.tl-target { --tl-col:var(--border-strong); align-self:stretch; flex:0 0 auto; width:30px; min-height:44px; margin:0 -6px; padding:0; border:0; border-radius:14px;
+  background:transparent; display:flex; align-items:center; justify-content:center; }
+.tl-target::before { content:''; width:12px; height:12px; border-radius:50%;
+  border:1.5px solid color-mix(in srgb, var(--tl-col) 55%, #fff); /* a lightened rim keeps dark chord colours (blue, purple) visible on the dark strip */
+  background:color-mix(in srgb, var(--tl-col) 50%, var(--surface-2)); transition:border-color .15s, background .15s, box-shadow .15s; }
+.tl-target:hover { border:0; box-shadow:none; }
+.tl-target:hover::before, .tl-target:focus-visible::before { border-color:color-mix(in srgb, var(--tl-col) 30%, #fff); background:color-mix(in srgb, var(--tl-col) 88%, var(--surface-2)); }
+.tl-target:focus-visible { outline:none; }
+.tl-target:focus-visible::before { box-shadow:0 0 0 3px var(--surface-1), 0 0 0 5px var(--text-primary); }
+.tl-target.open::before { background:var(--tl-col); border-color:color-mix(in srgb, var(--tl-col) 30%, #fff); box-shadow:0 0 0 3px color-mix(in srgb, var(--tl-col) 38%, transparent); }
+.chord-card.tl-linked { outline:2px solid var(--accent); outline-offset:2px; }
+.bb-panel.lens-panel { width:auto; max-width:92vw; padding:10px 14px 8px; gap:4px; } /* .bb-panel is declared later in the file, so this needs the extra class to win */
+.tl-bar { display:flex; align-items:center; gap:10px; margin-bottom:2px; }
+.tl-pair { font-size:14px; color:var(--text-secondary); margin-right:6px; }
+.tl-btn { min-height:36px; padding:0 16px; }
+.tl-svg { display:block; }
+.tl-note { margin:6px 0 4px; font-size:14px; color:var(--text-muted); max-width:260px; }
+.tl-note-title { margin:8px 0 0; font-size:15px; font-weight:600; color:var(--text-primary); }
+.tl-hit { outline:none; cursor:default; }
+.tl-hit:focus-visible { stroke:var(--accent); stroke-width:1.5; }
 .insert-note {
   font-size: 13px;
   color: var(--accent);
@@ -3738,7 +3762,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v96";
+const APP_VERSION = "v97";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -10104,6 +10128,308 @@ function renderPath(){
   }
 }
 
+// ============================================================================
+// Transition Lens, Phase 1 desktop prototype.
+// Governing spec: claude/design_lock_transition_lens_phase1.md. A READ-ONLY, temporary lens over two
+// adjacent Build chords: it draws the voicing the app already realizes and plays, and never computes,
+// ranks, or alters a voicing. What it reads, and from where:
+//   notes ........... window._voicings, the exact array playProgression plays (renderStrip's `voicings`
+//                     argument is that same array one statement before renderAll assigns it).
+//   voice pairing ... computeVLStats([A,B],vlNorm).transitions[0].moves, the SAME authority the Flow roll,
+//                     Notes view and solo playback read (see computeVoiceThreads). Not re-derived here.
+//                     `note`/`nearest` are the real arriving/departing notes; `dist` is pitch-CLASS
+//                     distance, so it is never drawn. Held is decided by note===nearest, so an octave
+//                     leap that keeps its pitch class is drawn as the leap it is.
+//   chromatic ....... arriving pitch class outside diatonicChords(keyContextAt(b)), the exact scale
+//                     test pitchContentStatus() uses. No new theory.
+//   timing .......... both chords are scheduled with explicit audio-clock times, via
+//                     synth.triggerAttackRelease(notes,dur,time) (the call playProgression and
+//                     auditionPassing make), and every frame is painted as a PURE FUNCTION of
+//                     Tone.getContext().rawContext.currentTime against those same times. No setTimeout,
+//                     no second clock, no loop outside a transition: the frame loop ends once settled.
+// Protected functions are only called (diatonicChords via the scale test); none is edited.
+const LENS_PX_PER_SEMITONE=9;  // PROVISIONAL starting value (lock sec. 4); calibrate in the real layout
+const LENS_TRAVEL_DX=18;       // horizontal travel of a moving voice. Calibrated 36 -> 18 (see report): at 36 a one-semitone move read as a long line; at 0 the settled trail hid under the node
+const LENS_TRAVEL_SEC=0.45;    // a voice's travel, capped to chord B's own sounding length
+const LENS_SETTLE_SEC=0.6;     // trail softening + destination labels fading in after arrival
+const LENS_TRAIL_SETTLED=0.12; // settled trail opacity (was 0.35): motion carries the explanation, the settled state keeps only orientation
+const LENS_RING_SEC=0.7;       // brief chromatic-arrival ring
+const LENS_LABEL_GAP_PX=14;    // minimum label spacing; nodes always stay at true pitch
+let lensSel=null;   // {a,b}: seq indices of the two adjacent real chords the lens is open on
+let lensRun=null;   // the in-flight audio-clock-driven paint loop, or null (nothing idles)
+let lensView=null;  // refs into the currently rendered lens SVG
+let lensAudio=null; // {ids,endT}: this audition's pending dispatches on Tone's own timeline, so a switch can cancel them
+function lensChordNeighbor(i,dir){ for(let j=i+dir;j>=0&&j<seq.length;j+=dir){ if(!isMarker(seq[j])) return j; } return -1; }
+function lensIsLinked(i){ return !!lensSel&&(lensSel.a===i||lensSel.b===i); }
+function lensCancelRun(){ if(lensRun){ cancelAnimationFrame(lensRun.raf); lensRun=null; } }
+function lensIsOpen(){ return !!floatCur&&floatCur.kind==='lens'; }
+function lensBeginRender(){ // called at the top of renderStrip: derived state is rebuilt from the live seq
+  lensCancelRun(); lensView=null;
+  if(lensSel){ const {a,b}=lensSel;
+    if(!seq[a]||!seq[b]||isMarker(seq[a])||isMarker(seq[b])||lensChordNeighbor(a,1)!==b){
+      if(lensIsOpen()) closeFloatPanel(); // its close hook clears the lens state
+      lensSel=null; }
+  }
+}
+function lensChordSymbol(i){
+  const s=seq[i],kc=keyContextAt(i),q=lib[s.idx].n;
+  return keySpell(s.root,kc.keyRoot,kc.keyMode)+(qualitySymbol[q]!==undefined?qualitySymbol[q]:' '+q);
+}
+function lensData(a,b,voicings){
+  const vA=voicings[a],vB=voicings[b];
+  if(!vA||!vB||!vA.length||!vB.length) return {ok:false,reason:'none'};
+  // Supported domain (Phase 1): a clean one-to-one pairing and no independent/manual bass on either chord.
+  // Anything else is "Complex voicing": no geometry is drawn, because any picture would hide or invent a voice.
+  const hasBass=i=>seq[i].bass!==null&&seq[i].bass!==undefined; // s.bass: the manual / slash bass the voicing builder adds below the chord
+  if(hasBass(a)||hasBass(b)) return {ok:false,reason:'bass'};
+  if(vA.length!==vB.length) return {ok:false,reason:'count',nA:vA.length,nB:vB.length};
+  const moves=computeVLStats([vA,vB],vlNorm).transitions[0].moves;
+  const key=arr=>arr.slice().sort((x,y)=>x-y).join(',');
+  const from=moves.map(m=>m.nearest),to=moves.map(m=>m.note);
+  if(moves.length!==vA.length||from.some(x=>x===null)||to.some(x=>x===null)||key(from)!==key(vA)||key(to)!==key(vB))
+    return {ok:false,reason:'pairing'};
+  const kc=keyContextAt(b),kca=keyContextAt(a); // each chord's notes are spelled in that chord's own key context
+  const scale=new Set(diatonicChords(kc.keyRoot,kc.keyMode).map(d=>d.root));
+  const pcOf=n=>((n%12)+12)%12;
+  const voices=moves.map(m=>{
+    const pc=pcOf(m.note),held=(m.note===m.nearest);
+    return {p0:m.nearest,p1:m.note,held,chromatic:!held&&!scale.has(pc),label:keySpell(pc,kc.keyRoot,kc.keyMode),from:keySpell(pcOf(m.nearest),kca.keyRoot,kca.keyMode)};
+  }).sort((x,y)=>x.p0-y.p0||x.p1-y.p1);
+  const dc=lib[seq[b].idx]; // destination chord colour: the same lib[...].col the destination card and the target dot read
+  return {ok:true,vA,vB,voices,col:(dc&&dc.col)?dc.col.slice():null};
+}
+// --- Audio: the same notes, the same explicit audio-clock times as synth.triggerAttackRelease(notes,dur,time).
+// PolySynth hands a FUTURE attack or release to a private, uncancellable timeout, so after a quick switch to
+// another pair the old pair's chord B and its release would still land (and cut the new pair's shared notes).
+// The lens therefore dispatches each attack and release itself, at the moment its time is due, on Tone's own
+// context timeline (the same mechanism PolySynth uses internally) and keeps the ids so a switch can cancel them.
+// The time argument is still the audio-clock tA/tB, and the picture still reads that same audio clock.
+function lensSchedule(notes,tAttack,dur){
+  const la=lensAudio,ctx=Tone.getContext();
+  const due=(t,fn)=>{ la.ids.push(ctx.setTimeout(fn,Math.max(0,t-ctx.now()))); };
+  due(tAttack,()=>{ la.sounding.push(notes); synth.triggerAttack(notes,tAttack); });
+  due(tAttack+dur,()=>{ const k=la.sounding.indexOf(notes); if(k>=0) la.sounding.splice(k,1); synth.triggerRelease(notes,tAttack+dur); });
+}
+// OWNERSHIP (transport vs lens). Exactly one of them owns the chord synth at a time.
+// Lens audio never uses releaseAll(): PolySynth.releaseAll() does not mark its voice entries released, so a later
+// paired release for the same MIDI note can land on the wrong entry and a voice hangs. Instead the lens tracks the
+// attacks that actually fired (la.sounding) and releases exactly those with ordinary paired triggerRelease calls,
+// and cancels every attack/release that has not fired yet.
+function lensStopAudio(){
+  if(!lensAudio) return;
+  const la=lensAudio; lensAudio=null;
+  const ctx=Tone.getContext(); la.ids.forEach(id=>ctx.clearTimeout(id));
+  if(synth&&la.sounding.length){ const t=ctx.now(); la.sounding.forEach(n=>synth.triggerRelease(n,t)); }
+  la.sounding.length=0;
+}
+// Normal transport is about to start or stop: the lens lets go completely (called first thing by stopPlayback).
+// The popover stays open, returned to its resting start state with Replay available, so nothing is half-drawn.
+function lensYield(){
+  const active=!!(lensRun||lensAudio);
+  lensCancelRun(); lensStopAudio();
+  if(active&&lensView) lensPaintAt(lensView,-Infinity,0,1);
+}
+// The lens is about to start while the normal transport may have left events the synth cannot cancel (an attack that
+// already fired has a private pending release that would later cut the lens notes). Same hard reset setInstrument()
+// uses: dispose the chord synth and its filter, rebuild. The Lines synths are rebuilt the same way so Transport-owned
+// notes there stop too; the Transport callbacks only read the globals when they fire, and none remain scheduled.
+let lensSynthStale=false; // set by stopPlayback() whenever the normal transport was running
+function lensClaimSynth(){
+  if(!lensSynthStale) return;
+  lensSynthStale=false;
+  if(synth){ synth.dispose(); synth=null; }
+  if(synthFilter){ synthFilter.dispose(); synthFilter=null; }
+  ensureSynth();
+  if(linesMelodySynth||linesBassSynth){
+    if(linesMelodySynth){ linesMelodySynth.dispose(); linesMelodySynth=null; }
+    if(linesBassSynth){ linesBassSynth.dispose(); linesBassSynth=null; }
+    ensureLinesSynths();
+  }
+}
+function lensCardEl(i){ let n=0; for(let j=0;j<i;j++) if(!isMarker(seq[j])) n++; return strip.querySelectorAll('.chord-card')[n]||null; } // markers are not chord cards
+function lensOnClosed(){ // called by closeFloatPanel when the lens popover goes away, however it was closed
+  lensCancelRun(); lensStopAudio(); lensSel=null; lensView=null;
+  document.querySelectorAll('.tl-target.open').forEach(el=>{ el.classList.remove('open'); el.setAttribute('aria-expanded','false'); });
+  document.querySelectorAll('.chord-card.tl-linked').forEach(el=>el.classList.remove('tl-linked'));
+}
+function lensEnsurePanel(){
+  let el=document.getElementById('lens-popover'); if(el) return el;
+  el=document.createElement('div'); el.id='lens-popover'; el.className='bb-panel lens-panel'; el.hidden=true;
+  el.setAttribute('role','dialog'); el.setAttribute('aria-label','How the voices move between two chords');
+  document.body.appendChild(el);
+  return el;
+}
+function lensToggle(a,b,btn){ // one click = open + hear + see
+  if(lensSel&&lensSel.a===a&&lensSel.b===b){ lensClose(); return; }
+  if(floatCur) closeFloatPanel(); // the previous lens (audio and state end with it) or any other floating panel
+  lensSel={a,b};
+  const el=lensEnsurePanel();
+  const ok=lensFillPanel(el,a,b,window._voicings||[]);
+  btn.classList.add('open'); btn.setAttribute('aria-expanded','true');
+  [a,b].forEach(i=>{ const c=lensCardEl(i); if(c) c.classList.add('tl-linked'); });
+  openFloatPanel('lens',el,btn,'.tl-target');
+  if(ok) lensPlay();
+}
+function lensClose(){ if(lensIsOpen()) closeFloatPanel(); else if(lensSel) lensOnClosed(); }
+function lensAppendTarget(stripEl,i,voicings){ // the optional target in the gap before chord i
+  const a=lensChordNeighbor(i,-1);
+  if(a<0||!voicings[a]||!voicings[i]) return;
+  const open=!!lensSel&&lensSel.a===a&&lensSel.b===i;
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='tl-target'+(open?' open':'');
+  btn.dataset.a=a; btn.dataset.b=i;
+  const ch=lib[seq[i].idx]; // the destination chord's own colour, read from the same field its card background uses
+  if(ch&&ch.col) btn.style.setProperty('--tl-col',`rgb(${ch.col.join(',')})`);
+  btn.title=open?'Close the voice movement view':'Hear and see how the voices move between these two chords';
+  btn.setAttribute('aria-label',`Voice movement, chord ${a+1} to chord ${i+1}`);
+  btn.setAttribute('aria-expanded',open?'true':'false');
+  btn.onclick=()=>lensToggle(a,i,btn);
+  stripEl.appendChild(btn);
+}
+function lensAppendPanel(stripEl,i,voicings){ // after a re-render: refill the popover from live data and re-anchor it to the new target
+  if(!lensSel||lensSel.b!==i) return;
+  const {a,b}=lensSel;
+  if(!lensIsOpen()){ lensSel=null; return; }
+  lensFillPanel(document.getElementById('lens-popover'),a,b,voicings);
+  requestAnimationFrame(()=>{
+    const t=stripEl.querySelector(`.tl-target[data-a="${a}"][data-b="${b}"]`);
+    if(t&&lensIsOpen()&&lensSel&&lensSel.a===a&&lensSel.b===b){ floatCur.trigger=t; floatPosition(); } else lensClose();
+  });
+}
+// Build the popover content. Returns true when there is a lens to play (false = notice only).
+function lensFillPanel(el,a,b,voicings){
+  el.textContent='';
+  const bar=document.createElement('div'); bar.className='tl-bar';
+  const pair=document.createElement('span'); pair.className='tl-pair';
+  pair.textContent=`${lensChordSymbol(a)} → ${lensChordSymbol(b)}`;
+  bar.appendChild(pair);
+  const d=lensData(a,b,voicings);
+  if(!d.ok){
+    el.appendChild(bar);
+    const note=document.createElement('p'); note.className='tl-note';
+    const title=document.createElement('p'); title.className='tl-note-title'; title.textContent='Complex voicing';
+    note.textContent="This transition includes an added, missing, or independent bass voice. A full voice-motion view isn't available yet.";
+    el.appendChild(title); el.appendChild(note); lensView=null; return false;
+  }
+  const rb=document.createElement('button'); rb.type='button'; rb.className='tl-btn'; rb.textContent='Replay'; rb.onclick=lensPlay;
+  bar.appendChild(rb);
+  el.appendChild(bar);
+  const PPS=LENS_PX_PER_SEMITONE,padY=16,xa=40,xb=xa+LENS_TRAVEL_DX;
+  const all=[]; d.voices.forEach(v=>{ all.push(v.p0,v.p1); });
+  const hi=Math.max(...all),lo=Math.min(...all);
+  const y=p=>padY+(hi-p)*PPS; // one consistent ruler; only the offset follows the voicing
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(tag,attrs)=>{ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); return e; };
+  const items=d.voices.map(v=>({v,held:v.held,y0:y(v.p0),y1:y(v.p1)}));
+  // label rows are spread apart if adjacent pitches would collide; the nodes themselves never move
+  const spread=(list,key)=>{ list.sort((p,q)=>p[key]-q[key]); list.forEach((it,k)=>{ it['l'+key]=it[key]+4; if(k>0&&it['l'+key]-list[k-1]['l'+key]<LENS_LABEL_GAP_PX) it['l'+key]=list[k-1]['l'+key]+LENS_LABEL_GAP_PX; }); };
+  const movers=items.filter(it=>!it.held);
+  spread(items.slice(),'y0'); spread(movers.slice(),'y1');
+  let maxY=0; items.forEach(it=>{ maxY=Math.max(maxY,it.ly0||0); if(!it.held) maxY=Math.max(maxY,it.ly1||0); });
+  const H=Math.round(Math.max((hi-lo)*PPS+2*padY,maxY+8)),W=xb+56;
+  const svg=mk('svg',{class:'tl-svg',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img',
+    'aria-label':`How the voices move from ${lensChordSymbol(a)} to ${lensChordSymbol(b)}`});
+  // layers: trails under rings under nodes under labels
+  items.forEach(it=>{ if(!it.held){ it.tr=mk('path',{d:`M${xa},${it.y0} L${xa},${it.y0}`,fill:'none',stroke:'var(--accent)','stroke-width':2,'stroke-linecap':'round','stroke-opacity':0}); svg.appendChild(it.tr); } });
+  items.forEach(it=>{ if(it.v.chromatic){ it.ring=mk('circle',{cx:xb,cy:it.y1,r:7,fill:'none',stroke:'var(--accent)','stroke-width':1.5,opacity:0}); svg.appendChild(it.ring); } });
+  // Source nodes are quiet and neutral. A mover takes the accent while it travels, then arrives in the destination
+  // chord's own colour (an overlay that follows it; no mapping, no theory). A held voice never moves and keeps its neutral
+  // fill; it only gains a thin destination-colour rim on settle so the destination chord is still identifiable.
+  const dcol=d.col?`rgb(${d.col.join(',')})`:null,dlight=d.col?`rgb(${d.col.map(c=>Math.round(c+(255-c)*0.45)).join(',')})`:null;
+  items.forEach(it=>{ it.node=mk('circle',{cx:xa,cy:it.y0,r:it.held?4.5:5.5,fill:'var(--text-secondary)','fill-opacity':it.held?0.8:0.85}); svg.appendChild(it.node);
+    if(dcol){ it.arr=mk('circle',{cx:xa,cy:it.y0,r:it.held?4.5:5.5,fill:it.held?'none':dcol,stroke:dlight,'stroke-width':it.held?1.5:1.25,opacity:0}); svg.appendChild(it.arr); } });
+  // starting-note labels: quiet, left of the starting nodes, visible at rest (held voices carry only this one)
+  items.forEach(it=>{
+    it.slabel=mk('text',{x:xa-11,y:it.ly0,'text-anchor':'end',fill:'var(--text-muted)','font-size':12,'font-family':'var(--font-mono)',opacity:0.8});
+    it.slabel.textContent=it.v.from; svg.appendChild(it.slabel);
+  });
+  // destination labels: moving voices only, appear on settle, read stronger than the starting labels
+  movers.forEach(it=>{
+    it.label=mk('text',{x:xb+11,y:it.ly1,fill:it.v.chromatic?'var(--accent)':'var(--text-primary)','font-size':14,'font-weight':600,'font-family':'var(--font-mono)',opacity:0});
+    it.label.textContent=it.v.label; svg.appendChild(it.label);
+  });
+  // voice focus: hover or keyboard focus on a mover's start or destination dot makes that voice's whole trail prominent
+  // and dims the others. Nothing moves; no text, no audio. Only active once the motion has settled.
+  movers.forEach(it=>{ [[xa,it.y0],[xb,it.y1]].forEach(([cx,cy])=>{
+    const h=mk('circle',{cx,cy,r:10,fill:'transparent',tabindex:0,class:'tl-hit'});
+    h.addEventListener('pointerenter',()=>lensFocusVoice(it)); h.addEventListener('pointerleave',()=>lensFocusVoice(null));
+    h.addEventListener('focus',()=>lensFocusVoice(it)); h.addEventListener('blur',()=>lensFocusVoice(null));
+    svg.appendChild(h); }); });
+  el.appendChild(svg);
+  lensView={panel:el,svg,items,xa,xb,focus:null,settled:false};
+  lensPaintAt(lensView,-Infinity,0,1); // resting start state: every voice at its chord-A pitch
+  return true;
+}
+// Paint the lens for audio-clock time `tau`, given chord B's scheduled attack time `tB` and the travel length.
+// Pure function of its arguments: -Infinity is the resting start state, +Infinity the settled end state.
+function lensFocusVoice(it){ // hover / keyboard focus on a settled voice; repaint only, nothing moves
+  const v=lensView; if(!v||lensRun||!v.settled) return;
+  v.focus=it; lensPaintAt(v,Infinity,0,1);
+}
+function lensPaintAt(view,tau,tB,travel){
+  view.settled=(tau-(tB+travel))/LENS_SETTLE_SEC>=1;
+  const p=Math.max(0,Math.min(1,(tau-tB)/travel));            // travel progress, 0 until B is attacked
+  const e=1-Math.pow(1-p,3);                                   // ease-out: fastest at the attack, so the motion coincides with the onset
+  const s=Math.max(0,Math.min(1,(tau-(tB+travel))/LENS_SETTLE_SEC)); // settle progress after arrival
+  const q=Math.max(0,Math.min(1,(tau-(tB+travel))/LENS_RING_SEC));   // chromatic ring progress after arrival
+  view.items.forEach(it=>{
+    const yy=it.y0+(it.y1-it.y0)*e, xx=it.held?view.xa:view.xa+(view.xb-view.xa)*e;
+    const fv=view.focus&&s>=1; // voice focus applies only once settled
+    it.node.setAttribute('cx',xx); it.node.setAttribute('cy',yy);
+    if(it.arr){ it.arr.setAttribute('cx',xx); it.arr.setAttribute('cy',yy); }
+    if(it.held){ // never moves, never recolored as if it had; a thin destination rim fades in on settle
+      if(it.arr) it.arr.setAttribute('opacity',(Math.min(1,s*2)*0.9).toFixed(3));
+      it.node.setAttribute('opacity',fv?0.35:1); it.slabel.setAttribute('opacity',fv?0.35:0.8); return; }
+    it.node.setAttribute('fill',p>0?'var(--accent)':'var(--text-secondary)'); // quiet at the source, accent while it travels
+    if(it.arr) it.arr.setAttribute('opacity',Math.max(0,Math.min(1,(p-0.7)/0.3)).toFixed(3)); // arrives in the destination chord's colour
+    const mine=!fv||view.focus===it;
+    it.slabel.setAttribute('opacity',((0.8-0.4*p)*(mine?1:0.4)).toFixed(3));    // the starting label quiets as its voice leaves
+    it.tr.setAttribute('d',`M${view.xa},${it.y0} L${xx},${yy}`);
+    // trail: full strength while the motion draws it, then recedes to LENS_TRAIL_SETTLED so crossings do not stay a tangle
+    it.tr.setAttribute('stroke-opacity',p<=0?0:(fv?(mine?0.9:0.05):(0.9-(0.9-LENS_TRAIL_SETTLED)*s)).toFixed(3));
+    it.node.setAttribute('opacity',mine?1:0.35); if(it.arr&&!mine) it.arr.setAttribute('opacity',0.35);
+    it.label.setAttribute('opacity',(Math.min(1,s*2.5)*(mine?1:0.35)).toFixed(3)); // destination labels appear only on settle
+    if(it.ring){ it.ring.setAttribute('opacity',(p>=1&&q<1)?(0.85*(1-q)).toFixed(3):0); it.ring.setAttribute('r',(7+5*q).toFixed(2)); }
+  });
+}
+function lensPlay(){ // used by the automatic first listen and by Replay: one scheduling path
+  if(!lensSel||!lensView) return;
+  const view=lensView,sel=lensSel;
+  if(lensRun&&lensRun.view===view&&Tone.getContext().rawContext.currentTime<lensRun.tB) return; // never interrupt the A to B event itself
+  const d=lensData(sel.a,sel.b,window._voicings||[]); // re-read at play time: the sound and the picture come from one snapshot
+  if(!d.ok) return;
+  stopPlayback(); // normal transport lets go first (this also bumps its request generation, and yields any older lens run)
+  lensCancelRun();
+  lensStopAudio();
+  view.focus=null;
+  lensPaintAt(view,-Infinity,0,1);
+  const myGen=transportRequestGen;
+  ensureAudioReady().then(()=>{
+    if(lensView!==view||myGen!==transportRequestGen) return; // closed, re-rendered, or normal Play/Stop took over while audio was starting
+    ensureSynth();
+    lensClaimSynth();
+    const raw=Tone.getContext().rawContext;
+    const durA=chordDurSeconds(seq[sel.a]),durB=chordDurSeconds(seq[sel.b]);
+    const tA=Tone.now()+0.05,tB=tA+durA; // chord B's attack time: the very number handed to the synth below
+    lensAudio={ids:[],sounding:[]};
+    lensSchedule(d.vA.map(midiToNote),tA,durA);
+    lensSchedule(d.vB.map(midiToNote),tB,durB);
+    const travel=Math.min(LENS_TRAVEL_SEC,Math.max(durB,0.1));
+    const lat=(typeof raw.outputLatency==='number'&&isFinite(raw.outputLatency))?raw.outputLatency:0; // browser-reported where available
+    const end=tB+travel+Math.max(LENS_SETTLE_SEC,LENS_RING_SEC);
+    const run={view,tB,travel,raf:0}; lensRun=run;
+    const frame=()=>{
+      if(lensRun!==run) return;
+      const tau=raw.currentTime-lat;
+      if(tau>=end){ lensPaintAt(view,Infinity,tB,travel); lensRun=null; return; } // settled: the loop ends, nothing idles
+      lensPaintAt(view,tau,tB,travel);
+      run.raf=requestAnimationFrame(frame);
+    };
+    run.raf=requestAnimationFrame(frame);
+  });
+}
+
 function makeInsertBtn(i){
   const b=document.createElement('button');
   b.className='insert-btn'+(insertAt===i?' active':'');
@@ -10114,6 +10440,7 @@ function makeInsertBtn(i){
 }
 function renderStrip(voicings){
   strip.innerHTML='';
+  lensBeginRender(); // Transition Lens: rebuilt from the live seq each render
   const progCountEl=document.getElementById('progression-count');
   if(progCountEl){
     const chordCount=seq.filter(s=>!isMarker(s)).length;
@@ -10189,7 +10516,7 @@ function renderStrip(voicings){
     const group=document.createElement('div');
     group.className='chip-group chord-card-group';
     const chip=document.createElement('div');
-    chip.className='chip chord-card';
+    chip.className='chip chord-card'+(lensIsLinked(i)?' tl-linked':'');
     chip.style.background=`rgb(${ch.col.join(',')})`;
     // Corner badges — collected first, appended once at the end (only if non-empty) so
     // the bottom-right corner stays completely clean on the common chord with none of them.
@@ -10376,6 +10703,7 @@ function renderStrip(voicings){
     // the single shared #mv-shared-disclosure toggled once below, after this loop. The
     // stale/invalid case above is unchanged: that's a chord-specific problem, so it keeps
     // its own per-chord warning.
+    lensAppendTarget(strip,i,voicings); // Transition Lens target in the gap before this chord
     strip.appendChild(group);
     // Insert-after-this-chord control, floating between cards — replaces the old purely
     // decorative "→" connector (Ricky's call: the arrow served no purpose, and moving
@@ -10387,6 +10715,7 @@ function renderStrip(voicings){
     // give (the old arrow only ever appeared between two adjacent chords, never after the
     // last one or before a following marker).
     strip.appendChild(makeInsertBtn(i+1));
+    lensAppendPanel(strip,i,voicings); // Transition Lens: refill the open popover from live data after a re-render
   });
   // Item 64: shared manual-voicing disclosure — shown once, only when the progression
   // currently contains at least one VALID manual voicing (the same manualVoicingValid()
@@ -12784,6 +13113,7 @@ function closeFloatPanel(){
   if(!floatCur) return;
   const c=floatCur; floatCur=null;
   c.el.hidden=true;
+  if(c.kind==='lens') lensOnClosed(); // Transition Lens: end its audition and clear its state
   if(c.kind==='bb') blankBarPanelMode=null;
   if(c.kind==='key'){ // closing the panel ends the edit: the pill stops looking "open"
     editingMarkerIndex=null;
@@ -13211,6 +13541,8 @@ function wireBlankBarTools(){
 // that actually plays; anything superseded in the meantime quietly does nothing.
 let transportRequestGen=0;
 function stopPlayback(){
+  lensYield(); // Transition Lens ownership: any lens audition lets go before the normal transport acts
+  if(isPlaying) lensSynthStale=true; // the transport may have left uncancellable synth events; the lens resets the synth before it next sounds
   transportRequestGen++; // invalidate any in-flight deferred Play/Scale-audition request
   Tone.Transport.stop();
   Tone.Transport.cancel();

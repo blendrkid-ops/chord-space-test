@@ -1906,12 +1906,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .pass-panel .pass-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .pass-panel .pass-grid .passing-btn {
   text-align: left; display: flex; gap: 10px; align-items: flex-start;
+  white-space: normal;
   background: color-mix(in srgb, var(--pc, var(--geom)) 20%, var(--surface-2));
   border-color: color-mix(in srgb, var(--pc, var(--geom)) 55%, var(--border-strong));
 }
 .pass-panel .pass-grid .passing-btn:hover { background: color-mix(in srgb, var(--pc, var(--geom)) 32%, var(--surface-2)); }
 .pass-panel .pass-grid .passing-btn .suggestion-swatch { width: 10px; height: 10px; margin-top: 4px; }
 .pass-panel .pass-grid .passing-btn .passing-label { min-width: 0; }
+/* Connect Phase 1: three-line tile (name / relationship / Δ) — see design lock Q14. */
+.pass-panel .pass-grid .passing-name { font-size: 15px; font-weight: 600; color: var(--text-primary); display: block; }
+.pass-panel .pass-grid .passing-reason { font-size: 12px; color: var(--text-secondary); display: block; margin-top: 2px; line-height: 1.3; }
+.pass-panel .connect-group-heading {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--text-muted); margin: 14px 0 6px;
+}
+.pass-panel .connect-group-heading:first-child { margin-top: 0; }
+.pass-panel .connect-more { margin-top: 14px; }
+.pass-panel .connect-more .connect-group-heading:first-of-type { margin-top: 10px; }
 .pass-panel .pass-hint { font-size: 13px; color: var(--text-muted); line-height: 1.45; }
 .pass-panel .pass-none { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
 .rhythm-block.bb-selected::after {
@@ -3217,7 +3228,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
             <dt>Durations</dt>
             <dd>Pick one from the <strong style="color:var(--text-secondary);">dur</strong> dropdown on the chip, or shape it precisely (including triplets and dotted values) on the Rhythm tab. With <strong style="color:var(--text-secondary);">Ripple</strong> on, a longer note pushes the chords after it later and a shorter one pulls them in.</dd>
             <dt>Blank bars</dt>
-            <dd>Click a <strong style="color:var(--text-secondary);">+</strong> between chips and a banner appears with three buttons: <strong style="color:var(--text-secondary);">Passing chords</strong> (click one to hear it between its neighbors, click it again to insert), <strong style="color:var(--text-secondary);">Blank bars</strong>, and <strong style="color:var(--text-secondary);">+ key change</strong>. Blank bars opens a panel with <strong style="color:var(--text-secondary);">Insert bar</strong>, which opens a bar of silence in front of the next chord and moves everything from that chord on later, and <strong style="color:var(--text-secondary);">Remove empty bar</strong>, which does the reverse but only where a bar of time in front of the chord is already empty.</dd>
+            <dd>Click a <strong style="color:var(--text-secondary);">+</strong> between chips and a banner appears with three buttons: <strong style="color:var(--text-secondary);">Connect</strong> (suggests chords to connect the two neighbors, grouped by relationship; click one to hear it between its neighbors, click it again to insert), <strong style="color:var(--text-secondary);">Blank bars</strong>, and <strong style="color:var(--text-secondary);">+ key change</strong>. Blank bars opens a panel with <strong style="color:var(--text-secondary);">Insert bar</strong>, which opens a bar of silence in front of the next chord and moves everything from that chord on later, and <strong style="color:var(--text-secondary);">Remove empty bar</strong>, which does the reverse but only where a bar of time in front of the chord is already empty.</dd>
           </dl>
         </div>
       </div>
@@ -3762,7 +3773,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v97";
+const APP_VERSION = "v98";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -4282,11 +4293,19 @@ function secDomStatusAt(i){
 // Distinct from the diatonic/secondary/borrowed "related chords" panel, which is
 // relative to a single chord — this is relative to a GAP, so it only offers
 // suggestions when the insert cursor has a neighbor on both sides.
-const passingKindLabel={dim7:'passing dim7',dom7:'chromatic approach',mediant:'chromatic mediant'};
+const passingKindLabel={dim7:'passing dim7',dom7:'chromatic approach',mediant:'chromatic mediant',
+  connectDiatonic:'diatonic connector',connectDominant:'dominant \u2192 target',
+  connectLeadingTone:'leading-tone diminished',connectChromatic:'chromatic approach',
+  connectColor:'chromatic mediant'};
 const passingKindDesc={
   dim7:'a fully-diminished chord built on the passing tone itself, filling the chromatic step',
   dom7:'a dominant-quality chord approaching by chromatic step — a color move, not a true secondary dominant',
-  mediant:'a chromatic mediant — root a third away, outside the key, borrowed for color rather than function'
+  mediant:'a chromatic mediant — root a third away, outside the key, borrowed for color rather than function',
+  connectDiatonic:'a diatonic chord chosen to connect by root motion or a passing bass, alongside its normal diatonic function',
+  connectDominant:'a dominant chord tonicizing the next chord, inserted as a Connect suggestion',
+  connectLeadingTone:'a diminished seventh built on the leading tone of the target chord, resolving to it by half-step — a function, not a dominant-7 chord',
+  connectChromatic:'a chord a half-step above the target, descending into it — outside the key, a voice-leading approach rather than a function in it',
+  connectColor:'a chromatic-mediant chord a third from a neighbor\'s root — a color relationship, not a functional one'
 };
 // Bass pitch class for a chord entry, mirroring computeVoicings' bass-selection order
 // (slash bass > inverted bass > root) without any of the register/spacing work —
@@ -4313,12 +4332,16 @@ function passingTones(bassA,bassB){
   if(down>=2 && down<=4){ for(let i=1;i<down;i++) tones.push((bassA-i+12)%12); }
   return tones;
 }
-// Chromatic mediant candidates: roots a major/minor third from either neighbor's
-// bass, major or minor quality, kept only if genuinely outside the key (rootTier
+// Chromatic mediant candidates: roots a major/minor third from either anchor pitch
+// class, major or minor quality, kept only if genuinely outside the key (rootTier
 // chromatic) — mediants are a color/root-relation device, not a stepwise-fill one.
-function mediantCandidates(bassA,bassB,kr,km){
+// Params renamed anchorA/anchorB (Connect Phase 1): the original passing-chord call
+// site below still feeds it the two neighbor BASSES; the new Color family (Connect)
+// feeds it the two neighbor ROOTS instead — same math, honest parameter names for
+// whichever anchors the caller actually passes.
+function mediantCandidates(anchorA,anchorB,kr,km){
   const out=[];
-  [bassA,bassB].forEach(b=>{
+  [anchorA,anchorB].forEach(b=>{
     [3,4,-3,-4].forEach(iv=>{
       const root=((b+iv)%12+12)%12;
       ['major','minor'].forEach(q=>{
@@ -4329,6 +4352,10 @@ function mediantCandidates(bassA,bassB,kr,km){
   const seen=new Set();
   return out.filter(c=>{const k=c.root+'|'+c.quality; if(seen.has(k)) return false; seen.add(k); return true;});
 }
+// Retired as of Connect Phase 1 (v98): no caller invokes passingChordCandidates or
+// passingTones any more (computePassingState below calls connectCandidates instead).
+// Left in place, unused, as the historical record of the original bass-gap-only
+// generator (design lock claude/design_lock_connect_chords_phase1.md, Q3 family 3).
 // Rank candidates by combined optimal voice-leading cost to both neighbors
 // (geometricDistance, read-only — same metric the map rings and theory export use).
 // Ties are left as ties: shown together rather than arbitrarily broken.
@@ -4352,6 +4379,197 @@ function passingChordCandidates(prevEntry,nextEntry){
   uniq.sort((a,b)=>a.cost-b.cost);
   return uniq.slice(0,8);
 }
+
+// --- Connect (expanded Passing Chords), Phase 1 ---------------------------------------
+// Design lock: claude/design_lock_connect_chords_phase1.md (revision 3, approved). Replaces
+// the old bass-gap-only passingChordCandidates() as the Insert-banner connector generator.
+// passingChordCandidates/passingTones below are left in place, unused, as the historical
+// record of the retired generic bass-gap mechanism (Q3 family 3) — nothing calls them now.
+// Four families, fixed order, each a single deterministic named relationship against the
+// LOCAL key context (never the global keyRoot/keyMode): Diatonic, Dominant / leading-tone,
+// Chromatic approach, Color. geometricDistance (Δ) never decides membership — it only
+// orders candidates already admitted, within their own family.
+
+// R2 helper: the scale tone(s) lying a single diatonic step between prevBass and nextBass,
+// forming a stepwise bass run prevBass -> passPC -> nextBass. Returns an array: empty when
+// the two basses are a diatonic step apart or identical, one entry a diatonic third apart,
+// two entries a diatonic fourth apart (always 0-3 entries on a 7-note scale — the shorter of
+// the two arcs around the scale can never exceed half of 7).
+function passingToneBetween(prevBass,nextBass,kc){
+  const scale=diatonicChords(kc.keyRoot,kc.keyMode).map(d=>d.root);
+  const pi=scale.indexOf(prevBass), ni=scale.indexOf(nextBass);
+  if(pi<0 || ni<0) return []; // either bass isn't itself a scale tone — no clean diatonic run to measure
+  const n=scale.length;
+  const up=((ni-pi)%n+n)%n, down=((pi-ni)%n+n)%n;
+  const dist=Math.min(up,down);
+  if(dist<2) return []; // 0: identical bass. 1: a diatonic step apart, no room for a passing tone.
+  const sign=(up<down)?1:-1;
+  const out=[];
+  for(let k=1;k<dist;k++) out.push(scale[((pi+sign*k)%n+n)%n]);
+  return out;
+}
+
+// Dominant / leading-tone family. Non-tonic target: V7/x and viiº7/x via secondaryDominants
+// (which already excludes the tonic as a target). Tonic target: secondaryDominants has no
+// entry for the tonic, so V7 -> I/i and viiº7 -> I/i are generated directly — the explicit
+// special case from revision 3, not left for inference.
+function dominantApproachBassTone(v7Root,nextBass){
+  // Preference order when more than one V7 chord tone sits a half-step from the target
+  // bass: the 3rd first, per Q4, then root/5th/7th. Only a HALF-step qualifies — a
+  // whole-step neighbor never produces an approach-bass variant.
+  const order=[{off:4},{off:0},{off:7},{off:10}];
+  for(const o of order){
+    const pc=(v7Root+o.off)%12;
+    if((pc+1)%12===nextBass || (pc+11)%12===nextBass) return pc;
+  }
+  return null;
+}
+function dominantLeadingToneCandidates(prev,next,kc,nextBass){
+  const out=[];
+  const ds=diatonicChords(kc.keyRoot,kc.keyMode);
+  const nextRoot=next.root, tonicRoot=kc.keyRoot;
+  let v7Root=null, dimRoot=null, domLabel=null, targetRoman=null;
+  if(nextRoot===tonicRoot){
+    const tonicDeg=ds.find(d=>d.root===tonicRoot);
+    const sym=(qualitySymbol[next.quality]!==undefined)?qualitySymbol[next.quality]:'';
+    targetRoman=tonicDeg?tonicDeg.num:(keySpell(tonicRoot,kc.keyRoot,kc.keyMode)+sym);
+    v7Root=(tonicRoot+7)%12; dimRoot=(tonicRoot+11)%12; domLabel='V7';
+  } else {
+    const match=secondaryDominants(kc.keyRoot,kc.keyMode).find(d=>d.target===nextRoot);
+    if(match){ v7Root=match.root; dimRoot=(nextRoot+11)%12; domLabel=match.label; targetRoman=match.targetNum; }
+  }
+  if(v7Root===null) return out; // diminished/half-diminished target: no tonicization, family empty
+  out.push({root:v7Root,quality:'dominant 7',bass:null,family:'dominant',role:'v7',domLabel,targetRoman,kind:'connectDominant'});
+  const approachPC=dominantApproachBassTone(v7Root,nextBass);
+  if(approachPC!==null){
+    out.push({root:v7Root,quality:'dominant 7',bass:approachPC,family:'dominant',role:'v7',domLabel,targetRoman,approachBass:true,kind:'connectDominant'});
+  }
+  out.push({root:dimRoot,quality:'diminished 7',bass:null,family:'dominant',role:'dim7',targetRoman,kind:'connectLeadingTone'});
+  return out;
+}
+
+// Chromatic approach family: only the half-step-ABOVE-the-target approach (dominant 7 and
+// diminished 7), kept only when chromatic to the local key. The half-step-below case and the
+// old generic 2-4-semitone bass-gap fill are both deliberately absent (Q3 family 3).
+function chromaticApproachCandidates(next,kc){
+  const root=(next.root+1)%12;
+  if(rootTier(root,kc.keyRoot,kc.keyMode).tier!=='chromatic') return [];
+  return [
+    {root,quality:'dominant 7',bass:null,family:'chromaticApproach',kind:'connectChromatic'},
+    {root,quality:'diminished 7',bass:null,family:'chromaticApproach',kind:'connectChromatic'}
+  ];
+}
+
+// Color family: chromatic-mediant triads measured from the neighbor chord ROOTS (revision 3
+// fix — Connect itself can emit slash chords, so root and bass diverge). Reuses the existing
+// mediantCandidates math unchanged, called with the two chord roots as its anchor arguments;
+// only the provenance/label info below is new, for honest relationship copy (Q14/Q15).
+const MEDIANT_INTERVALS=[{iv:4,desc:'major third above'},{iv:3,desc:'minor third above'},
+  {iv:-4,desc:'major third below'},{iv:-3,desc:'minor third below'}];
+function colorCandidatesForConnect(prev,next,kc){
+  const raw=mediantCandidates(prev.root,next.root,kc.keyRoot,kc.keyMode);
+  return raw.map(m=>{
+    let match=null;
+    [next,prev].some(anchorEntry=>MEDIANT_INTERVALS.some(({iv,desc})=>{
+      const r=((anchorEntry.root+iv)%12+12)%12;
+      if(r===m.root){ match={anchorEntry,desc}; return true; }
+      return false;
+    }));
+    const anchorEntry=match?match.anchorEntry:next;
+    const desc=match?match.desc:'third from';
+    const asym=(qualitySymbol[anchorEntry.quality]!==undefined)?qualitySymbol[anchorEntry.quality]:(' '+anchorEntry.quality);
+    const anchorName=keySpell(anchorEntry.root,kc.keyRoot,kc.keyMode)+asym;
+    return {root:m.root,quality:m.quality,bass:null,family:'color',kind:'connectColor',anchorDesc:desc+' '+anchorName};
+  });
+}
+
+// Relationship copy, one per family/case, stating exactly what the generator computed
+// (Q14/Q15 — never a fabricated roman, never overclaiming function).
+function connectReasonText(c,prev,next,kc,diatonicTargetRoman){
+  if(c.family==='diatonic'){
+    if(c.rule==='R1') return 'diatonic · '+c.deg.num+' into '+diatonicTargetRoman;
+    const prevName=keySpell(c.prevBassPC,kc.keyRoot,kc.keyMode);
+    const passName=keySpell(c.passPC,kc.keyRoot,kc.keyMode);
+    const nextName=keySpell(c.nextBassPC,kc.keyRoot,kc.keyMode);
+    return 'diatonic · passing bass '+prevName+' → '+passName+' → '+nextName;
+  }
+  if(c.family==='dominant'){
+    if(c.role==='dim7') return 'leading-tone diminished → '+c.targetRoman;
+    const base=c.domLabel+' → '+c.targetRoman;
+    if(c.approachBass){
+      const nb=entryBassPC(next);
+      return base+' · bass '+keySpell(c.bass,kc.keyRoot,kc.keyMode)+' → '+keySpell(nb,kc.keyRoot,kc.keyMode);
+    }
+    return base;
+  }
+  if(c.family==='chromaticApproach'){
+    return 'chromatic approach · '+keySpell(c.root,kc.keyRoot,kc.keyMode)+' → '+keySpell(next.root,kc.keyRoot,kc.keyMode);
+  }
+  if(c.family==='color') return 'chromatic mediant · a '+c.anchorDesc;
+  return '';
+}
+
+// Top-level Connect generator. Replaces passingChordCandidates() as computePassingState's
+// source. Grouped by family (fixed order), one primary family per candidate by precedence
+// Diatonic > Dominant / leading-tone > Chromatic approach > Color, deduped by
+// (root, quality, bass), ranked within each family by ascending Δ then common-tone count,
+// Diatonic truncated to 3. Every family is generated against kc = keyContextAt(insertAt),
+// never the global keyRoot/keyMode.
+function connectCandidates(prev,next,insertAt){
+  const kc=keyContextAt(insertAt);
+  const prevBass=entryBassPC(prev), nextBass=entryBassPC(next);
+  const prevPCs=entryPCs(prev), nextPCs=entryPCs(next);
+  const prevQ=lib[prev.idx].n, nextQ=lib[next.idx].n;
+  const prevE={root:prev.root,quality:prevQ}, nextE={root:next.root,quality:nextQ};
+  const ds=diatonicChords(kc.keyRoot,kc.keyMode);
+  const targetDeg=nativeDegreeByFunction(next.root,nextQ,ds);
+  const nextSym=(qualitySymbol[nextQ]!==undefined)?qualitySymbol[nextQ]:(' '+nextQ);
+  const diatonicTargetRoman=targetDeg?targetDeg.num:(keySpell(next.root,kc.keyRoot,kc.keyMode)+nextSym);
+
+  const isNeighborChord=(root,quality)=>(root===prev.root&&quality===prevQ)||(root===next.root&&quality===nextQ);
+
+  const diatonic=[];
+  const r1Root=(next.root+7)%12;
+  const r1Deg=ds.find(d=>d.root===r1Root);
+  if(r1Deg && !isNeighborChord(r1Deg.root,r1Deg.quality)){
+    diatonic.push({root:r1Deg.root,quality:r1Deg.quality,bass:null,family:'diatonic',rule:'R1',deg:r1Deg,kind:'connectDiatonic'});
+  }
+  const NONDIM=new Set(['diminished','diminished 7','half-diminished']);
+  passingToneBetween(prevBass,nextBass,kc).forEach(passPC=>{
+    ds.forEach(d=>{
+      if(NONDIM.has(d.quality)) return;
+      if(!pcsOf(d.root,d.quality).includes(passPC)) return;
+      if(isNeighborChord(d.root,d.quality)) return;
+      diatonic.push({root:d.root,quality:d.quality,bass:passPC,family:'diatonic',rule:'R2',passPC,prevBassPC:prevBass,nextBassPC:nextBass,kind:'connectDiatonic'});
+    });
+  });
+
+  const dominant=dominantLeadingToneCandidates(prevE,nextE,kc,nextBass);
+  const chromaticApproach=chromaticApproachCandidates(nextE,kc);
+  const color=colorCandidatesForConnect(prevE,nextE,kc);
+
+  const groups={diatonic,dominant,chromaticApproach,color};
+  const seen=new Set();
+  const out={diatonic:[],dominant:[],chromaticApproach:[],color:[]};
+  ['diatonic','dominant','chromaticApproach','color'].forEach(name=>{
+    groups[name].forEach(c=>{
+      const key=c.root+'|'+c.quality+'|'+((c.bass===null||c.bass===undefined)?'':c.bass);
+      if(seen.has(key)) return;
+      seen.add(key);
+      const pcs=pcsOf(c.root,c.quality);
+      c.cost=geometricDistance(prevPCs,pcs)+geometricDistance(pcs,nextPCs);
+      c.commonTones=pcs.filter(p=>prevPCs.includes(p)).length+pcs.filter(p=>nextPCs.includes(p)).length;
+      c.reasonText=connectReasonText(c,prev,next,kc,diatonicTargetRoman);
+      out[name].push(c);
+    });
+  });
+  ['diatonic','dominant','chromaticApproach','color'].forEach(name=>{
+    out[name].sort((a,b)=>(a.cost-b.cost)||(b.commonTones-a.commonTones));
+  });
+  out.diatonic=out.diatonic.slice(0,3);
+  return out;
+}
+
 
 let synth=null,synthFilter=null,currentInstrument='pad',masterLimiter=null;
 // Preview instruments are synthesized (not sampled) to keep the file self-contained —
@@ -6572,7 +6790,14 @@ let seq=[
   // cursor somewhere the feature is immediately reachable, exactly as it would be on any
   // native-diatonic chord in any progression.
   {marker:true, keyRoot:0, keyMode:'Ionian', meter:null},
-  {idx:4,  root:0, startUnit:300, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cmaj7 (I), native diatonic: try "para" here
+  // Connect Phase 1 demo (v98): this closing Cmaj7 -> Am7 pair (already here for item 101's
+  // "para" demo) is the design lock's own motivating example. Click "+" between them to open
+  // the insert banner, then Connect: Diatonic should offer Em7 plus the Em7/B and G7/B
+  // passing-bass connectors (not a diminished vii); Dominant / leading-tone should offer E7,
+  // its E7/G# approach-bass variant, and the leading-tone G#°7; "More colorful connections"
+  // should offer Bb7/Bb°7 (Chromatic approach) and the Color mediants. The connector is
+  // deliberately NOT pre-inserted, so every documented family is reachable on first open.
+  {idx:4,  root:0, startUnit:300, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}, // Cmaj7 (I), native diatonic: try "para" here, or Connect into the next chord
   {idx:6,  root:9, startUnit:312, dur:'4n', bass:null, inv:0, invLocked:false, secDom:null, borrowed:null, manualVoicing:null}  // Am7   (vi), native diatonic: try "para" here too
 ];
 // Whole-progression register bias, in octaves (each unit = ±12 semitones). Applied as a
@@ -7856,7 +8081,7 @@ function updateInsertNote(){
   const ps=passingState;
   el.innerHTML=`<div class="insert-note-top"><span class="insert-note-msg">Insert mode: the next chord you click on the map will go ${pos}.${regionNote}</span> <strong id="cancel-insert" class="insert-note-cancel" style="cursor:pointer;">cancel</strong></div>`
     +`<div class="insert-note-tools">`
-    +(ps.available?`<button type="button" class="bb-trigger" data-float="passing" aria-haspopup="dialog" aria-expanded="${floatIsOpen('passing')?'true':'false'}">Passing chords \u00B7 ${ps.cands.length} <span aria-hidden="true">&#9662;</span></button>`:'')
+    +(ps.available?`<button type="button" class="bb-trigger" data-float="passing" aria-haspopup="dialog" aria-expanded="${floatIsOpen('passing')?'true':'false'}">Connect <span aria-hidden="true">&#9662;</span></button>`:'')
     +(bbOffer?`<button type="button" class="bb-trigger" data-float="bb" aria-haspopup="dialog" aria-expanded="${floatIsOpen('bb')?'true':'false'}">Blank bars <span aria-hidden="true">&#9662;</span></button>`:'')
     +`<button type="button" class="keychange-btn banner-keychange" title="Insert a key change at this spot">+ key change</button>`
     +`</div>`
@@ -13271,13 +13496,17 @@ function syncRhythmBlankTargets(){
   refreshBlankBarPanel();
 }
 // --- Passing chords panel (Build). Replaces the inline tile list that used to stack above the chips. ---
-let passingState={available:false,cands:[],prev:null,next:null};
+let passingState={available:false,cands:{diatonic:[],dominant:[],chromaticApproach:[],color:[]},prev:null,next:null};
 function computePassingState(){
-  const none={available:false,cands:[],prev:null,next:null};
+  const none={available:false,cands:{diatonic:[],dominant:[],chromaticApproach:[],color:[]},prev:null,next:null};
   if(insertAt===null || insertAt<=0 || insertAt>=seq.length) return none;
   const prev=seq[insertAt-1], next=seq[insertAt];
-  if(isMarker(prev)||isMarker(next)) return none; // a passing chord needs a real chord on both sides
-  return {available:true,cands:passingChordCandidates(prev,next),prev,next};
+  if(isMarker(prev)||isMarker(next)) return none; // Connect needs a real chord on both sides
+  // Connect Phase 1 (Q9): suppress entirely across an ambiguous key boundary, rather than a
+  // reduced mode — identical in appearance to the existing start/end unavailability.
+  const kcPrev=keyContextAt(insertAt-1), kcNext=keyContextAt(insertAt);
+  if(kcPrev.keyRoot!==kcNext.keyRoot || kcPrev.keyMode!==kcNext.keyMode) return none;
+  return {available:true,cands:connectCandidates(prev,next,insertAt),prev,next};
 }
 // The three voicings a passing chord would actually get: prev, the candidate, next, computed by the
 // live voice-leading code against a COPY of the progression with the candidate spliced in. seq is
@@ -13285,7 +13514,8 @@ function computePassingState(){
 function passingAuditionVoicings(c){
   const idx=lib.findIndex(l=>l.n===c.quality);
   if(idx<0 || insertAt===null) return null;
-  const entry={idx,root:c.root,bass:null,inv:0,invLocked:false,secDom:null,borrowed:null,manualVoicing:null,passing:{kind:c.kind},startUnit:defaultStartUnitFor(insertAt),dur:'4n'};
+  const cBass=(c.bass!==undefined&&c.bass!==null)?c.bass:null; // Connect: passing-bass/approach-bass variants pin a bass
+  const entry={idx,root:c.root,bass:cBass,inv:0,invLocked:false,secDom:null,borrowed:null,manualVoicing:null,passing:{kind:c.kind},startUnit:defaultStartUnitFor(insertAt),dur:'4n'};
   const tmp=seq.slice(); tmp.splice(insertAt,0,entry);
   const real=seq; let v;
   seq=tmp;
@@ -13304,14 +13534,42 @@ function auditionPassing(c){
 function commitPassing(c){
   const idx=lib.findIndex(l=>l.n===c.quality); if(idx<0) return;
   closeFloatPanel();
-  addChordAtInsertPoint({idx, root:c.root, bass:null, inv:0, secDom:null, borrowed:null, passing:{kind:c.kind}});
+  const cBass=(c.bass!==undefined&&c.bass!==null)?c.bass:null; // Connect: carry the candidate's own bass (passing-bass/approach-bass variants)
+  addChordAtInsertPoint({idx, root:c.root, bass:cBass, inv:0, secDom:null, borrowed:null, passing:{kind:c.kind}});
 }
 function ensurePassingPanel(){
   let p=document.getElementById('passing-panel'); if(p) return p;
   p=floatMake('div','bb-panel pass-panel'); p.id='passing-panel'; p.hidden=true;
-  p.setAttribute('role','dialog'); p.setAttribute('aria-label','Passing chords');
+  p.setAttribute('role','dialog'); p.setAttribute('aria-label','Connect');
   document.body.appendChild(p);
   return p;
+}
+function connectTileName(c,kc){
+  const sym=(qualitySymbol[c.quality]!==undefined)?qualitySymbol[c.quality]:(' '+c.quality);
+  return keySpell(c.root,kc.keyRoot,kc.keyMode)+sym+((c.bass!==null&&c.bass!==undefined)?('/'+keySpell(c.bass,kc.keyRoot,kc.keyMode)):'');
+}
+function connectMakeTile(c,kc){
+  const btn=floatMake('button','passing-btn'); btn.type='button';
+  // Same chord-class color (lib[i].col) that drives the map dots, the chips and the other suggestion lists.
+  const li=lib.findIndex(l=>l.n===c.quality);
+  const rgb=(li>=0)?lib[li].col.join(','):'128,128,128';
+  btn.style.setProperty('--pc','rgb('+rgb+')');
+  const sw=floatMake('i','suggestion-swatch'); sw.style.background='rgb('+rgb+')';
+  const lab=floatMake('span','passing-label');
+  lab.appendChild(floatMake('span','passing-name',connectTileName(c,kc)));
+  lab.appendChild(floatMake('span','passing-reason',c.reasonText));
+  lab.appendChild(floatMake('span','passing-tag','Δ'+c.cost.toFixed(1)));
+  btn.appendChild(sw); btn.appendChild(lab);
+  wireAuditionClick(btn,()=>auditionPassing(c),()=>commitPassing(c));
+  return btn;
+}
+function connectAppendGroup(parent,heading,cands,kc){
+  if(!cands.length) return false;
+  parent.appendChild(floatMake('div','connect-group-heading',heading));
+  const grid=floatMake('div','pass-grid');
+  cands.forEach(c=>grid.appendChild(connectMakeTile(c,kc)));
+  parent.appendChild(grid);
+  return true;
 }
 function fillPassingPanel(){
   const p=ensurePassingPanel();
@@ -13319,27 +13577,28 @@ function fillPassingPanel(){
   p.appendChild(floatCloseButton());
   const st=passingState;
   const a=chordNumberAt(insertAt-1), b=chordNumberAt(insertAt);
-  p.appendChild(floatMake('div','bb-lbl',`Passing chord \u00B7 chord ${a} to chord ${b}`));
-  if(!st.cands.length){
-    p.appendChild(floatMake('div','pass-none',`No clear stepwise gap between chords ${a} and ${b} to fill. Their bass motion is too close or too wide for a single passing chord.`));
+  const kc=keyContextAt(insertAt);
+  p.appendChild(floatMake('div','bb-lbl',`Connect chord ${a} to chord ${b}`));
+  const cands=st.cands||{diatonic:[],dominant:[],chromaticApproach:[],color:[]};
+  const anyAtAll=cands.diatonic.length||cands.dominant.length||cands.chromaticApproach.length||cands.color.length;
+  if(!anyAtAll){
+    p.appendChild(floatMake('div','pass-none',`No connectors available between chord ${a} and chord ${b}.`));
     return;
   }
-  const grid=floatMake('div','pass-grid');
-  st.cands.forEach(c=>{
-    const btn=floatMake('button','passing-btn'); btn.type='button';
-    // Same chord-class color (lib[i].col) that drives the map dots, the chips and the other suggestion lists.
-    const li=lib.findIndex(l=>l.n===c.quality);
-    const rgb=(li>=0)?lib[li].col.join(','):'128,128,128';
-    btn.style.setProperty('--pc','rgb('+rgb+')');
-    const sw=floatMake('i','suggestion-swatch'); sw.style.background='rgb('+rgb+')';
-    const lab=floatMake('span','passing-label');
-    lab.appendChild(document.createTextNode(keySpell(c.root,keyRoot,keyMode)+' '+c.quality+' '));
-    lab.appendChild(floatMake('span','passing-tag',passingKindLabel[c.kind]+' \u00B7 \u0394'+c.cost.toFixed(1)));
-    btn.appendChild(sw); btn.appendChild(lab);
-    wireAuditionClick(btn,()=>auditionPassing(c),()=>commitPassing(c));
-    grid.appendChild(btn);
-  });
-  p.appendChild(grid);
+  // Default-visible: the two in-key families (Q12). Each omitted entirely if empty.
+  connectAppendGroup(p,'Diatonic',cands.diatonic,kc);
+  connectAppendGroup(p,'Dominant / leading-tone',cands.dominant,kc);
+  // The two out-of-key families sit under one collapsed disclosure, omitted together if both empty.
+  if(cands.chromaticApproach.length || cands.color.length){
+    const details=document.createElement('details');
+    details.className='note-disclosure connect-more';
+    const summary=document.createElement('summary');
+    summary.textContent='More colorful connections';
+    details.appendChild(summary);
+    connectAppendGroup(details,'Chromatic approach',cands.chromaticApproach,kc);
+    connectAppendGroup(details,'Color',cands.color,kc);
+    p.appendChild(details);
+  }
   p.appendChild(floatMake('div','pass-hint','Click a chord to hear it between its neighbors. Click the highlighted one again to insert it.'));
 }
 function togglePassingPanel(trigger){

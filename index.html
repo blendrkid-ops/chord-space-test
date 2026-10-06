@@ -1898,7 +1898,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   border-left: 2px solid var(--accent); padding: 4px 0 4px 10px;
 }
 .bb-panel .bb-panel-note[hidden], .bb-panel[data-mode="build"] .bb-panel-note { display: none; }
-.pass-panel { width: min(460px, 92vw); }
+.pass-panel {
+  width: min(460px, 92vw);
+  /* v98 acceptance fix: Connect can legitimately generate many tiles (esp. Color), so unlike the
+     other short bb-panels this one needs its own scroll area, capped above the fixed transport bar. */
+  max-height: calc(100dvh - var(--transport-h) - 24px);
+  overflow: hidden;
+}
+.pass-panel .pass-panel-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  margin: 0 -4px; padding: 0 4px 2px;
+}
 .key-panel { width: min(600px, 92vw); }
 .key-panel .marker-editor-inner { gap: 8px; }
 .key-panel .section-note { margin: 8px 0 0; }
@@ -4540,7 +4551,13 @@ function connectCandidates(prev,next,insertAt){
       if(NONDIM.has(d.quality)) return;
       if(!pcsOf(d.root,d.quality).includes(passPC)) return;
       if(isNeighborChord(d.root,d.quality)) return;
-      diatonic.push({root:d.root,quality:d.quality,bass:passPC,family:'diatonic',rule:'R2',passPC,prevBassPC:prevBass,nextBassPC:nextBass,kind:'connectDiatonic'});
+      // R2 triads addendum (claude/design_lock_connect_r2_triads_addendum.md, approved): the passing-bass
+      // device is taught as the plain triad underlying this degree's native seventh quality, reusing the
+      // existing SEVENTH_TO_TRIAD_QUALITY lookup (built for the same "without touching diatonicChords
+      // itself" purpose by the quick-diatonic-list triads/7ths toggle). R1 and diatonicChords() both read
+      // d.quality untouched, above and elsewhere; only the R2 candidate's own stored quality changes.
+      const r2Quality=SEVENTH_TO_TRIAD_QUALITY[d.quality]||d.quality;
+      diatonic.push({root:d.root,quality:r2Quality,bass:passPC,family:'diatonic',rule:'R2',passPC,prevBassPC:prevBass,nextBassPC:nextBass,kind:'connectDiatonic'});
     });
   });
 
@@ -13294,12 +13311,38 @@ function blankBarIsSheet(){ return !!(window.matchMedia && window.matchMedia('(m
 function floatIsOpen(kind){ return !!floatCur && (!kind || floatCur.kind===kind); }
 function floatPosition(){
   if(!floatCur || blankBarIsSheet()) return;
-  const {el,trigger}=floatCur, EDGE=12, GAP=8;
+  const {el,trigger,kind}=floatCur, EDGE=12, GAP=8;
   const anchor=(trigger.closest && trigger.closest('.insert-note')) || trigger; // Build: sit BELOW the whole banner so its result line stays readable
   const ar=anchor.getBoundingClientRect(), tr=trigger.getBoundingClientRect();
-  const pw=el.offsetWidth, ph=el.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
+  const vw=window.innerWidth, vh=window.innerHeight;
+  // v98 acceptance fix: never let a floating panel's bottom land under the fixed transport bar.
+  const transportH=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--transport-h'))||0;
+  const floor=vh-transportH-EDGE; // lowest a panel's bottom may reach
+  // Connect (pass-panel) reachability fix: Connect can grow tall (Color + the "More
+  // colorful connections" disclosure), and it is re-positioned when that disclosure toggles
+  // (see fillPassingPanel), so it owns its own vertical sizing. Place it in whichever of
+  // below/above the anchor has more room, cap its max-height to exactly that room so its own
+  // .pass-panel-body scroller fits the visible region, and clamp top to [EDGE, floor-ph] so
+  // the bottom can never cross the transport even when the disclosure is expanded after open.
+  // Every other .bb-panel falls through to the original placement math below, byte-for-byte,
+  // and the phone sheet is already handled by the blankBarIsSheet() early return above.
+  if(kind==='passing'){
+    const spaceBelow=floor-(ar.bottom+GAP);
+    const spaceAbove=(ar.top-GAP)-EDGE;
+    const below=spaceBelow>=spaceAbove;
+    const room=Math.max(120, below?spaceBelow:spaceAbove); // never collapse to nothing
+    el.style.maxHeight=room+'px';
+    const ph=Math.min(el.offsetHeight, room); // offsetHeight is now bounded by the cap just set
+    let top=below?(ar.bottom+GAP):(ar.top-GAP-ph);
+    top=Math.max(EDGE, Math.min(top, floor-ph));
+    el.style.top=top+'px';
+    const pw=el.offsetWidth;
+    el.style.left=Math.max(EDGE,Math.min(tr.left,vw-pw-EDGE))+'px';
+    return;
+  }
+  const pw=el.offsetWidth, ph=el.offsetHeight;
   let top=ar.bottom+GAP;
-  if(top+ph>vh-EDGE){ top=(ar.top-GAP>=ph)?(ar.top-ph-GAP):Math.max(EDGE,vh-ph-EDGE); }
+  if(top+ph>floor){ top=(ar.top-GAP>=ph)?(ar.top-ph-GAP):Math.max(EDGE,floor-ph); }
   el.style.top=top+'px';
   el.style.left=Math.max(EDGE,Math.min(tr.left,vw-pw-EDGE))+'px';
 }
@@ -13339,6 +13382,7 @@ function closeFloatPanel(){
   const c=floatCur; floatCur=null;
   c.el.hidden=true;
   if(c.kind==='lens') lensOnClosed(); // Transition Lens: end its audition and clear its state
+  if(c.kind==='passing') connectStopAudio(); // Connect: cancel any pending preview when the panel goes away
   if(c.kind==='bb') blankBarPanelMode=null;
   if(c.kind==='key'){ // closing the panel ends the edit: the pill stops looking "open"
     editingMarkerIndex=null;
@@ -13523,12 +13567,52 @@ function passingAuditionVoicings(c){
   const trio=[v[insertAt-1],v[insertAt],v[insertAt+1]];
   return trio.every(x=>x&&x.length)?trio:null;
 }
+// --- Connect audition ownership (mirrors the Transition Lens pattern exactly) ---
+// PolySynth hands a FUTURE attack/release to a private, uncancellable timeout, so
+// triggerAttackRelease'd previews could stack and overlap when the user auditions one
+// tile after another. Connect now dispatches each attack and paired release itself on
+// Tone's own context timeline (the same mechanism lensSchedule uses) and keeps the ids
+// so a new preview / Lens / Play / Stop can cancel exactly those. Sounding notes are
+// tracked and released with ORDINARY PAIRED triggerRelease, never releaseAll (which does
+// not mark PolySynth voice entries released and hangs a voice). connectAudioGen is bumped
+// on every cancel so a preview still inside its ensureAudioReady() continuation aborts
+// instead of starting late.
+let connectAudio=null;   // {ids:[],sounding:[]} while a Connect preview is scheduled/sounding
+let connectAudioGen=0;   // bumped by connectStopAudio(); a deferred start checks it's still current
+function connectStopAudio(){
+  connectAudioGen++;
+  if(!connectAudio) return;
+  const ca=connectAudio; connectAudio=null;
+  const ctx=Tone.getContext(); ca.ids.forEach(id=>ctx.clearTimeout(id));
+  if(synth&&ca.sounding.length){ const t=ctx.now(); ca.sounding.forEach(n=>synth.triggerRelease(n,t)); }
+  ca.sounding.length=0;
+}
+function connectSchedule(notes,tAttack,dur){
+  const ca=connectAudio,ctx=Tone.getContext();
+  const due=(t,fn)=>{ ca.ids.push(ctx.setTimeout(fn,Math.max(0,t-ctx.now()))); };
+  due(tAttack,()=>{ ca.sounding.push(notes); synth.triggerAttack(notes,tAttack); });
+  due(tAttack+dur,()=>{ const k=ca.sounding.indexOf(notes); if(k>=0) ca.sounding.splice(k,1); synth.triggerRelease(notes,tAttack+dur); });
+}
 function auditionPassing(c){
   const trio=passingAuditionVoicings(c); if(!trio) return;
+  // Stop the normal transport through its real path. lensYield()/lensClaimSynth() alone do
+  // NOT stop the Transport (they only release lens audio and rebuild the synth), so a preview
+  // started mid-playback would otherwise play over a still-running Transport. stopPlayback()
+  // halts Transport, sets isPlaying=false, bumps transportRequestGen, sets lensSynthStale, and
+  // (now) calls connectStopAudio() to cancel any previous Connect preview — so this one call
+  // covers: no overlap with a prior preview, and Transport actually stops.
+  stopPlayback();
+  const myGen=connectAudioGen;        // captured AFTER stopPlayback()'s connectStopAudio() bump
   ensureAudioReady().then(()=>{
+    if(myGen!==connectAudioGen) return; // a newer preview / Lens / Play / Stop superseded this while audio started
     ensureSynth();
+    lensClaimSynth();                 // reset the synth if a stale transport left uncancellable events
+    connectAudio={ids:[],sounding:[]};
     const step=(60/bpm)*2, t0=Tone.now()+0.05; // each chord a half note: before, the passing chord, after
-    trio.forEach((notes,k)=>synth.triggerAttackRelease(notes.map(midiToNote),step*0.92,t0+k*step));
+    // 0.92 EARLY RELEASE (timing unchanged): each chord releases at 92% of the step; the ~8%
+    // before the next attack is an early release, not confirmed silence. Ricky's reported gap
+    // stays open pending a clean-preview retest.
+    trio.forEach((notes,k)=>connectSchedule(notes.map(midiToNote),t0+k*step,step*0.92));
   });
 }
 function commitPassing(c){
@@ -13578,16 +13662,20 @@ function fillPassingPanel(){
   const st=passingState;
   const a=chordNumberAt(insertAt-1), b=chordNumberAt(insertAt);
   const kc=keyContextAt(insertAt);
+  // v98 acceptance fix: title stays outside the scroll area, so it's still readable while
+  // browsing a long candidate list (e.g. with "More colorful connections" expanded).
   p.appendChild(floatMake('div','bb-lbl',`Connect chord ${a} to chord ${b}`));
+  const body=floatMake('div','pass-panel-body');
+  p.appendChild(body);
   const cands=st.cands||{diatonic:[],dominant:[],chromaticApproach:[],color:[]};
   const anyAtAll=cands.diatonic.length||cands.dominant.length||cands.chromaticApproach.length||cands.color.length;
   if(!anyAtAll){
-    p.appendChild(floatMake('div','pass-none',`No connectors available between chord ${a} and chord ${b}.`));
+    body.appendChild(floatMake('div','pass-none',`No connectors available between chord ${a} and chord ${b}.`));
     return;
   }
   // Default-visible: the two in-key families (Q12). Each omitted entirely if empty.
-  connectAppendGroup(p,'Diatonic',cands.diatonic,kc);
-  connectAppendGroup(p,'Dominant / leading-tone',cands.dominant,kc);
+  connectAppendGroup(body,'Diatonic',cands.diatonic,kc);
+  connectAppendGroup(body,'Dominant / leading-tone',cands.dominant,kc);
   // The two out-of-key families sit under one collapsed disclosure, omitted together if both empty.
   if(cands.chromaticApproach.length || cands.color.length){
     const details=document.createElement('details');
@@ -13597,9 +13685,14 @@ function fillPassingPanel(){
     details.appendChild(summary);
     connectAppendGroup(details,'Chromatic approach',cands.chromaticApproach,kc);
     connectAppendGroup(details,'Color',cands.color,kc);
-    p.appendChild(details);
+    // Reachability fix: expanding/collapsing changes the panel's content height, so re-run
+    // the positioner to re-measure and re-clamp against the transport floor and the room
+    // above/below the anchor (floatPosition sizes the pass-panel to available space on every
+    // run). Only fires while this panel is open; a no-op for every other panel.
+    details.addEventListener('toggle',()=>{ if(floatIsOpen('passing')) floatPosition(); });
+    body.appendChild(details);
   }
-  p.appendChild(floatMake('div','pass-hint','Click a chord to hear it between its neighbors. Click the highlighted one again to insert it.'));
+  body.appendChild(floatMake('div','pass-hint','Click a chord to hear it between its neighbors. Click the highlighted one again to insert it.'));
 }
 function togglePassingPanel(trigger){
   if(floatIsOpen('passing')){ closeFloatPanel(); return; }
@@ -13801,7 +13894,8 @@ function wireBlankBarTools(){
 let transportRequestGen=0;
 function stopPlayback(){
   lensYield(); // Transition Lens ownership: any lens audition lets go before the normal transport acts
-  if(isPlaying) lensSynthStale=true; // the transport may have left uncancellable synth events; the lens resets the synth before it next sounds
+  connectStopAudio(); // Connect ownership: any pending Connect preview lets go before the normal transport acts
+  if(isPlaying) lensSynthStale=true; // the transport may have left uncancellable synth events; the lens/Connect reset the synth before it next sounds
   transportRequestGen++; // invalidate any in-flight deferred Play/Scale-audition request
   Tone.Transport.stop();
   Tone.Transport.cancel();

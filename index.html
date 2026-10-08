@@ -1082,6 +1082,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   text-align: center;
 }
 .rand-input:focus { outline: none; border-color: var(--accent); }
+/* Quick Build (Phase 1 batch chord-text entry) — reuses .rand-section/.rand-field/.btn-primary
+   layout; only the full-width text input and its feedback line are new. */
+.qb-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.qb-input {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.qb-input:focus { outline: none; border-color: var(--accent); }
+.qb-feedback {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--stale);
+  margin-top: 10px;
+  line-height: 1.6;
+}
 .rand-select {
   font-family: var(--font-mono);
   font-size: 14px;
@@ -3273,6 +3295,18 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
   </div>
 
   <div class="build-tools-row">
+    <details class="section card-toggle" open>
+      <summary class="section-label">Quick Build</summary>
+      <div class="card-toggle-body">
+        <p class="section-note" style="margin-top:0;margin-bottom:12px;">Type a progression and build it in one step — basic triads and sevenths, extensions and altered dominants already in the chord library, sus/add chords, slash chords. Separate chords with commas. Adds to the end of the current progression; does not replace it.</p>
+        <div class="qb-row">
+          <input type="text" id="qb-input" class="qb-input" placeholder="Cmaj7, Am7, G/B, E7/G#, Dm7, G7, Cmaj7" autocomplete="off" spellcheck="false">
+          <button id="qb-go" class="btn-primary">build</button>
+        </div>
+        <p class="qb-feedback" id="qb-feedback" hidden></p>
+      </div>
+    </details>
+
     <details class="section card-toggle">
       <summary class="section-label">Generate progression</summary>
       <div class="card-toggle-body">
@@ -3784,7 +3818,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v98";
+const APP_VERSION = "v102";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -3870,7 +3904,23 @@ const intervalMap={"major":[0,4,7],"minor":[0,3,7],"diminished":[0,3,6],"augment
   // --- Item 11: the one seventh quality Harmonic/Melodic Minor introduce that wasn't
   // already present — the III+ chord (maj7 with a raised 5th). Registered in the four
   // in-sync tables (intervalMap, lib, qualitySymbol, TRIAD_QUALITY_FAMILY) plus QUALITY_PREF.
-  "augmented major 7":[0,4,8,11]
+  "augmented major 7":[0,4,8,11],
+  // --- Real-world chord-vocabulary expansion (item 106, locked 2026-10-07): seven common
+  // qualities typed often in practice that the registry couldn't represent exactly. Every
+  // interval array was checked against the full existing table first for duplicates - none
+  // found. "minor 7 11" and "major 7 #11" are the 9th-omitted siblings of the existing
+  // "minor 11" and "major 9 #11" stacks (5 tones, not 6). "minor 6" and "minor add9" are
+  // the minor-family counterparts of the existing "6" and "add9" color chords (parallel
+  // treatment, see TRIAD_QUALITY_FAMILY/QUALITY_PREF below). "dominant 7 sus4" is the
+  // 4-tone base that the existing 5-tone "9sus4" already extends but which was never
+  // itself registered. "dominant 7 #5" and "dominant 7 b5" are the single-alteration
+  // forms of what only existed combined, as "dominant 7 #5 #9". Registered in all five
+  // in-sync tables (intervalMap, lib, qualitySymbol, QUALITY_PREF, selectively
+  // TRIAD_QUALITY_FAMILY) plus the Quick Build alias table. EXTENSION_LADDER and diatonic
+  // generation deliberately untouched - these are typed vocabulary, not degree-level theory.
+  "minor 7 11":[0,3,7,10,17], "minor 6":[0,3,7,9], "minor add9":[0,3,7,14],
+  "major 7 #11":[0,4,7,11,18], "dominant 7 sus4":[0,5,7,10],
+  "dominant 7 #5":[0,4,8,10], "dominant 7 b5":[0,4,6,10]
 };
 const lib=[{n:"major",x:0.82,y:0.85,col:[237,161,0]},{n:"minor",x:-0.75,y:0.8,col:[42,120,214]},{n:"diminished",x:-0.55,y:-0.65,col:[227,73,72]},{n:"augmented",x:0.35,y:-0.55,col:[232,123,164]},{n:"major 7",x:0.85,y:0.55,col:[237,161,0]},{n:"dominant 7",x:0.55,y:-0.3,col:[235,104,52]},{n:"minor 7",x:-0.65,y:0.5,col:[42,120,214]},{n:"half-diminished",x:-0.55,y:-0.45,col:[74,58,167]},{n:"diminished 7",x:-0.35,y:-0.85,col:[227,73,72]},{n:"minor major 7",x:-0.25,y:-0.35,col:[74,58,167]},{n:"sus2",x:0.05,y:0.35,col:[27,175,122]},{n:"sus4",x:0.1,y:-0.1,col:[27,175,122]},{n:"add9",x:0.55,y:0.55,col:[237,161,0]},{n:"power chord",x:0,y:0.5,col:[137,135,129]},{n:"9th",x:0.6,y:0.25,col:[235,104,52]},
   // Item 10 extended-chord placements. Each inherits its base family's color so the
@@ -3908,7 +3958,17 @@ const lib=[{n:"major",x:0.82,y:0.85,col:[237,161,0]},{n:"minor",x:-0.75,y:0.8,co
   {n:"dominant 7 #5 #9",x:0.55,y:-0.70,col:[235,104,52]},
   // Item 11: III+ maj7. Tense/dark-bright corner near the augmented triad; inherits the
   // augmented triad's color so the family still reads as color-grouped on the map.
-  {n:"augmented major 7",x:0.30,y:-0.68,col:[232,123,164]}
+  {n:"augmented major 7",x:0.30,y:-0.68,col:[232,123,164]},
+  // Item 106: real-world chord-vocabulary expansion. Each inherits its base family's color.
+  // Placement is judgment, same as every prior extension batch - positioned near its
+  // closest sibling (the quality it's a smaller/simpler sibling of), nudge after listening.
+  {n:"minor 7 11",x:-0.52,y:0.68,col:[42,120,214]},
+  {n:"minor 6",x:-0.62,y:0.75,col:[42,120,214]},
+  {n:"minor add9",x:-0.50,y:0.60,col:[42,120,214]},
+  {n:"major 7 #11",x:0.88,y:0.52,col:[237,161,0]},
+  {n:"dominant 7 sus4",x:0.22,y:0.12,col:[27,175,122]},
+  {n:"dominant 7 #5",x:0.58,y:-0.50,col:[235,104,52]},
+  {n:"dominant 7 b5",x:0.48,y:-0.60,col:[235,104,52]}
 ];
 const rootMotionScore={0:0,1:1,2:1,3:1,4:1,5:2,6:1,7:2,8:1,9:1,10:1,11:1};
 // Mode-specific cadence bonuses: how strongly does a chord at [offset from tonic] pull to the tonic?
@@ -4048,8 +4108,14 @@ function signatureLabel(kr,km){
 const TRIAD_QUALITY_FAMILY = {
   "major": ["major 7","dominant 7","major 9","major 13","major 9 #11",
     "dominant 13","dominant 7 #11","dominant 7 b9","dominant 7 #9","dominant 7 b13",
-    "6","6/9","dominant 7 #5 #9"],
-  "minor": ["minor 7","minor major 7","minor 7 b9","minor 9","minor 11","minor 13","minor 6/9"],
+    "6","6/9","dominant 7 #5 #9",
+    // Item 106: maj7#11 is the 9th-omitted sibling of major 9 #11, same base; 7#5/7b5 join
+    // dominant 7 #5 #9 (already registered here despite its own altered 5th).
+    "major 7 #11","dominant 7 #5","dominant 7 b5"],
+  "minor": ["minor 7","minor major 7","minor 7 b9","minor 9","minor 11","minor 13","minor 6/9",
+    // Item 106: minor 7 11 is the 9th-omitted sibling of minor 11, same base; minor 6 mirrors
+    // "6" already being in the major list above despite having no 7th.
+    "minor 7 11","minor 6"],
   "diminished": ["half-diminished","diminished 7","half-diminished 9","half-diminished 11"],
   // Item 11: the augmented triad is the base of the III+ maj7 chord. New family, so the
   // Triad/7th toggle can offer the plain augmented triad form of augmented-major-7. Does not
@@ -4057,7 +4123,9 @@ const TRIAD_QUALITY_FAMILY = {
   "augmented": ["augmented major 7"]
   // 9sus4/13sus4 deliberately unregistered — sus-family chords (sus2/sus4) have never
   // been registered here either, so this keeps the new sus extensions consistent with
-  // that existing precedent rather than introducing a new rule just for them.
+  // that existing precedent rather than introducing a new rule just for them. Item 106:
+  // "dominant 7 sus4" and "minor add9" follow the exact same exclusion, same category of
+  // standalone color/voicing chord.
 };
 // qualityFamilyMatch (bare-triad-vs-7th-table lookup) retired at item 49 — its last
 // callers were all converted to nativeDegreeByFunction/functionMatchesDegree below, which
@@ -5788,7 +5856,11 @@ const qualitySymbol={major:'',minor:'m','diminished':'\u00B0',augmented:'+','maj
   '6':'6','6/9':'6/9','minor 6/9':'m6/9','9sus4':'9sus4','13sus4':'13sus4',
   'dominant 7 #5 #9':'7\u266F5\u266F9',
   // Item 11: maj7 with raised 5th.
-  'augmented major 7':'maj7\u266F5'};
+  'augmented major 7':'maj7\u266F5',
+  // Item 106: real-world chord-vocabulary expansion.
+  'minor 7 11':'m7(11)','minor 6':'m6','minor add9':'m(add9)',
+  'major 7 #11':'maj7(\u266F11)','dominant 7 sus4':'7sus4',
+  'dominant 7 #5':'7(\u266F5)','dominant 7 b5':'7(\u266D5)'};
 
 // --- Item 59 Phase 1: Live Analysis workspace (read-only) --------------------------------
 // Computes a fresh, render-ready structure from the SAME underlying authorities exportTheory()
@@ -7866,6 +7938,214 @@ function addChordAtInsertPoint(entry){
   activeMelodyIndex=null;
   activeKeyboardIndex=null;
   renderAll();
+}
+
+// --- Quick Build (Phase 1): batch chord-text entry -------------------------------------
+// Locked scope (Ricky, 2026-10-06): parses a "|"-separated string of chord symbols and
+// commits each one through the SAME addChordAtInsertPoint authority every other chord-add
+// path in the app already uses — diatonic clicks, secondary dominants, borrowed chords,
+// passing chords, Parallel/planing. A chord built by Quick Build is an ORDINARY seq[]
+// entry: no provenance flag, no second representation, indistinguishable afterward from
+// one built by clicking. Editing, playback, analysis, voicing, and MIDI export all apply
+// to it exactly as they do to any other chord, because those systems read seq[]
+// generically and have no "how was this chord created" branch for a plain chord.
+//
+// Explicitly out of scope for Phase 1 (per the lock): key-change inference, duration/bar
+// syntax beyond the automatic assignment applyDefaultChordDuration already does for every
+// new chord, natural-language parsing, AI composition, autocomplete, any change to
+// computeVoicings/smoothestCloseVoicing or any other protected function, and any chord
+// quality not already a native intervalMap/lib[] entry. Accepted symbols are a closed,
+// locked alias list (below) — supporting anything else would mean inventing a new chord
+// structure or expanding the theory model, which Phase 1 explicitly does not do.
+//
+// Quick Build does not change voicing quality. The first chord gets whatever voicing
+// computeVoicings already gives a chord with no predecessor (seeded from Voice Range);
+// every chord after it voice-leads against its neighbor via the same, unmodified
+// smoothestCloseVoicing search every clicked-in progression already uses. This produces
+// an immediately PLAYABLE first pass, not a guaranteed musically satisfying one — the
+// same ceiling Build already has (see backlog items 27/42) applies here unchanged.
+//
+// Reuses LETTER_NATURAL_PC — the same table accidentalFor/keySpell already use for the
+// reverse (pitch-class -> name) direction — rather than a second letter/pitch-class table.
+// This is the one genuinely new primitive Quick Build needs: nothing in the app previously
+// parsed a typed note name back into a pitch class.
+function qbParseNoteName(tok){
+  if(!tok) return null;
+  const letter=tok[0].toUpperCase();
+  if(!(letter in LETTER_NATURAL_PC)) return null;
+  const rest=tok.slice(1);
+  if(!/^[#b]?$/.test(rest)) return null; // locked: a single accidental max, no double sharps/flats
+  let pc=LETTER_NATURAL_PC[letter];
+  if(rest==='#') pc+=1; else if(rest==='b') pc-=1;
+  return ((pc%12)+12)%12;
+}
+
+// The locked Phase 1 accepted symbol set, grouped exactly as approved. Every value here is
+// an EXISTING lib[]/intervalMap quality name — this table adds text aliases for them, it
+// does not add or imply any new chord structure. Case-sensitive per the lock (M7 vs m7).
+const QB_QUALITY_ALIASES = {
+  // basic triads/sevenths
+  '':'major', 'maj':'major',
+  'm':'minor', 'min':'minor', '-':'minor',
+  'dim':'diminished', 'o':'diminished',
+  'aug':'augmented', '+':'augmented',
+  'maj7':'major 7', 'M7':'major 7',
+  '7':'dominant 7',
+  'm7':'minor 7', 'min7':'minor 7', '-7':'minor 7',
+  'm7b5':'half-diminished', 'ø':'half-diminished',
+  'dim7':'diminished 7', 'o7':'diminished 7',
+  'mMaj7':'minor major 7', 'm(maj7)':'minor major 7', '-maj7':'minor major 7',
+  // extensions
+  '9':'9th',
+  'maj9':'major 9',
+  'maj13':'major 13',
+  'maj9#11':'major 9 #11',
+  'm9':'minor 9',
+  'm11':'minor 11',
+  'm13':'minor 13',
+  '13':'dominant 13',
+  'm9b5':'half-diminished 9',
+  'm11b5':'half-diminished 11',
+  // sus/add
+  'sus2':'sus2',
+  'sus4':'sus4',
+  'add9':'add9',
+  '9sus4':'9sus4',
+  '13sus4':'13sus4',
+  // altered dominants
+  '7b9':'dominant 7 b9',
+  '7#9':'dominant 7 #9',
+  '7#11':'dominant 7 #11',
+  '7b13':'dominant 7 b13',
+  '7#5#9':'dominant 7 #5 #9',
+  // other existing registered qualities
+  '5':'power chord',
+  '6':'6',
+  '6/9':'6/9',
+  'm6/9':'minor 6/9',
+  'm7b9':'minor 7 b9',
+  'maj7#5':'augmented major 7',
+  // Common parenthetical spellings, locked 2026-10-06 after a pitch-content check against
+  // the real intervalMap entries (no new quality, no parser-structure change). Each maps to
+  // an exact interval-set match for the registered quality named: 'maj9(#11)' and the two
+  // altered-dominant forms add exactly one unambiguous tone on top of an already-fixed base;
+  // 'm9(11)' is the six-tone minor-9-plus-11 stack, which is the same pitch set as the
+  // registered 'minor 11' (not 'minor 9', despite the symbol's own prefix). The omitted-9th
+  // form 'm7(11)' is deliberately NOT aliased here - conventional usage of that exact
+  // parenthetical form means the 9th is left out, which does not match the registered
+  // 'minor 11' quality's six-tone stack, so aliasing it would silently add an unstated tone.
+  'm9(11)':'minor 11',
+  '7(b9)':'dominant 7 b9',
+  '7(#9)':'dominant 7 #9',
+  'maj9(#11)':'major 9 #11',
+  // Real-world chord-vocabulary expansion (item 106), locked 2026-10-07. These seven are
+  // now genuinely registered qualities (see intervalMap above), not approximations of an
+  // existing one - unlike v100's rejected 'm7(11)' alias attempt, which would have silently
+  // added a 9th onto the existing 'minor 11' stack, 'm7(11)' here maps to its own exact,
+  // newly registered 5-tone quality. Checked against the full longest-match precedence
+  // rule: none of these shadow or get shadowed by any existing alias (including the
+  // '.../9'-suffixed and parenthetical aliases above).
+  'm7(11)':'minor 7 11',
+  'm6':'minor 6',
+  'm(add9)':'minor add9', 'madd9':'minor add9',
+  'maj7#11':'major 7 #11', 'maj7(#11)':'major 7 #11',
+  '7sus4':'dominant 7 sus4',
+  '7#5':'dominant 7 #5', '7(#5)':'dominant 7 #5',
+  '7b5':'dominant 7 b5', '7(b5)':'dominant 7 b5'
+};
+
+// Normalization locked 2026-10-06, applied to the whole input before tokenizing: unicode
+// accidental/diminished/half-diminished glyphs fold to the ASCII forms the alias table
+// above is keyed on, so typed and pasted symbols behave identically. "°" -> "o" also
+// covers "°7" -> "o7" as a side effect (no separate rule needed for that pair).
+function qbNormalize(str){
+  return str.replace(/♯/g,'#').replace(/♭/g,'b').replace(/°/g,'o').replace(/ø7/g,'ø');
+}
+// Comma is the primary, UI-featured separator (locked 2026-10-06, usability only). "|" is
+// kept accepted for compatibility with the Phase 1 original but is no longer shown anywhere
+// in the UI copy. No change to the accepted chord-symbol set or parsing precedence.
+function qbTokenize(str){
+  return qbNormalize(str).split(/[,|]/).map(t=>t.trim()).filter(t=>t.length);
+}
+
+// Parses one chord token into {ok:true, idx, root, bass} or {ok:false, token, reason}.
+// Quality matching is LONGEST-match-first against the closed QB_QUALITY_ALIASES set — this
+// is also the rule that deterministically separates "6/9"/"m6/9" (quality aliases that
+// contain their own "/") from a genuine slash-bass symbol like "C/E" or "C6/9/E": whatever
+// text remains after the longest matching quality alias is consumed is checked for a
+// leading "/" only afterward, never before. See the 2026-10-06 parsing-precedence lock for
+// the full reasoning and worked examples.
+function qbParseToken(tok){
+  if(!tok) return {ok:false, token:tok, reason:'empty'};
+  if(!/^[A-Ga-g]/.test(tok)) return {ok:false, token:tok, reason:'does not start with a note name (A–G)'};
+  let i=1;
+  while(i<tok.length && (tok[i]==='#'||tok[i]==='b')) i++;
+  const root=qbParseNoteName(tok.slice(0,i));
+  if(root===null) return {ok:false, token:tok, reason:'root not recognized (one accidental max)'};
+  const rest=tok.slice(i);
+  let bestAlias=null;
+  for(const alias in QB_QUALITY_ALIASES){
+    if(rest.startsWith(alias) && (bestAlias===null || alias.length>bestAlias.length)) bestAlias=alias;
+  }
+  if(bestAlias===null) return {ok:false, token:tok, reason:'chord quality not recognized'};
+  const quality=QB_QUALITY_ALIASES[bestAlias];
+  const idx=lib.findIndex(l=>l.n===quality);
+  if(idx<0) return {ok:false, token:tok, reason:'chord quality not in the chord library'}; // registry guard; should never fire
+  const remainder=rest.slice(bestAlias.length);
+  let bass=null;
+  if(remainder.length){
+    if(remainder[0]!=='/') return {ok:false, token:tok, reason:'unrecognized text after the chord quality'};
+    bass=qbParseNoteName(remainder.slice(1));
+    if(bass===null) return {ok:false, token:tok, reason:'slash-bass note not recognized'};
+  }
+  return {ok:true, idx, root, bass};
+}
+
+// Parses the whole batch and reports every invalid token in one pass. Nothing is committed
+// here — this is read-only, exactly like passingAuditionVoicings/commitPassing keep preview
+// and commit as two separate steps.
+function qbParseBatch(str){
+  const tokens=qbTokenize(str);
+  if(!tokens.length) return {ok:false, tokens, results:[]};
+  const results=tokens.map(qbParseToken);
+  return {ok:results.every(r=>r.ok), tokens, results};
+}
+
+// Commits a batch that has already validated clean. Quick Build always appends a fresh
+// batch — it deliberately clears insertAt/reviseAt first so it can never silently land
+// mid-progression via a leftover insert cursor, or replace a chord via a leftover revise
+// mode, either of which would be surprising for a dedicated batch-entry action. Each
+// addChordAtInsertPoint call runs its own full renderAll() (duration fitting, Ripple,
+// history) exactly as it does for any other single chord add; a multi-chord batch costs
+// one re-render per chord rather than one for the whole batch, a known Phase 1 trade-off
+// rather than a change to the shared creation authority.
+function qbCommitBatch(results){
+  insertAt=null; reviseAt=null;
+  results.forEach(r=>{ addChordAtInsertPoint({idx:r.idx, root:r.root, bass:r.bass}); });
+}
+
+function qbRenderFeedback(parsed){
+  const el=document.getElementById('qb-feedback');
+  if(!el) return;
+  if(!parsed || parsed.ok){ el.hidden=true; el.innerHTML=''; return; }
+  el.hidden=false;
+  if(!parsed.tokens.length){
+    el.innerHTML='Nothing was added. Type at least one chord.';
+    return;
+  }
+  const bad=parsed.results.map((r,i)=>({r,i})).filter(x=>!x.r.ok);
+  const lines=bad.map(x=>`&bull; token ${x.i+1}, "${escapeHtml(x.r.token)}": ${escapeHtml(x.r.reason)}.`);
+  el.innerHTML=`Nothing was added. ${bad.length} of ${parsed.results.length} chord${parsed.results.length===1?'':'s'} could not be parsed:<br>${lines.join('<br>')}`;
+}
+
+function qbGo(){
+  const input=document.getElementById('qb-input');
+  if(!input) return;
+  const parsed=qbParseBatch(input.value);
+  qbRenderFeedback(parsed);
+  if(!parsed.ok) return;
+  qbCommitBatch(parsed.results);
+  input.value='';
 }
 
 // --- Item 101: Parallel Harmony / Planing (Phase 1) -------------------------------------
@@ -13311,36 +13591,13 @@ function blankBarIsSheet(){ return !!(window.matchMedia && window.matchMedia('(m
 function floatIsOpen(kind){ return !!floatCur && (!kind || floatCur.kind===kind); }
 function floatPosition(){
   if(!floatCur || blankBarIsSheet()) return;
-  const {el,trigger,kind}=floatCur, EDGE=12, GAP=8;
+  const {el,trigger}=floatCur, EDGE=12, GAP=8;
   const anchor=(trigger.closest && trigger.closest('.insert-note')) || trigger; // Build: sit BELOW the whole banner so its result line stays readable
   const ar=anchor.getBoundingClientRect(), tr=trigger.getBoundingClientRect();
-  const vw=window.innerWidth, vh=window.innerHeight;
+  const pw=el.offsetWidth, ph=el.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
   // v98 acceptance fix: never let a floating panel's bottom land under the fixed transport bar.
   const transportH=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--transport-h'))||0;
-  const floor=vh-transportH-EDGE; // lowest a panel's bottom may reach
-  // Connect (pass-panel) reachability fix: Connect can grow tall (Color + the "More
-  // colorful connections" disclosure), and it is re-positioned when that disclosure toggles
-  // (see fillPassingPanel), so it owns its own vertical sizing. Place it in whichever of
-  // below/above the anchor has more room, cap its max-height to exactly that room so its own
-  // .pass-panel-body scroller fits the visible region, and clamp top to [EDGE, floor-ph] so
-  // the bottom can never cross the transport even when the disclosure is expanded after open.
-  // Every other .bb-panel falls through to the original placement math below, byte-for-byte,
-  // and the phone sheet is already handled by the blankBarIsSheet() early return above.
-  if(kind==='passing'){
-    const spaceBelow=floor-(ar.bottom+GAP);
-    const spaceAbove=(ar.top-GAP)-EDGE;
-    const below=spaceBelow>=spaceAbove;
-    const room=Math.max(120, below?spaceBelow:spaceAbove); // never collapse to nothing
-    el.style.maxHeight=room+'px';
-    const ph=Math.min(el.offsetHeight, room); // offsetHeight is now bounded by the cap just set
-    let top=below?(ar.bottom+GAP):(ar.top-GAP-ph);
-    top=Math.max(EDGE, Math.min(top, floor-ph));
-    el.style.top=top+'px';
-    const pw=el.offsetWidth;
-    el.style.left=Math.max(EDGE,Math.min(tr.left,vw-pw-EDGE))+'px';
-    return;
-  }
-  const pw=el.offsetWidth, ph=el.offsetHeight;
+  const floor=vh-transportH-EDGE;
   let top=ar.bottom+GAP;
   if(top+ph>floor){ top=(ar.top-GAP>=ph)?(ar.top-ph-GAP):Math.max(EDGE,floor-ph); }
   el.style.top=top+'px';
@@ -13382,7 +13639,6 @@ function closeFloatPanel(){
   const c=floatCur; floatCur=null;
   c.el.hidden=true;
   if(c.kind==='lens') lensOnClosed(); // Transition Lens: end its audition and clear its state
-  if(c.kind==='passing') connectStopAudio(); // Connect: cancel any pending preview when the panel goes away
   if(c.kind==='bb') blankBarPanelMode=null;
   if(c.kind==='key'){ // closing the panel ends the edit: the pill stops looking "open"
     editingMarkerIndex=null;
@@ -13567,52 +13823,12 @@ function passingAuditionVoicings(c){
   const trio=[v[insertAt-1],v[insertAt],v[insertAt+1]];
   return trio.every(x=>x&&x.length)?trio:null;
 }
-// --- Connect audition ownership (mirrors the Transition Lens pattern exactly) ---
-// PolySynth hands a FUTURE attack/release to a private, uncancellable timeout, so
-// triggerAttackRelease'd previews could stack and overlap when the user auditions one
-// tile after another. Connect now dispatches each attack and paired release itself on
-// Tone's own context timeline (the same mechanism lensSchedule uses) and keeps the ids
-// so a new preview / Lens / Play / Stop can cancel exactly those. Sounding notes are
-// tracked and released with ORDINARY PAIRED triggerRelease, never releaseAll (which does
-// not mark PolySynth voice entries released and hangs a voice). connectAudioGen is bumped
-// on every cancel so a preview still inside its ensureAudioReady() continuation aborts
-// instead of starting late.
-let connectAudio=null;   // {ids:[],sounding:[]} while a Connect preview is scheduled/sounding
-let connectAudioGen=0;   // bumped by connectStopAudio(); a deferred start checks it's still current
-function connectStopAudio(){
-  connectAudioGen++;
-  if(!connectAudio) return;
-  const ca=connectAudio; connectAudio=null;
-  const ctx=Tone.getContext(); ca.ids.forEach(id=>ctx.clearTimeout(id));
-  if(synth&&ca.sounding.length){ const t=ctx.now(); ca.sounding.forEach(n=>synth.triggerRelease(n,t)); }
-  ca.sounding.length=0;
-}
-function connectSchedule(notes,tAttack,dur){
-  const ca=connectAudio,ctx=Tone.getContext();
-  const due=(t,fn)=>{ ca.ids.push(ctx.setTimeout(fn,Math.max(0,t-ctx.now()))); };
-  due(tAttack,()=>{ ca.sounding.push(notes); synth.triggerAttack(notes,tAttack); });
-  due(tAttack+dur,()=>{ const k=ca.sounding.indexOf(notes); if(k>=0) ca.sounding.splice(k,1); synth.triggerRelease(notes,tAttack+dur); });
-}
 function auditionPassing(c){
   const trio=passingAuditionVoicings(c); if(!trio) return;
-  // Stop the normal transport through its real path. lensYield()/lensClaimSynth() alone do
-  // NOT stop the Transport (they only release lens audio and rebuild the synth), so a preview
-  // started mid-playback would otherwise play over a still-running Transport. stopPlayback()
-  // halts Transport, sets isPlaying=false, bumps transportRequestGen, sets lensSynthStale, and
-  // (now) calls connectStopAudio() to cancel any previous Connect preview — so this one call
-  // covers: no overlap with a prior preview, and Transport actually stops.
-  stopPlayback();
-  const myGen=connectAudioGen;        // captured AFTER stopPlayback()'s connectStopAudio() bump
   ensureAudioReady().then(()=>{
-    if(myGen!==connectAudioGen) return; // a newer preview / Lens / Play / Stop superseded this while audio started
     ensureSynth();
-    lensClaimSynth();                 // reset the synth if a stale transport left uncancellable events
-    connectAudio={ids:[],sounding:[]};
     const step=(60/bpm)*2, t0=Tone.now()+0.05; // each chord a half note: before, the passing chord, after
-    // 0.92 EARLY RELEASE (timing unchanged): each chord releases at 92% of the step; the ~8%
-    // before the next attack is an early release, not confirmed silence. Ricky's reported gap
-    // stays open pending a clean-preview retest.
-    trio.forEach((notes,k)=>connectSchedule(notes.map(midiToNote),t0+k*step,step*0.92));
+    trio.forEach((notes,k)=>synth.triggerAttackRelease(notes.map(midiToNote),step*0.92,t0+k*step));
   });
 }
 function commitPassing(c){
@@ -13685,11 +13901,6 @@ function fillPassingPanel(){
     details.appendChild(summary);
     connectAppendGroup(details,'Chromatic approach',cands.chromaticApproach,kc);
     connectAppendGroup(details,'Color',cands.color,kc);
-    // Reachability fix: expanding/collapsing changes the panel's content height, so re-run
-    // the positioner to re-measure and re-clamp against the transport floor and the room
-    // above/below the anchor (floatPosition sizes the pass-panel to available space on every
-    // run). Only fires while this panel is open; a no-op for every other panel.
-    details.addEventListener('toggle',()=>{ if(floatIsOpen('passing')) floatPosition(); });
     body.appendChild(details);
   }
   body.appendChild(floatMake('div','pass-hint','Click a chord to hear it between its neighbors. Click the highlighted one again to insert it.'));
@@ -13894,8 +14105,7 @@ function wireBlankBarTools(){
 let transportRequestGen=0;
 function stopPlayback(){
   lensYield(); // Transition Lens ownership: any lens audition lets go before the normal transport acts
-  connectStopAudio(); // Connect ownership: any pending Connect preview lets go before the normal transport acts
-  if(isPlaying) lensSynthStale=true; // the transport may have left uncancellable synth events; the lens/Connect reset the synth before it next sounds
+  if(isPlaying) lensSynthStale=true; // the transport may have left uncancellable synth events; the lens resets the synth before it next sounds
   transportRequestGen++; // invalidate any in-flight deferred Play/Scale-audition request
   Tone.Transport.stop();
   Tone.Transport.cancel();
@@ -14821,6 +15031,8 @@ function generateProgression(){
   playProgression();
 }
 document.getElementById('rand-go').onclick=generateProgression;
+document.getElementById('qb-go').onclick=qbGo;
+document.getElementById('qb-input').addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); qbGo(); } });
 
 
 /* ===== MIDI IMPORT (Session E) — parser + chord detection + preview UI ===== */
@@ -15017,7 +15229,18 @@ const QUALITY_PREF = {
   "6":2,"9sus4":2,"13sus4":2,"6/9":3,"minor 6/9":3,"dominant 7 #5 #9":5,
   // Item 11: unique pitch-class set [0,4,8,11], no reverse-match ambiguity; grouped with
   // the other specific/rare quality (minor major 7).
-  "augmented major 7":4
+  "augmented major 7":4,
+  // Item 106: real-world chord-vocabulary expansion. "minor 7 11" and "major 7 #11" join
+  // the other extended/altered chords at tier 5; "minor add9" mirrors "add9"'s tier exactly
+  // (its major-family counterpart); "dominant 7 sus4" mirrors "9sus4"/"13sus4" at tier 2;
+  // "dominant 7 #5"/"dominant 7 b5" join the other single-alteration altered dominants at
+  // tier 5. "minor 6" is pitch-identical to half-diminished a minor 3rd below (same class
+  // of ambiguity as "6"/minor 7 and "6/9"/"9sus4" above) - deliberately set to tier 3 rather
+  // than half-diminished's tier 2, so half-diminished's existing functional role elsewhere
+  // in the app (a real diatonic degree in modeDegrees, e.g. vii° in Ionian) is left
+  // undisturbed and the newer color chord yields the tie. Locked 2026-10-07.
+  "minor 7 11":5,"major 7 #11":5,"minor add9":3,"dominant 7 sus4":2,
+  "dominant 7 #5":5,"dominant 7 b5":5,"minor 6":3
 };
 function matchChordQuality(pcSet, bassPC, intervalMap){
   let best=null;

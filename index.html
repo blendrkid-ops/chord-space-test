@@ -2978,7 +2978,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
   white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,0.22);
 }
 .cyl-ov-label.root { padding: 2px 5px; font-size: 11px; font-weight: 600; color: var(--text-secondary); background: color-mix(in srgb, var(--bg) 46%, transparent); border-color: transparent; box-shadow: none; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
-.cyl-ov-label.prog { color: var(--text-primary); border-color: rgba(224,172,74,0.24); }
+.cyl-ov-label.prog { color: var(--text-primary); border-color: rgba(224,172,74,0.24); transition: opacity 180ms ease; }
 .cyl-ov-label.prog.selected { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 1px rgba(224,172,74,0.18), 0 8px 20px rgba(0,0,0,0.28); }
 .cyl-ov-label.seg { font-size: 10px; color: var(--text-muted); background: color-mix(in srgb, var(--surface-1) 84%, transparent); }
 .cyl-ov-label.region { color: #17120a; background: rgba(242,237,223,0.9); border-color: transparent; font-weight: 600; }
@@ -3818,7 +3818,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v102";
+const APP_VERSION = "v103";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -14113,6 +14113,11 @@ function stopPlayback(){
   isPlaying=false;
   activeChordIndex=-1;
   clearPlaybackHighlights();
+  // Animated chord labels (Phase 1): genuine stop (Stop button) — restore every
+  // progression-instance label. Deliberately separate from the cylOnPlayStop call already
+  // inside clearPlaybackHighlights() above, which fires on every chord transition too and
+  // keeps its existing, unrelated meaning (pulse/ring reset) unchanged.
+  if(window.cylOnPlaybackStopped) window.cylOnPlaybackStopped();
   // The panel's own fallback (first chord, when nothing's explicitly selected) means it
   // can have something showing even with activeKeyboardIndex still null, so refresh it
   // unconditionally to clear any leftover "now playing" key glow.
@@ -14350,6 +14355,13 @@ function playProgression(startIndex){
       if(!chordsMuted && notesToPlay.length) synth.triggerAttackRelease(notesToPlay.map(midiToNote),durSec,time);
       Tone.Draw.schedule(()=>highlightChord(i),time); // playhead keeps moving even when chords are muted
     },noteTime);
+    // Animated chord labels (Phase 1): a new, additive offset event per chord, mirroring the
+    // Lines melody/bass onset+offset pattern below exactly. This is the real-audio-clock
+    // signal the Cylinder label feature needs to know a chord has stopped sounding (e.g. a
+    // rest before the next onset) — nothing here changes audio playback or timing itself.
+    Tone.Transport.schedule(time=>{
+      Tone.Draw.schedule(()=>{ if(window.cylOnChordStop) window.cylOnChordStop(i); },time);
+    },noteTime+durSec);
   });
 
   // Lines (melody/bass) playback — independent absolute-position events, on their own
@@ -14399,6 +14411,10 @@ function playProgression(startIndex){
         isPlaying=false;
         activeChordIndex=-1;
         clearPlaybackHighlights();
+        // Animated chord labels (Phase 1): natural non-loop end — same restore as the Stop
+        // button, so reaching the end of the progression on its own also brings back every
+        // progression-instance label rather than leaving the last one isolated.
+        if(window.cylOnPlaybackStopped) window.cylOnPlaybackStopped();
       },time);
     }
   },cumTime);
@@ -15781,6 +15797,16 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   let pulseMesh=null;
   let pulseTail=[]; // v60: trailing fade meshes so the playback tracer reads as riding the path, not a floating dot
   let overlayItems=[];
+  // Animated chord labels (Phase 1): during playback only the currently sounding
+  // progression-instance label stays visible; the rest fade via opacity (see
+  // updateOverlayPositions). labelsDimmed is false whenever playback is not active, which
+  // restores every .prog label to its normal always-visible state. activeLabelSeqIdx is the
+  // seq[] index (prog.seqIdx) of the one label currently excluded from the dim, or null when
+  // nothing should be shown (e.g. a silent gap between chords). Deliberately separate from
+  // playingMesh/pulse/rings above — those are the existing 3D playback effects and are
+  // untouched by this feature.
+  let labelsDimmed=false;
+  let activeLabelSeqIdx=null;
   let selection=null;
   let selectedRegionIdx=null;
   const _proj = {v:null};
@@ -16262,7 +16288,12 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
       if(item.seg && !(selection && selection.kind==='segment' && selection.data===item.seg)){ item.el.style.display='none'; return; }
       item.el.style.display='block';
       item.el.style.left=pr.x+'px'; item.el.style.top=pr.y+'px';
-      item.el.style.opacity = item.region ? '0.92' : (item.seg ? '0.90' : (item.prog ? '0.95' : '0.78'));
+      // Animated chord labels (Phase 1): a dimmed prog label stays display:block (so the
+      // opacity transition can actually animate) but fades to 0 — layered on top of the
+      // three checks above, which still win outright (off-screen, occluded, or segment
+      // selection all still hide a label completely, exactly as before this feature).
+      const progDimmed = !!item.prog && labelsDimmed && item.prog.seqIdx!==activeLabelSeqIdx;
+      item.el.style.opacity = item.region ? '0.92' : (item.seg ? '0.90' : (item.prog ? (progDimmed?'0':'0.95') : '0.78'));
       if(item.prog) item.el.classList.toggle('selected', selection && selection.kind==='progression' && selection.data===item.prog);
       if(item.region) item.el.style.zIndex='3';
     });
@@ -16550,6 +16581,11 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
   window.cylOnShow = function(){ syncData(); resize(); start(); renderModeBanner(); };
   window.cylOnHide = function(){ stop(); };
   window.cylOnChordPlay = function(idx){
+    // Animated chord labels (Phase 1): advance the one un-dimmed label to this chord. Set
+    // unconditionally (ahead of the !THREE guard below) so label state always tracks the
+    // real onset event even on the rare path where the 3D scene itself isn't ready.
+    labelsDimmed=true;
+    activeLabelSeqIdx=idx;
     const pos=sceneData.progression.findIndex(d=>d.seqIdx===idx); if(pos<0||!THREE)return;
     if(playingMesh){ playingMesh=null; applySelectionStyles(); }
     const d=sceneData.progression[pos];
@@ -16587,12 +16623,41 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     applySelectionStyles();
   };
   window.cylOnPlayStart = function(){
+    // Animated chord labels (Phase 1): dim every progression-instance label the instant
+    // playback begins, before the first chord's onset event fires, so there is no frame
+    // where every label still shows the old static state. activeLabelSeqIdx stays null
+    // until the first cylOnChordPlay call un-dims the actual starting chord.
+    labelsDimmed=true;
+    activeLabelSeqIdx=null;
     // auto-frame-then-free: ease to a view that faces the bulk of the path, then release.
     if(!sceneData.progression.length) return;
     let sx=0, sy=0;
     sceneData.progression.forEach(d=>{ const th=angleOf(d.root); sx+=Math.cos(th); sy+=Math.sin(th); });
     const meanTh = Math.atan2(sy, sx);
     target = { az: -Math.PI/2 - meanTh, el: DEF_EL, dist: DEF_DIST, fx:0, fy:0, fz:0 };
+  };
+  // Animated chord labels (Phase 1): new, additive hook — fired once per chord at the exact
+  // moment that chord's own sound ends (see the new offset schedule call in playProgression,
+  // right beside the Lines melody/bass onset+offset pattern it mirrors). Deliberately
+  // separate from cylOnPlayStop, which already fires on every chord transition for the
+  // unrelated pulse/ring effects below and keeps that exact behavior unchanged. Guarded so a
+  // chord whose duration overlaps or exactly abuts the next chord's onset never re-dims a
+  // label that a later onset has already made active: idx is only "stopped" here if it is
+  // still the one currently un-dimmed. With no chord active afterward (a rest/gap), no
+  // progression-instance label is shown, per the agreed default.
+  window.cylOnChordStop = function(idx){
+    if(activeLabelSeqIdx===idx) activeLabelSeqIdx=null;
+  };
+  // Animated chord labels (Phase 1): new, additive hook — fired only at genuine playback stop
+  // (the Stop button) or natural non-loop end, from the two call sites that already
+  // unambiguously mark those two moments (isPlaying=false; activeChordIndex=-1;). Restores
+  // every progression-instance label to its normal, always-visible static state. A loop's
+  // wrap back to the start never reaches this hook — that transition is just another chord
+  // onset handled by cylOnChordPlay above — so labels correctly stay in "only the sounding
+  // one visible" mode across a loop boundary.
+  window.cylOnPlaybackStopped = function(){
+    labelsDimmed=false;
+    activeLabelSeqIdx=null;
   };
 
   // Load Three.js for the Web3D scene. The rest of Chord Space remains usable if this fails —

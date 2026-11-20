@@ -38,6 +38,9 @@
   --stale: #d1665a;
   --stale-dim: rgba(209,102,90,0.12);
   --stale-strong: rgba(209,102,90,0.30);
+  --foreign-bass: #e0589c;
+  --foreign-bass-dim: rgba(224,88,156,0.12);
+  --foreign-bass-strong: rgba(224,88,156,0.30);
   --voice-1: #5cb8e0;
   --voice-2: #7fd66e;
   --voice-3: #e0c94f;
@@ -253,7 +256,8 @@ html, body {
 }
 .oct-transpose-group button { padding: 6px 10px; font-family: var(--font-mono); }
 .oct-transpose-val { min-width: 24px; text-align: center; }
-.vl-oct-transpose { margin-top: 12px; }
+.vl-oct-transpose { margin-top: 0; }
+.vl-top-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
 .btn-loop.active {
   background: var(--accent-dim);
   border-color: var(--accent);
@@ -511,6 +515,50 @@ header .subtitle .mono {
 .an-contour-seg { position: relative; }
 .an-contour-seg svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .an-contour-seg svg line { stroke: var(--border-strong); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+
+/* Full Theory — Current Chord Circle (Phase 1, design-lock rev 6, 2026-11-16). A separate,
+   additive circle-of-fifths diagram showing the current chord's full theoretical tones as a
+   closed shape. Deliberately reuses the existing --melody color family rather than any of
+   relColors' dom/plagal/mediant/circle/step hues (secdom/geom/rootmove/accent/text-secondary)
+   — those drive the Root Motion diagram directly below this one, and a shared palette there
+   would wrongly suggest the two diagrams encode the same thing. No new color introduced for
+   the root node; it is distinguished by size and an extra ring only. */
+#current-chord-wrap { margin: 18px 0 22px; text-align: center; }
+.cc-head { display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+.cc-state {
+  font-family: var(--font-mono); font-size: 11px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border-strong); color: var(--text-muted);
+}
+.cc-state-playing { color: var(--melody); border-color: var(--melody-strong); background: var(--melody-dim); }
+.cc-state-selected { color: var(--text-secondary); background: var(--surface-1); }
+.cc-chordname { font-family: var(--font-mono); font-size: 16px; font-weight: 500; color: var(--text-primary); }
+/* Mobile floor (design-lock Section 7): the diagram never shrinks below min-width even in a
+   narrower parent — past that point the page allows slight horizontal room rather than the
+   diagram (and its 12 labels) shrinking further. Exact floor value is implementation detail,
+   to be checked against a real phone viewport; this is a first, reasonable setting. */
+.cc-svg { width: 100%; max-width: 340px; min-width: 220px; height: auto; display: block; margin: 0 auto; }
+.cc-node-active { fill: var(--melody); stroke: var(--melody-strong); stroke-width: 1; transition: fill 0.25s ease; }
+.cc-node-inactive { fill: var(--bg); stroke: var(--border-strong); stroke-width: 1; transition: fill 0.25s ease; }
+.cc-root-ring { pointer-events: none; }
+/* Rev 8, v108 fill treatment: foreign (non-chord-tone) slash-bass gets its own filled
+   node state, cc-node-bass -- a third fill distinct from both cc-node-active (chord
+   tone, --melody teal) and cc-node-inactive (not sounding at all, dark). It is NOT
+   cc-node-active: that class, and that color, mean "this pitch is part of the chord's
+   formula" (Section 2's source-of-truth rule), which a foreign bass is not. Using a
+   different dedicated color (--foreign-bass, magenta) for the fill keeps that claim
+   intact while still giving the bass pitch a filled, easy-to-spot node rather than a
+   thin ring on a dark background (v106/v107's ring read too quiet -- Ricky's report).
+   A chord-tone bass (an ordinary inversion) still gets no special treatment: that pitch
+   is already active via the normal tones set, cc-node-active, unchanged.
+   Rev 9 (v111) and Rev 10 (v112) tried coloring cc-node-active per voice -- first by
+   harmonic role, then by the chord's real voice-thread slot -- to match the keyboard
+   and roll. Reverted at Ricky's request: back to the original flat melody teal. */
+.cc-node-bass { fill: var(--foreign-bass); stroke: var(--foreign-bass-strong); stroke-width: 1; transition: fill 0.25s ease; }
+.cc-node-label { font-family: var(--font-mono); font-size: 13px; pointer-events: none; }
+.cc-label-active { fill: var(--bg); font-weight: 500; }
+.cc-label-inactive { fill: var(--text-muted); }
+.cc-label-bass { fill: var(--bg); font-weight: 500; }
+.cc-note { font-size: 12px; color: var(--text-muted); max-width: 480px; margin: 10px auto 0; }
 
 /* Selected detail panel — dense per-chord/per-transition findings, shown on demand instead
    of permanently on every timeline block (the core problem this pass corrects). */
@@ -1028,14 +1076,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 }
 .inv-option.selected { border: 2px solid var(--geom); padding: 7px 13px; background: var(--geom-dim); }
 .inv-option.inv-status-pill { cursor: default; pointer-events: none; }
-.keyboard-inv-row { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
-.keyboard-inv-label {
+/* v110: Inversion moved out of the keyboard panel into the Voice Leading header row
+   (next to Notes/Flow and the solo buttons), so it's laid out inline here instead of as a
+   stacked label-over-buttons column. */
+.keyboard-inv-row { display: flex; align-items: center; gap: 10px; }
+/* v110: with Inversion gone, the circle of fifths gets the keyboard panel's full width and
+   is centered, rather than squeezed into a narrow side-by-side column. */
+.keyboard-cc-wrap { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); text-align: center; }
+.keyboard-cc-label {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 0 0 8px;
+}
+.keyboard-inv-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
 }
 .rand-section {
   display: flex;
@@ -2294,9 +2356,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
 .rhythm-marker-label.dragging { color: var(--accent); cursor: grabbing; }
 
 /* --- Voice Leading roll header + per-voice solo row (item 26) --- */
-.vl-header-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.vl-header-row { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
 .vl-header-row .section-label { margin-bottom: 0; }
-.voice-solo-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.voice-solo-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .voice-solo-btn {
   font-family: var(--font-mono); font-size: 11px; padding: 4px 10px 4px 8px; border-radius: 6px;
   background: transparent; border: 1px solid var(--border-strong); color: var(--text-muted); cursor: pointer;
@@ -2690,24 +2752,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, .tabbar .tab:fo
   color: var(--text-muted); white-space: nowrap; pointer-events: none;
 }
 .notes-empty-msg { padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
-.vl-metrics { display: flex; gap: 14px; flex-wrap: wrap; margin: 0; }
-.vl-metrics .ov {
-  display: flex; flex-direction: column; gap: 4px;
-  min-width: 110px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px 16px;
-}
-.vl-metrics .ov-label {
-  font-family: var(--font-mono); font-size: 11px;
-  color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em;
-}
-.vl-metrics .ov-val { font-family: var(--font-mono); font-size: 22px; color: var(--text-primary); line-height: 1.05; }
-.vl-metrics .ov-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
-.vl-empty { font-size: 14px; color: var(--text-muted); margin: 0; }
-.vl-compare { font-size: 13px; color: var(--text-muted); margin: 14px 0 0; line-height: 1.5; }
-.vl-compare strong { color: var(--text-secondary); font-family: var(--font-mono); }
+/* .vl-metrics / .vl-metrics .ov* / .vl-empty / .vl-compare removed: the stats block under
+   Voice-leading motion they styled was removed from the Voice Leading tab per Ricky's
+   request. renderVLMetrics() (JS) is left in place -- it already no-ops safely once its
+   target elements (#vl-metrics/#vl-compare) are gone -- but these now-unused rules are
+   dead CSS, cleaned up here. */
 
 /* Info */
 .info {
@@ -3369,6 +3418,10 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
           <input type="checkbox" id="craft-vl" checked>
           <span>Craft voice leading <span class="voicing-check-note">— on top of least-motion smoothing, prefers conventionally better-written voicings: avoids parallel fifths/octaves, avoids the whole chord sliding the same way at once, holds notes shared between chords, and keeps inner voices from leaping. Needs close voice leading on. Toggle it to A/B the difference by ear.</span></span>
         </label>
+        <label class="voicing-check">
+          <input type="checkbox" id="string-arranger-mode">
+          <span>String Arranger (Phase 1) <span class="voicing-check-note">— replaces the voicing above with five persistent named string parts (Violin 1, Violin 2, Viola, Cello, Bass), each with its own idiomatic register and a fixed color. Independent of close/open/spread. Exports as six MIDI tracks (five parts plus any hand-edited chords). Provisional: single in-app timbre, no divisi, no look-ahead — meaningful evaluation is exporting to a DAW with real string patches.</span></span>
+        </label>
         <p class="section-note" id="voicing-note" style="margin-top:14px;"></p>
       </div>
     </details>
@@ -3384,21 +3437,47 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
       <button id="vlnorm-l1" class="active">least total motion</button>
       <button id="vlnorm-linf">least largest leap</button>
     </div>
-    <div class="vl-metrics" id="vl-metrics"></div>
-    <p class="vl-compare" id="vl-compare"></p>
-    <p class="vl-metrics-caption">Optimal motion reference — the smoothest theoretical connection between chords, not a measurement of the voicing shown in Notes below.</p>
+    <div class="vl-top-controls">
+      <div class="tp-group oct-transpose-group vl-oct-transpose" title="Shift the whole progression up or down by octaves — corrects a smoothest-connection search that landed too low or high overall. Affects playback and MIDI export.">
+        <span class="tp-label">progression octave</span>
+        <button class="oct-transpose-down" onclick="setVoicingOctaveOffset(-1)">▼</button>
+        <span class="oct-transpose-val tempo-val">0</span>
+        <button class="oct-transpose-up" onclick="setVoicingOctaveOffset(1)">▲</button>
+      </div>
+      <div class="info-pop-wrap">
+        <button type="button" class="info-pop-trigger" id="vl-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="vl-info-panel">ⓘ How voice-leading analysis works</button>
+        <div class="info-pop-panel" id="vl-info-panel" role="dialog" aria-label="How voice-leading analysis works" hidden>
+          <button type="button" class="info-pop-close" id="vl-info-close" aria-label="Close">&times;</button>
+          <dl class="note-terms">
+            <dt>Editing the roll</dt>
+            <dd>Drag a note up or down to move it to a new octave. Double-click a note to clear a chord's hand-placed voicing. Click a chord's roman numeral or name above its column to hear it and open full control over which notes it uses.</dd>
+            <dt>What these numbers mean</dt>
+            <dd>The <strong style="color:var(--text-secondary);">exact optimal</strong> voice leading between each pair of chords — the least motion an ideal bijective assignment achieves, in pitch-class space (each voice takes the shorter path around the octave), with the smaller chord doubling a tone when sizes differ.</dd>
+            <dt>The toggle above</dt>
+            <dd>Switches which optimum is sought: <strong style="color:var(--text-secondary);">least total motion</strong> (L1, all voices combined) can pick a different "smoothest" chord pair than <strong style="color:var(--text-secondary);">least largest leap</strong> (L∞, the single biggest jump). Affects this tab only, not the map's suggestion rings.</dd>
+            <dt>One honest gap</dt>
+            <dd>Your progression still <em>plays and exports</em> with the nearest-register voicing you actually hear, which can move more than this optimum — the line below the metrics shows by how much.</dd>
+            <dt>Voice labeling</dt>
+            <dd>Low-to-high: with 3–5 tones per chord (triads, sevenths, slash bass) there is no fixed four-part SATB texture.</dd>
+            <dt>Reading the roll</dt>
+            <dd>Each <strong style="color:var(--text-secondary);">color</strong> is one voice moving through the progression — like following one singer in a choir rather than the notes they sing. The same color stays with that voice from chord to chord, including through a crossing, so you can trace one line by eye instead of guessing from slope. A held common tone is already obvious as a flat horizontal line, so it gets no separate treatment. If a part drops out or a new one joins — the chord's note count changes — its color disappears or a fresh one appears; there's no fixed four-part (S/A/T/B) assignment underneath, just whichever lines are actually sounding. Smoothness = 100 × (1 − average motion ÷ 6), so 100 means every voice is held and 0 means voices average a tritone or more.</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="section">
     <div class="vl-header-row">
       <p class="section-label">Voice leading · low to high pitch</p>
+      <div class="row gap-lg" id="vl-view-toggle" title="Notes: what's actually sounding, at real time. Flow: how each voice moves between chords.">
+        <button id="vlview-notes" class="active">Notes</button>
+        <button id="vlview-flow">Flow</button>
+      </div>
+      <div class="keyboard-inv-row" id="vl-header-inv"></div>
       <div class="voice-solo-row" id="voice-solo-row"></div>
     </div>
-    <div class="row gap-lg" id="vl-view-toggle" style="margin-bottom:10px;" title="Notes: what's actually sounding, at real time. Flow: how each voice moves between chords.">
-      <button id="vlview-notes" class="active">Notes</button>
-      <button id="vlview-flow">Flow</button>
-    </div>
-    <p class="vl-metrics-caption">Colors follow voices, not pitches. The same color stays with a voice as it moves (for example D → E). Solo buttons use the same colors.</p>
+    <p class="vl-metrics-caption">Each color is one voice moving through the progression — like following one singer in a choir rather than the notes they sing. Solo buttons use the same colors.</p>
 
     <div id="notes-view-wrap">
       <div class="notes-zoom-row" id="notes-zoom-row">
@@ -3428,32 +3507,6 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
     </div>
 
     <div id="keyboardpanel"></div>
-    <div class="tp-group oct-transpose-group vl-oct-transpose" title="Shift the whole progression up or down by octaves — corrects a smoothest-connection search that landed too low or high overall. Affects playback and MIDI export.">
-      <span class="tp-label">progression octave</span>
-      <button class="oct-transpose-down" onclick="setVoicingOctaveOffset(-1)">▼</button>
-      <span class="oct-transpose-val tempo-val">0</span>
-      <button class="oct-transpose-up" onclick="setVoicingOctaveOffset(1)">▲</button>
-    </div>
-    <div class="info-pop-wrap">
-      <button type="button" class="info-pop-trigger" id="vl-info-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="vl-info-panel">ⓘ How voice-leading analysis works</button>
-      <div class="info-pop-panel" id="vl-info-panel" role="dialog" aria-label="How voice-leading analysis works" hidden>
-        <button type="button" class="info-pop-close" id="vl-info-close" aria-label="Close">&times;</button>
-        <dl class="note-terms">
-          <dt>Editing the roll</dt>
-          <dd>Drag a note up or down to move it to a new octave. Double-click a note to clear a chord's hand-placed voicing. Click a chord's roman numeral or name above its column to hear it and open full control over which notes it uses.</dd>
-          <dt>What these numbers mean</dt>
-          <dd>The <strong style="color:var(--text-secondary);">exact optimal</strong> voice leading between each pair of chords — the least motion an ideal bijective assignment achieves, in pitch-class space (each voice takes the shorter path around the octave), with the smaller chord doubling a tone when sizes differ.</dd>
-          <dt>The toggle above</dt>
-          <dd>Switches which optimum is sought: <strong style="color:var(--text-secondary);">least total motion</strong> (L1, all voices combined) can pick a different "smoothest" chord pair than <strong style="color:var(--text-secondary);">least largest leap</strong> (L∞, the single biggest jump). Affects this tab only, not the map's suggestion rings.</dd>
-          <dt>One honest gap</dt>
-          <dd>Your progression still <em>plays and exports</em> with the nearest-register voicing you actually hear, which can move more than this optimum — the line below the metrics shows by how much.</dd>
-          <dt>Voice labeling</dt>
-          <dd>Low-to-high: with 3–5 tones per chord (triads, sevenths, slash bass) there is no fixed four-part SATB texture.</dd>
-          <dt>Reading the roll</dt>
-          <dd>Line <strong style="color:var(--text-secondary);">color</strong> follows an individual voice — the same color stays with a voice from chord to chord, including through a crossing, so you can trace one line by eye instead of guessing from slope. A held common tone is already obvious as a flat horizontal line, so it gets no separate treatment. Colors are a rendering aid only: this app has no persistent named-voice (S/A/T/B) data, so a color can start or drop out when a chord's note count changes. Smoothness = 100 × (1 − average motion ÷ 6), so 100 means every voice is held and 0 means voices average a tritone or more.</dd>
-        </dl>
-      </div>
-    </div>
   </div>
 
   </div><!-- /tab-voice -->
@@ -3732,6 +3785,8 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 
   <div id="analysis-timeline-wrap"></div>
 
+  <div id="current-chord-wrap"></div>
+
   <div class="ad-root" id="an-doc"></div>
 
   <div class="info-pop-wrap">
@@ -3818,7 +3873,7 @@ select.cyl-keysel:focus-visible { outline: none; border-color: var(--accent); }
 // Three.js CDN pins, unrelated). Increment this exactly once per successfully delivered,
 // validated build; never reuse a value for a different delivered HTML. Every display of the
 // app's own version should read from this constant rather than a separate hardcoded string.
-const APP_VERSION = "v104";
+const APP_VERSION = "v118";
 const sharpNames=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const flatNames=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
 const useFlatsTable={0:false,1:true,2:false,3:true,4:false,5:true,6:true,7:false,8:true,9:false,10:true,11:false};
@@ -5545,14 +5600,41 @@ function downloadMidi(opts){
   // chord. Swap seq to the chord-only list for the call, then restore — buildMidi stays
   // marker-agnostic; the meter map above carries the marker-derived meter changes for it.
   const {chords,map}=chordView();
-  const chordVoicings=map.map(i=>voicings[i]).filter(v=>v);
 
-  // Assemble the ordered track list: Melody, Chords, Bass (this is the file's track order;
-  // buildMidi prepends its own conductor track ahead of these). Only include a part the user
-  // actually selected AND that has content — an empty line never becomes an empty track.
+  // Assemble the ordered track list: Melody, Chords (or, in String Arranger mode, six
+  // string-part tracks in its place), Bass. buildMidi prepends its own conductor track
+  // ahead of these. Only include a part the user actually selected AND that has content.
   const trackSpecs=[];
   if(want.melody && melodyTrack.length) trackSpecs.push({name:'Melody',kind:'line',notes:melodyTrack});
-  if(want.chords && chordVoicings.length) trackSpecs.push({name:'Chords',kind:'chords',notes:chordVoicings});
+  // v118 fix: `chordsExported` is derived from trackSpecs itself — the one array that's
+  // already the actual source of truth for what got included — instead of re-declaring a
+  // chords-track variable per branch. v117 declared `chordVoicings` only inside the `else`
+  // branch below (block-scoped to that `else{}`), then referenced it again much later, after
+  // this whole if/else, for the filename tag. That reference was out of scope in BOTH
+  // branches — not just the String Arranger one — so it threw a ReferenceError on every
+  // chords-included export, String Arranger on or off, and the download never happened.
+  const chordTrackCountBefore=trackSpecs.length;
+  if(want.chords){
+    if(stringArranger && window._stringParts){
+      // Design-lock Section 11 / Amendment: six 'chords'-kind tracks, index-aligned to the
+      // chord-only view via .map (NEVER .filter — buildMidi indexes seq[i] for timing, and
+      // filtering out nulls would misalign every chord after the first gap). Each chord
+      // contributes to exactly one ownership: the five part tracks (managed) or the
+      // "Strings (unmanaged)" fallback (hand-edited/imported), never both — so no note is
+      // duplicated and the export matches the sounding progression exactly.
+      const sp=window._stringParts;
+      STRING_PART_NAMES.forEach(part=>{
+        const partNotes=map.map(i=> sp[i] ? (sp[i][part]!=null?[sp[i][part]]:null) : null );
+        if(partNotes.some(n=>n)) trackSpecs.push({name:STRING_PART_LABELS[part],kind:'chords',notes:partNotes});
+      });
+      const unmanagedNotes=map.map(i=> sp[i] ? null : (voicings[i]&&voicings[i].length?voicings[i].slice():null) );
+      if(unmanagedNotes.some(n=>n)) trackSpecs.push({name:'Strings (unmanaged)',kind:'chords',notes:unmanagedNotes});
+    } else {
+      const chordVoicings=map.map(i=>voicings[i]).filter(v=>v);
+      if(chordVoicings.length) trackSpecs.push({name:'Chords',kind:'chords',notes:chordVoicings});
+    }
+  }
+  const chordsExported=trackSpecs.length>chordTrackCountBefore;
   if(want.bass && bassTrack.length) trackSpecs.push({name:'Bass',kind:'line',notes:bassTrack});
   if(!trackSpecs.length){ alert('Nothing selected to export — pick at least one part with notes.'); return; }
 
@@ -5564,7 +5646,7 @@ function downloadMidi(opts){
   const kn=keySpell(keyRoot,keyRoot,keyMode).replace('#','sharp').replace('b','flat');
   // Filename tags which parts are in the file when it's more than just chords, so multiple
   // exports of the same progression don't collide/overwrite.
-  const parts=[]; if(want.melody&&melodyTrack.length)parts.push('mel'); if(want.chords&&chordVoicings.length)parts.push('chords'); if(want.bass&&bassTrack.length)parts.push('bass');
+  const parts=[]; if(want.melody&&melodyTrack.length)parts.push('mel'); if(chordsExported)parts.push('chords'); if(want.bass&&bassTrack.length)parts.push('bass');
   const partTag=(parts.length===1&&parts[0]==='chords')?`${chords.length}chords`:parts.join('-');
   const filename=sessionFileBase()
     ? `${sessionFileBase()}_${partTag}.mid`
@@ -7045,6 +7127,7 @@ let preferCloseVL=true;     // whole-chord register optimization toward the prev
 // that file used to sound. Only affects the close + preferCloseVL path; no effect on
 // root-position (preferCloseVL off) or open/spread voicings.
 let craftVoiceLeading=true;
+let stringArranger=false;   // Phase 1 String Arranger Voicing Mode (design-lock Rev 3 + Rev 3.1 amendment)
 // Swing amount, 0-100 (item 4). 0 = straight, the default and a hard no-op — see
 // swingOffsetUnits above. Persisted in saves the same way craftVoiceLeading/loopEnabled
 // are; a file with no swingAmount field (any pre-item-4 save) loads as 0, so old files
@@ -7268,6 +7351,442 @@ function voicingsForSeq(){
     }
   }
   return full;
+}
+
+// ============================================================================
+// STRING ARRANGER VOICING MODE — Phase 1 (design lock: claude/design_lock_
+// string_arranger_voicing_phase1.md Rev 3, amended by
+// claude/design_lock_string_arranger_voicing_phase1_rev3_1_amendment.md).
+// Entirely new, non-protected code. Does not call, edit, or depend on any of
+// the ten protected functions (minimalVoiceLeading, diatonicChords,
+// functionalScore, buildMidi, computeVoicings, voicingsForSeq,
+// voicingWithMelody, styleVoicing, voiceLeadNotes, smoothestCloseVoicing).
+// It reads the same shared, non-protected helpers computeVoicings itself
+// reads (pcsOf, intervalMap, lib, manualVoicingActive) so chord-tone content
+// and manual/import override detection stay single-sourced with the rest of
+// the app.
+// ============================================================================
+
+const STRING_PART_NAMES = ['vln1','vln2','viola','cello','bass'];
+const STRING_PART_LABELS = {vln1:'Violin 1',vln2:'Violin 2',viola:'Viola',cello:'Cello',bass:'Bass'};
+// Fixed instrument colors (Section 2 "fixed instrument colors and labels"): reuses the
+// existing VOICE_COLORS palette rather than introducing new CSS, one slot per part, in a
+// fixed never-reassigned order (unlike VOICE_COLORS' dynamic voice-thread use elsewhere).
+// A function, not a top-level object literal: VOICE_COLORS is declared later in the file
+// (it's the keyboard/roll voice-thread palette), so reading VOICE_COLORS[n] eagerly here —
+// before that later `const` has run — would throw "Cannot access 'VOICE_COLORS' before
+// initialization" and abort the whole script. Calling this only from inside other functions
+// (every real call site) means VOICE_COLORS is long since initialized by the time it runs.
+const STRING_PART_COLOR_INDEX={vln1:0,vln2:1,viola:2,cello:3,bass:4};
+function stringPartColor(part){ return VOICE_COLORS[STRING_PART_COLOR_INDEX[part]]; }
+
+// Provisional register bands (Section 10), MIDI note numbers. Subject to revision after
+// the Logic Pro listening pass (test T15); not hard mute walls, just placement/leap anchors.
+const STRING_PART_BANDS = {
+  vln1:  {lo:55, hi:88}, // G3-E6
+  vln2:  {lo:55, hi:83}, // G3-B5
+  viola: {lo:48, hi:86}, // C3-D6
+  cello: {lo:36, hi:81}, // C2-A5
+  bass:  {lo:28, hi:55, ext:24}, // E1-G3, extended floor C1
+};
+
+// --- 0. Chord-quality-aware required/droppable tone classification (Section 4b/5) -------
+// Built once from the real intervalMap content (43 qualities), never hand-duplicated per
+// quality. Offsets are raw intervalMap semitone values (can exceed 11 for stacked
+// extensions); classification is driven by the standard tonal meaning of each offset:
+//   2=sus2 5=sus4 3=m3 4=M3 6=b5(dim) 7=P5 8=#5 9=6th/dim-bb7 10=m7/dom7 11=maj7
+//   13=b9 14=9 15=#9 17=11 18=#11 20=b13 21=13
+// Shared offset -> plain-English label map (Section 4b/5/Amendment 2). Single-sourced so
+// every "which tone" message the engine ever shows (a planned omission, or a tone lost to
+// capacity after the omission hierarchy) uses the same vocabulary. v117 corrective pass,
+// finding D: previously this map existed only as a local `dropLabel` inside
+// stringArrangerPlan() and had no equivalent for the assignment-stage drop path.
+const STRING_ARRANGER_OFFSET_LABEL={0:'root',2:'sus2',3:'minor 3rd',4:'major 3rd',5:'sus4',
+  6:'b5',7:'perfect 5th',8:'#5',9:'6th',10:'minor/dominant 7th',11:'major 7th',
+  13:'b9',14:'9th',15:'#9',17:'11th',18:'#11',20:'b13',21:'13th'};
+function stringArrangerLabelOffset(offset){ return STRING_ARRANGER_OFFSET_LABEL[offset]||('interval '+offset); }
+function classifyStringArrangerOffsets(q){
+  const offs=intervalMap[q];
+  const has=o=>offs.includes(o);
+  const required=new Set([0]); // root always a required tone (coverage handled separately)
+  let hasThirdOrSus=false;
+  if(has(2)){required.add(2);hasThirdOrSus=true;}
+  if(has(5)){required.add(5);hasThirdOrSus=true;}
+  if(has(3)){required.add(3);hasThirdOrSus=true;}
+  if(has(4)){required.add(4);hasThirdOrSus=true;}
+  if(has(9)) required.add(9);   // 6th (6-family) or diminished-7 bb7 — identity either way
+  if(has(10)) required.add(10); // dominant/minor 7th
+  if(has(11)) required.add(11); // major 7th
+  if(has(6)) required.add(6);   // b5 — defines a diminished-family quality, never dropped
+  [8,13,15,18,20].forEach(o=>{ if(has(o)) required.add(o); }); // #5,b9,#9,#11,b13 — alterations
+  if(has(21)) required.add(21); // named 13th — always the topmost possible extension here
+
+  const SIXNINE=(q==='6/9'||q==='minor 6/9'); // Section 4b override: the 9th is droppable here
+  const dropCandidates=[]; // {offset, tier} tier: 1=P5 2=natural11-clash 3=natural9 4=plain-11
+  if(has(7)){
+    if(hasThirdOrSus) dropCandidates.push({offset:7,tier:1});
+    else required.add(7); // no 3rd/sus — the 5th IS the structure (power chord)
+  }
+  const extPresent=[14,17,18,20,21].filter(has);
+  const topExt=extPresent.length?Math.max(...extPresent):null;
+  if(has(17)){
+    // The major-3rd clash always wins over "named topmost extension" — a natural 11 over a
+    // major 3rd is droppable regardless of whether it would otherwise be the named top tone.
+    if(has(4)) dropCandidates.push({offset:17,tier:2});
+    else if(topExt===17 && !SIXNINE) required.add(17);
+    else dropCandidates.push({offset:17,tier:4});
+  }
+  if(has(14)){
+    if(topExt===14 && !SIXNINE) required.add(14);
+    else dropCandidates.push({offset:14,tier:3});
+  }
+  dropCandidates.sort((a,b)=>a.tier-b.tier);
+  return {requiredOffsets:[...required].sort((a,b)=>a-b), dropOrder:dropCandidates.map(d=>d.offset)};
+}
+const STRING_ARRANGER_TONE_ROLES=(()=>{
+  const out={};
+  Object.keys(intervalMap).forEach(q=>{ out[q]=classifyStringArrangerOffsets(q); });
+  return out;
+})();
+
+// --- 1. Bass/chord-tone resolution — replicates computeVoicings' bass-selection semantics
+// (inversion rotation, then an explicit s.bass slash override) using only shared, non-
+// protected data (intervalMap, pcsOf), so the arranger's own independent capacity/omission
+// math agrees with what the rest of the app calls "the bass" for the same chord. Does not
+// call computeVoicings.
+function stringArrangerBassInfo(s){
+  const q=lib[s.idx].n;
+  let intervals=intervalMap[q].slice();
+  const inv=s.inv||0;
+  if(inv>0 && inv<intervals.length){
+    for(let r=0;r<inv;r++){ const b=intervals.shift(); intervals.push(b+12); }
+  }
+  const orderedPCs=[];
+  intervals.forEach(iv=>{ const pc=(s.root+iv)%12; if(!orderedPCs.includes(pc)) orderedPCs.push(pc); });
+  const rotatedBassPC=orderedPCs[0];
+  const bassPC=(s.bass!==null && s.bass!==undefined)?s.bass:rotatedBassPC;
+  const chordPCs=pcsOf(s.root,q);
+  return {q, chordPCs, bassPC, bassIsChordTone:chordPCs.includes(bassPC), rootPC:s.root};
+}
+
+// --- 2. Capacity-aware required-set + omission plan (Amendment 1, Amendment 2, Amendment 3) --
+// pinnedPC: the melody-pinned pitch class for this chord, or null.
+function stringArrangerPlan(s, pinnedPC){
+  const {q,chordPCs,bassPC,bassIsChordTone,rootPC}=stringArrangerBassInfo(s);
+  const roles=STRING_ARRANGER_TONE_ROLES[q];
+  const toPC=o=>(((rootPC+o)%12)+12)%12;
+  const requiredPCs=new Set(roles.requiredOffsets.map(toPC));
+  // "Present" tones = required ∪ droppable-but-present-by-default (Section 4b: e.g. a
+  // seventh chord's natural 5th is droppable yet sounds by default because 4 tones fit
+  // comfortably in 5 parts). Every intervalMap offset for a quality lands in exactly one of
+  // these two buckets, so their union is the chord's full normally-sounding tone set.
+  const presentPCs=new Set([...requiredPCs, ...roles.dropOrder.map(toPC)]);
+  // v117 finding D: reverse map pc -> original offset, so a tone that is still over capacity
+  // after the full omission hierarchy (below) can be named by role, not just by count. Built
+  // from the exact same offset lists above, so it never drifts from what actually got checked.
+  const offsetByPC={};
+  [...roles.requiredOffsets, ...roles.dropOrder].forEach(o=>{ const pc=toPC(o); if(!(pc in offsetByPC)) offsetByPC[pc]=o; });
+  let upperNeeded=new Set(presentPCs);
+  if(bassIsChordTone) upperNeeded.delete(bassPC);     // Amendment 1: bass pre-covers one slot only if it's a chord tone
+  if(pinnedPC!=null) upperNeeded.delete(pinnedPC);    // vln1 covers the pin directly
+  const upperSlotsForRest = 4 - (pinnedPC!=null?1:0); // one of the 4 upper slots is vln1's pin
+  const omissions=[];
+  let i=0;
+  while(upperNeeded.size>upperSlotsForRest && i<roles.dropOrder.length){
+    const offset=roles.dropOrder[i]; const pc=toPC(offset); i++;
+    if(upperNeeded.has(pc) && pc!==bassPC && pc!==pinnedPC){
+      upperNeeded.delete(pc);
+      omissions.push({pc,offset,tier:'ordinary',reason:stringArrangerLabelOffset(offset)+' omitted — '+
+        (bassIsChordTone?'fitting required tones into five parts':'fitting required tones into four upper parts (foreign slash bass)')});
+    }
+  }
+  let incomplete=null;
+  if(upperNeeded.size>upperSlotsForRest){
+    // Amendment 2 impossible-case fallback: root first, then one plain required extension.
+    // Never the 3rd/sus, 7th, an alteration, the diminished b5/bb7, or the pin/bass.
+    const lastResort=[];
+    if(upperNeeded.has(rootPC)) lastResort.push({pc:rootPC,label:'root'});
+    const plainExtPCs=[14,17,21].map(toPC).filter(pc=>upperNeeded.has(pc));
+    if(plainExtPCs.length) lastResort.push({pc:plainExtPCs[plainExtPCs.length-1],label:'extension'});
+    let j=0;
+    while(upperNeeded.size>upperSlotsForRest && j<lastResort.length){
+      const {pc,label}=lastResort[j]; j++;
+      if(upperNeeded.has(pc)){
+        upperNeeded.delete(pc);
+        omissions.push({pc,offset:null,tier:'incomplete',reason:label+' omitted — incomplete realization: too many required tones for five parts'});
+      }
+    }
+    incomplete={ stillOver: Math.max(0, upperNeeded.size-upperSlotsForRest) };
+  }
+  return {q, chordPCs, bassPC, bassIsChordTone, rootPC, pinnedPC,
+          bassCoversRoot: bassPC===rootPC, upperNeeded, omissions, incomplete, offsetByPC};
+}
+
+// --- 3. Register-band-aware octave placement (Section 9: zero cost inside the band; the
+// band only pulls at an edge). Nearest octave to the part's own previous note when one
+// exists (common-tone hold falls out of this for free when pc===prevPitch%12), else nearest
+// to the band center on the chord's first appearance.
+function stringArrangerPlaceInBand(pc, prevPitch, band){
+  let base;
+  if(prevPitch!=null) base = pc + 12*Math.round((prevPitch-pc)/12);
+  else { const center=(band.lo+band.hi)/2; base = pc + 12*Math.round((center-pc)/12); }
+  const lo = band.ext!=null ? band.ext : band.lo;
+  while(base>band.hi) base-=12;
+  while(base<lo) base+=12;
+  if(base<band.lo && base>=lo) { /* inside the extended floor, allowed (Bass ext.) */ }
+  return base;
+}
+
+// --- 4. Coordinated upper-part assignment (Section 4 step 3: minimize total motion jointly,
+// not independently). At most 4 pcs into at most 4 open parts — small enough for an exact
+// brute-force search, deterministic tie-break = first-encountered minimum in a fixed
+// (part-index-ascending, pc-ascending) enumeration order (test T11).
+function permute(arr){
+  if(arr.length<=1) return [arr];
+  const out=[];
+  for(let i=0;i<arr.length;i++){
+    const rest=arr.slice(0,i).concat(arr.slice(i+1));
+    permute(rest).forEach(p=>out.push([arr[i],...p]));
+  }
+  return out;
+}
+function stringArrangerAssignUpper(openParts, pcs, prevPitches){
+  // openParts and pcs are both already in a fixed, deterministic order.
+  if(!pcs.length) return {placement:{}, dropped:[]};
+  // v117 fix (finding D): stringArrangerPlan()'s capacity math (upperSlotsForRest) is meant to
+  // guarantee pcs.length<=openParts.length by the time this is called, EXCEPT in a genuine
+  // Amendment-2 "incomplete realization" (plan.incomplete.stillOver>0), where more required
+  // tones remain than there are parts even after the root/extension last resort. Previously,
+  // `openParts.slice(0,pcs.length)` silently no-opped in that case (slice clamps to array
+  // length) and the forEach below only ever read pcs[0..openParts.length-1] — so the LAST
+  // (highest pitch-class) entries in `pcs` were dropped with no record of which ones. That
+  // silent drop is made explicit here so the caller can report exactly what didn't sound.
+  const slots=openParts.slice(0,pcs.length); // only as many parts as pcs need to fill here;
+  // remaining open parts (if any) are handled by the doubling step, not here.
+  const toPlace=pcs.slice(0,slots.length);
+  const dropped=pcs.slice(slots.length);
+  let best=null, bestCost=Infinity;
+  permute(slots).forEach(order=>{
+    let cost=0; const placement={};
+    order.forEach((part,i)=>{
+      const pc=toPlace[i];
+      const placed=stringArrangerPlaceInBand(pc, prevPitches[part]??null, STRING_PART_BANDS[part]);
+      placement[part]=placed;
+      cost += (prevPitches[part]!=null) ? Math.abs(placed-prevPitches[part]) : Math.abs(placed-((STRING_PART_BANDS[part].lo+STRING_PART_BANDS[part].hi)/2));
+    });
+    if(cost<bestCost-1e-9){ bestCost=cost; best=placement; }
+  });
+  return {placement: best||{}, dropped};
+}
+
+// --- 5. Bass floor enforcement (Section 7) and leap policy (Section 8) -------------------
+function stringArrangerEnforceFloor(bassPitch, upperPlacement){
+  let floor=bassPitch;
+  Object.keys(upperPlacement).forEach(part=>{
+    while(upperPlacement[part] < floor){ upperPlacement[part]+=12; }
+  });
+  // If an upper note still sits far below where it should musically be is not possible after
+  // the loop above; only the opposite conflict needs a check: nothing to double-correct here
+  // since we only ever raise an interior voice, never lower it below its own band ceiling.
+  return upperPlacement;
+}
+function stringArrangerLeapFix(part, placed, prevPitch, band){
+  if(prevPitch==null) return {pitch:placed, flagged:false};
+  if(Math.abs(placed-prevPitch) <= 16) return {pitch:placed, flagged:false};
+  // Octave displacement first (Section 8 step 1): try the other octaves of the same pc inside
+  // the band and pick whichever minimizes the leap.
+  const pc=((placed%12)+12)%12;
+  let candidate=placed, candidateDist=Math.abs(placed-prevPitch);
+  const lo=band.ext!=null?band.ext:band.lo;
+  // v117 fix (finding B): the octave-candidate domain must be derived from the part's ACTUAL
+  // band, not a fixed oct=-3..3 window. A fixed window caps every candidate at pc+36 (<=47),
+  // which sits entirely below vln1/vln2's band (lo 55) and viola's band (lo 48), and reaches
+  // only the bottom sliver of cello's band — so the "in-band nearest-octave recovery" this
+  // function claims to do was silently a no-op for three of the four upper parts. Deriving the
+  // octave range from [lo,band.hi] makes the search actually cover the part's real register.
+  const octLo=Math.floor((lo-pc)/12)-1;
+  const octHi=Math.ceil((band.hi-pc)/12)+1;
+  for(let oct=octLo; oct<=octHi; oct++){
+    const alt=pc+12*oct;
+    if(alt<lo||alt>band.hi) continue;
+    const d=Math.abs(alt-prevPitch);
+    if(d<candidateDist){ candidateDist=d; candidate=alt; }
+  }
+  const flagged = candidateDist>16;
+  return {pitch:candidate, flagged};
+}
+
+// --- 6. Doubling (Section 6, Amendment 3 bass-tone correction) ---------------------------
+function stringArrangerDouble(leftoverParts, ctx){
+  // ctx: {bassPC, bassIsChordTone, topPC, tendencyPCs(Set of pcs never to double: chordal
+  //        7th / dominant 3rd), prevPitches}
+  // Amendment 3: double the bass TONE actually sounding — only when that tone is itself a
+  // chord tone. A foreign slash/pedal bass is never doubled into an upper voice.
+  const picks=[];
+  if(ctx.bassIsChordTone && !ctx.tendencyPCs.has(ctx.bassPC)) picks.push(ctx.bassPC);
+  if(ctx.topPC!=null && !ctx.tendencyPCs.has(ctx.topPC)) picks.push(ctx.topPC); // double the top tone
+  // Fallback (rare: both disallowed, or bass is foreign and there's no distinct top tone):
+  // double the top tone anyway — a doubled tendency tone is a lesser defect than silently
+  // skipping a part; document, don't invent a 6th voice.
+  // v117 fix (finding C): this fallback DOES fire on ordinary voicings (e.g. a major 7 chord
+  // with the bass on the 3rd and the melody pinned to the major 7th), and the design's own
+  // comment says to "document" it, but nothing previously did — the caveat list stayed empty.
+  // Which tone gets doubled here is unchanged (no new musical policy adopted in this pass,
+  // per the corrective-pass scope); this only makes the existing exception visible.
+  const forced=[]; // pcs doubled here despite being in tendencyPCs — surfaced as a caveat by the caller
+  if(!picks.length && ctx.topPC!=null){ picks.push(ctx.topPC); if(ctx.tendencyPCs.has(ctx.topPC)) forced.push(ctx.topPC); }
+  if(!picks.length){ picks.push(ctx.bassPC); if(ctx.tendencyPCs.has(ctx.bassPC)) forced.push(ctx.bassPC); }
+  while(picks.length<leftoverParts.length) picks.push(picks[picks.length-1]);
+  const placement={};
+  leftoverParts.forEach((part,i)=>{
+    const pc=picks[i%picks.length];
+    placement[part]=stringArrangerPlaceInBand(pc, ctx.prevPitches[part]??null, STRING_PART_BANDS[part]);
+  });
+  return {placement, forced};
+}
+
+// --- 7. Per-chord assembly: identity, plan, coordinated match, doubling, floor, leap -------
+// prevPitches: {vln1,vln2,viola,cello,bass} from the LAST MANAGED chord (Amendment 4
+// continuity — the caller never passes an unmanaged chord's notes in here).
+function stringArrangerAssignChord(s, prevPitches){
+  const q=lib[s.idx].n;
+  const pcs=pcsOf(s.root,q);
+  const hasPin = s.melody!==null && s.melody!==undefined && pcs.includes(s.melody);
+  const pinnedPC = hasPin ? s.melody : null;
+  const plan=stringArrangerPlan(s, pinnedPC);
+
+  // Bass instrument.
+  const bassPlaced=stringArrangerPlaceInBand(plan.bassPC, prevPitches.bass, STRING_PART_BANDS.bass);
+  const bassLeap=stringArrangerLeapFix('bass', bassPlaced, prevPitches.bass, STRING_PART_BANDS.bass);
+
+  const openParts=['vln1','vln2','viola','cello'];
+  const upperPlacement={};
+  let vln1Pitch=null;
+  if(pinnedPC!=null){
+    vln1Pitch=stringArrangerPlaceInBand(pinnedPC, prevPitches.vln1, STRING_PART_BANDS.vln1);
+    upperPlacement.vln1=vln1Pitch;
+  }
+  const restParts = pinnedPC!=null ? ['vln2','viola','cello'] : ['vln1','vln2','viola','cello'];
+  const pcsToPlace=[...plan.upperNeeded].sort((a,b)=>a-b);
+  const assigned=stringArrangerAssignUpper(restParts, pcsToPlace, prevPitches);
+  Object.assign(upperPlacement, assigned.placement);
+
+  // Doubling for any still-open upper parts.
+  const usedParts=Object.keys(upperPlacement);
+  const leftoverParts=restParts.filter(p=>!usedParts.includes(p));
+  let forcedDoubles=[]; // v117 finding C: tendency-tone doubling exceptions, named below
+  if(leftoverParts.length){
+    // Never-double rule: the chordal 7th, and the 3rd of a dominant quality.
+    const tendencyPCs=new Set();
+    const offs=intervalMap[q];
+    if(offs.includes(10)) tendencyPCs.add(((s.root+10)%12+12)%12); // chordal 7th (dom/min7)
+    if(offs.includes(11)) tendencyPCs.add(((s.root+11)%12+12)%12); // chordal 7th (maj7)
+    if(q.startsWith('dominant') && offs.includes(4)) tendencyPCs.add(((s.root+4)%12+12)%12); // 3rd of a dominant
+    const topPC = pinnedPC!=null ? pinnedPC : (pcsToPlace.length?pcsToPlace[pcsToPlace.length-1]:plan.bassPC);
+    const doubled=stringArrangerDouble(leftoverParts, {bassPC:plan.bassPC, bassIsChordTone:plan.bassIsChordTone, topPC, tendencyPCs, prevPitches});
+    Object.assign(upperPlacement, doubled.placement);
+    forcedDoubles=doubled.forced;
+  }
+
+  // Bass floor (Section 7): nothing voiced below the Bass.
+  stringArrangerEnforceFloor(bassLeap.pitch, upperPlacement);
+
+  // Leap policy for each upper part.
+  const flags=[];
+  if(bassLeap.flagged) flags.push({part:'bass',reason:'leap exceeds a major 10th after octave displacement'});
+  openParts.forEach(part=>{
+    const fixed=stringArrangerLeapFix(part, upperPlacement[part], prevPitches[part], STRING_PART_BANDS[part]);
+    upperPlacement[part]=fixed.pitch;
+    if(fixed.flagged) flags.push({part,reason:'leap exceeds a major 10th after octave displacement'});
+  });
+  // Re-enforce the floor once more in case a leap fix moved something below the bass.
+  stringArrangerEnforceFloor(bassLeap.pitch, upperPlacement);
+
+  const parts={vln1:upperPlacement.vln1, vln2:upperPlacement.vln2, viola:upperPlacement.viola, cello:upperPlacement.cello, bass:bassLeap.pitch};
+  const caveats=[...plan.omissions.map(o=>o.reason), ...flags.map(f=>f.part+': '+f.reason)];
+  // v117 fix (finding D): name the specific tone(s) that exceeded capacity, instead of only a
+  // count. assigned.dropped is empty unless plan.incomplete.stillOver>0 (the two are the same
+  // quantity by construction — see stringArrangerAssignUpper). Falls back to the old generic
+  // count message only if that invariant is ever violated, so a caveat is never silently lost.
+  if(assigned.dropped.length){
+    assigned.dropped.forEach(pc=>{
+      const offset=plan.offsetByPC[pc];
+      caveats.push((offset!=null?stringArrangerLabelOffset(offset):('pitch class '+pc))+
+        ' omitted — incomplete realization: too many required tones for five parts');
+    });
+  } else if(plan.incomplete && plan.incomplete.stillOver>0){
+    caveats.push('incomplete realization: '+plan.incomplete.stillOver+' required tone(s) could not be placed');
+  }
+  // v117 fix (finding C): make the tendency-tone doubling exception visible instead of silent.
+  forcedDoubles.forEach(pc=>{
+    const offset=plan.offsetByPC[pc];
+    caveats.push('doubling exception: '+(offset!=null?stringArrangerLabelOffset(offset):('pitch class '+pc))+
+      ' doubled despite being a tendency tone — no non-tendency tone was available for a leftover part');
+  });
+  return {parts, caveats, managed:true};
+}
+
+// --- 8. Progression-level engine (Amendment 4 continuity; manual/import preservation) -----
+// chords: the marker-free chord-only array (same shape voicingsForSeq hands computeVoicings).
+// Returns {perChord:[{managed,notes,parts|null,caveats}]} aligned 1:1 to `chords`.
+function stringArrangerVoicingsForChords(chords){
+  let prevPitches={vln1:null,vln2:null,viola:null,cello:null,bass:null};
+  return chords.map(s=>{
+    const q=lib[s.idx].n;
+    const pcs=pcsOf(s.root,q);
+    if(s.manualVoicing && manualVoicingActive(s, pcs)){
+      // Unmanaged (Amendment 4): preserve verbatim, no part identity, prevPitches NOT updated.
+      const notes=s.manualVoicing.slice().sort((a,b)=>a-b);
+      return {managed:false, notes, parts:null, caveats:[]};
+    }
+    const {parts, caveats}=stringArrangerAssignChord(s, prevPitches);
+    prevPitches=parts; // continuity only advances on a managed chord
+    const notes=STRING_PART_NAMES.map(p=>parts[p]).filter(n=>n!=null).sort((a,b)=>a-b);
+    return {managed:true, notes, parts, caveats};
+  });
+}
+
+// Full-seq wrapper matching voicingsForSeq()'s shape: a seq.length array, null at markers,
+// plus a parallel window._stringParts array (null at markers and at unmanaged chords) and
+// the uniform global octave-offset applied LAST and identically to both (Section 11,
+// "pitches stay identical across all surfaces").
+function stringArrangerVoicings(){
+  const {chords,map}=chordView();
+  const perChord=stringArrangerVoicingsForChords(chords);
+  const full=new Array(seq.length).fill(null);
+  const fullParts=new Array(seq.length).fill(null);
+  const fullCaveats=new Array(seq.length).fill(null);
+  map.forEach((seqIdx,ci)=>{
+    full[seqIdx]=perChord[ci].notes;
+    fullParts[seqIdx]=perChord[ci].managed?perChord[ci].parts:null;
+    fullCaveats[seqIdx]=perChord[ci].caveats&&perChord[ci].caveats.length?perChord[ci].caveats:null;
+  });
+  if(voicingOctaveOffset!==0){
+    const shift=voicingOctaveOffset*12;
+    for(let i=0;i<full.length;i++){
+      if(full[i]) full[i]=full[i].map(n=>n+shift);
+      if(fullParts[i]){
+        const shifted={}; STRING_PART_NAMES.forEach(p=>{ shifted[p]=(fullParts[i][p]!=null)?fullParts[i][p]+shift:null; });
+        fullParts[i]=shifted;
+      }
+    }
+  }
+  full._caveats=fullCaveats;
+  return {voicings:full, stringParts:fullParts};
+}
+
+// --- 9. Single shared "active voicings" switch (O1 call-site audit) ----------------------
+// Both window._voicings assignment points (renderAll, refreshVoicings) route through this,
+// so String Arranger mode is reflected wherever the sounding voicing is read, with zero
+// change to behavior when the mode is off (falls straight through to voicingsForSeq()).
+function getActiveVoicings(){
+  if(stringArranger){
+    const {voicings,stringParts}=stringArrangerVoicings();
+    window._stringParts=stringParts;
+    return voicings;
+  }
+  window._stringParts=null;
+  return voicingsForSeq();
 }
 
 // Shared setter for the octave-transpose controls (transport bar + Voice Leading tab
@@ -8518,6 +9037,161 @@ function renderAnalysisDoc(){
   if(trm) trm.addEventListener('toggle',()=>{ anDocTermsOpen=trm.open; });
 }
 
+// =========================================================================
+// Full Theory — Current Chord Circle (Item 108, Phase 1, design-lock rev 7, 2026-11-16,
+// claude/design_lock_fulltheory_chordtone_circle_phase1.md). A separate diagram from the
+// existing circle-of-fifths root-motion diagram (renderFifthsCircle/fifthsBandRuns, used only
+// by adMotionHtml for the whole-progression root path) — a different render path by design,
+// per the lock's Section 6. Shows the full theoretical chord-tone collection of whichever
+// chord is currently sounding or inspected, as a closed spatial outline — active nodes
+// connected in their own circular rim order (rev 7), not interval order — on the same fixed
+// 12-position fifths rim fifthsIdx/circleFifthsPos already define, with the closing segment a
+// pure visual join, never a musical interval (Section 2). No protected function touched; the
+// existing root-motion diagram is untouched.
+// =========================================================================
+
+// ccMode: 'sounding' while a real Transport onset is currently active for ccSeqIdx;
+// 'resting' when that chord's scheduled duration has ended but playback hasn't stopped and
+// nothing new has started yet (a rest/gap — Section 4); 'inspected' otherwise (the initial
+// default, or a timeline chord/connector click). ccSeqIdx is a real seq[] index, never a
+// marker. View-local only, never saved — same precedent as anDocPick above.
+let ccMode='inspected', ccSeqIdx=null;
+
+function ccDefaultSeqIdx(){
+  for(let i=0;i<seq.length;i++){ if(!isMarker(seq[i])) return i; }
+  return null;
+}
+
+// The chord's full theoretical pitch-class collection, in formula order (root, 3rd, 5th,
+// 7th, extensions) exactly as intervalMap already defines it for every quality in the
+// library — never read from the possibly-incomplete realized voicing (computeVoicings/
+// window._voicings), per Section 2. A formula that places two roles at the same pitch class
+// (a genuine repeated-pitch-class case) contributes one node, not two. Spelling comes from
+// keySpell against this chord's own local key context, the same authority and context
+// computeAnalysisDoc/computeLiveAnalysis already use for every other per-chord label.
+function ccChordData(seqIdx){
+  const s=seq[seqIdx]; if(!s||isMarker(s)) return null;
+  const ch=lib[s.idx]; if(!ch) return null;
+  const kc=keyContextAt(seqIdx);
+  const ivs=intervalMap[ch.n]||[0];
+  const seenPc=new Set();
+  const tones=[];
+  ivs.forEach(iv=>{
+    const pc=(((s.root+iv)%12)+12)%12;
+    if(seenPc.has(pc)) return;
+    seenPc.add(pc);
+    tones.push({pc, idx:fifthsIdx(pc), name:keySpell(pc,kc.keyRoot,kc.keyMode)});
+  });
+  const sym=(qualitySymbol[ch.n]!==undefined)?qualitySymbol[ch.n]:(' '+ch.n);
+  // Rev 8: foreign-bass detection for the dedicated fill treatment (design-lock rev 8). Reuses the
+  // already-built `tones` pitch-class set as the chord-tone membership test -- the same
+  // authority `pcsOf(s.root,ch.n)` would give, already in hand here, so no duplicate
+  // lookup. A bass that IS a chord tone (an ordinary inversion) yields bass=null: that
+  // pitch is already shown active via the normal tones/rendering path, unchanged by rev 8.
+  let bass=null;
+  if(s.bass!==null && s.bass!==undefined){
+    const bpc=(((s.bass%12)+12)%12);
+    if(!tones.some(t=>t.pc===bpc)) bass={pc:bpc, idx:fifthsIdx(bpc)};
+  }
+  return {
+    seqIdx, rootPc:(((s.root%12)+12)%12), tones, bass,
+    kr:kc.keyRoot, km:kc.keyMode,
+    label: keySpell(s.root,kc.keyRoot,kc.keyMode)+sym
+  };
+}
+
+const CC_CX=170, CC_CY=170, CC_R=130, CC_NODE_R=19, CC_ROOT_R=23;
+
+// tones is the set to render ACTIVE right now — normally data.tones, but an empty array
+// during a rest (Section 4: all nodes fade back to inactive, labels retained, no shape).
+// fifthsIdx is used both ways (pc->rim position and rim position->pc) because *7 mod 12 is
+// its own inverse — the same fixed 12-position geometry the root-motion diagram already
+// relies on, never re-derived here.
+function ccRenderSvg(data,tones,bass){
+  const nodePos=[]; for(let i=0;i<12;i++) nodePos.push(circleFifthsPos(i,CC_CX,CC_CY,CC_R,-90));
+  const activeByIdx=new Map();
+  tones.forEach(t=>activeByIdx.set(t.idx,t));
+  // Spatial outline (rev 7), drawn first so it sits BEHIND the node circles (Section 3) — an
+  // edge can never cross a note-name label. A single active tone has nothing to connect.
+  // Rev 7: the outline connects active nodes in their own circular rim order (ascending idx,
+  // which is clockwise under this diagram's fixed rotOffset=-90), NOT in root->3rd->5th->7th
+  // interval order. Any set of points on one fixed circle, connected in their own angular
+  // order and closed back to the first, is necessarily a simple polygon — it cannot cross
+  // itself — which is what retires the earlier interval-order line's crossings. Sorting by
+  // idx is the only change from rev 6; which nodes are active (tones) is unchanged.
+  let svg='';
+  if(tones.length>1){
+    const ordered=[...tones].sort((a,b)=>a.idx-b.idx);
+    const pts=ordered.map(t=>nodePos[t.idx]);
+    const d='M'+pts.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' L')+' Z';
+    svg+=`<path d="${d}" fill="none" stroke="var(--melody)" stroke-width="1.5" class="cc-shape"/>`;
+  }
+  for(let i=0;i<12;i++){
+    const p=nodePos[i];
+    const t=activeByIdx.get(i);
+    const isRoot=!!t && t.pc===data.rootPc;
+    const r=isRoot?CC_ROOT_R:CC_NODE_R;
+    const name=t?t.name:keySpell(fifthsIdx(i),data.kr,data.km);
+    if(isRoot) svg+=`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(r+4).toFixed(1)}" fill="none" stroke="var(--melody)" stroke-width="1.5" class="cc-root-ring"/>`;
+    // Rev 8, v108 fill treatment: a foreign bass gets its own fill (cc-node-bass /
+    // cc-label-bass), not a ring. `t` (chord-tone membership) and `bass` are mutually
+    // exclusive by construction (ccChordData only sets `bass` when the pitch is NOT a
+    // chord tone), so this is a plain three-way choice, never an overlap to resolve.
+    const isBass = !!(bass && bass.idx===i);
+    const nodeClass = t ? 'cc-node-active' : (isBass ? 'cc-node-bass' : 'cc-node-inactive');
+    const labelClass = t ? 'cc-label-active' : (isBass ? 'cc-label-bass' : 'cc-label-inactive');
+    svg+=`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" class="${nodeClass}"/>`;
+    svg+=`<text class="cc-node-label ${labelClass}" x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central">${esc(name)}</text>`;
+  }
+  return svg;
+}
+
+function renderCurrentChordCircle(){
+  const wrap=document.getElementById('current-chord-wrap');
+  if(!wrap) return; // Full Theory tab not in DOM yet — defensive only, mirrors renderAnalysisTab's own guard
+  if(ccSeqIdx===null || !seq[ccSeqIdx] || isMarker(seq[ccSeqIdx])){
+    ccSeqIdx=ccDefaultSeqIdx();
+    ccMode='inspected';
+  }
+  if(ccSeqIdx===null){ wrap.innerHTML=''; return; } // empty progression
+  const data=ccChordData(ccSeqIdx);
+  if(!data){ wrap.innerHTML=''; return; }
+  const resting=(ccMode==='resting');
+  const showTones=resting?[]:data.tones;
+  // Rev 8: the bass ring fades out during a rest exactly like every tone does (Section 4) --
+  // gated on the same `resting` flag, not a separate state.
+  const showBass=resting?null:data.bass;
+  const stateHtml=resting?'':
+    `<span class="cc-state ${ccMode==='sounding'?'cc-state-playing':'cc-state-selected'}">${ccMode==='sounding'?'Playing':'Selected'}</span>`;
+  wrap.innerHTML=`
+    <p class="section-label">Current chord</p>
+    <div class="cc-head">${stateHtml}<span class="cc-chordname">${esc(data.label)}</span></div>
+    <svg class="cc-svg" viewBox="0 0 340 340" role="img" aria-label="Circle of fifths showing ${esc(data.label)}'s chord tones">${ccRenderSvg(data,showTones,showBass)}</svg>
+    <p class="section-note cc-note">Shows this chord's defined tones on the circle of fifths, not a literal readout of sounding MIDI notes. The shape is a pattern-recognition aid, not a chord fingerprint, and the edge closing back to the root is a visual join only, never a musical interval.</p>
+  `;
+}
+
+// Playback hooks, modeled directly on the Cylinder Map's own cylOnChordPlay/cylOnChordStop/
+// cylOnPlaybackStopped (Phase 1, shipped v103) — called from the exact same
+// Tone.Transport.schedule call sites in playProgression/stopPlayback that already drive those,
+// at the same scheduled grid times (Section 4's timing basis: never the synth's audio
+// envelope/release). Guarded by analysisTabActive() so none of this does any work while the
+// tab isn't visible, same as every other analysisTabActive-gated redraw in this file.
+function anOnChordPlay(idx){
+  ccMode='sounding'; ccSeqIdx=idx;
+  if(analysisTabActive()) renderCurrentChordCircle();
+}
+function anOnChordStop(idx){
+  if(ccSeqIdx===idx && ccMode==='sounding'){
+    ccMode='resting'; // a rest/gap: fade to inactive rather than holding or going blank
+    if(analysisTabActive()) renderCurrentChordCircle();
+  }
+}
+function anOnPlaybackStopped(){
+  if(ccMode==='sounding'||ccMode==='resting') ccMode='inspected'; // Section 5: holds as the new inspected state
+  if(analysisTabActive()) renderCurrentChordCircle();
+}
+
 // Item 83 (v85): hear a transition on Full Theory. Plays chord A now and chord B after A's own
 // duration (a plain timer, never routed through Tone.Transport / playProgression, so it cannot
 // collide with normal playback or touch isPlaying / activeChordIndex). It is the same two-chord
@@ -8537,6 +9211,11 @@ function auditionTransition(seqIdxA,seqIdxB){
     const notesA=(v[seqIdxA]||[]).map(midiToNote);
     if(notesA.length) synth.triggerAttackRelease(notesA, durA);
     flashAuditionGlow(seqIdxA);
+    // Current Chord Circle (Phase 1): a connector audition is the second independent
+    // trigger path into the circle (Section 5), separate from real Transport playback —
+    // it never touches isPlaying/activeChordIndex, so it stays 'inspected', not 'sounding'.
+    ccMode='inspected'; ccSeqIdx=seqIdxA;
+    if(analysisTabActive()) renderCurrentChordCircle();
     if(seqIdxB==null) return;
     analysisAuditionTimer=setTimeout(()=>{
       analysisAuditionTimer=null;
@@ -8544,6 +9223,8 @@ function auditionTransition(seqIdxA,seqIdxB){
       const notesB=(v[seqIdxB]||[]).map(midiToNote);
       if(notesB.length) synth.triggerAttackRelease(notesB, chordDurSeconds(sB));
       flashAuditionGlow(seqIdxB);
+      ccMode='inspected'; ccSeqIdx=seqIdxB;
+      if(analysisTabActive()) renderCurrentChordCircle();
     }, Math.max(durA*1000, 150));
   });
 }
@@ -8559,6 +9240,8 @@ function renderAnalysisTab(){
     timelineWrap.innerHTML='<p class="an-empty">Add some chords in Build to see live analysis here.</p>';
     docEl.innerHTML='';
     analysisSelected=null;
+    ccSeqIdx=null; ccMode='inspected';
+    const ccWrap=document.getElementById('current-chord-wrap'); if(ccWrap) ccWrap.innerHTML='';
     return;
   }
 
@@ -8640,6 +9323,11 @@ function renderAnalysisTab(){
   // The old collapsed "Progression findings" block is retired (item 81): its key regions and pull
   // events are now the always-visible Key regions and Pull list sections of the live document below.
   if(analysisTabActive()) renderAnalysisDoc();
+  // Current Chord Circle (Phase 1): redraw on every timeline rebuild too (an edit, undo, a
+  // chord's quality changing) — not just on the playback/click hooks above — so it never
+  // shows a stale chord. renderCurrentChordCircle() self-heals ccSeqIdx if it's gone stale
+  // or out of range (e.g. a chord was deleted out from under an inspected/resting state).
+  if(analysisTabActive()) renderCurrentChordCircle();
 
   // --- Detail panel: renders whatever is currently selected (view-local state only) ---
   function renderDetail(){
@@ -8690,6 +9378,10 @@ function renderAnalysisTab(){
       timelineWrap.querySelectorAll('.an-block.an-selected, .an-connector.an-selected').forEach(x=>x.classList.remove('an-selected'));
       el.classList.add('an-selected');
       renderDetail();
+      // Current Chord Circle (Phase 1): a direct chord click also drives the circle,
+      // as an inspected (not sounding) chord — Section 5's "unify playback and inspection".
+      ccMode='inspected'; ccSeqIdx=idx;
+      if(analysisTabActive()) renderCurrentChordCircle();
     };
     el.addEventListener('click',activate);
     el.addEventListener('keydown',(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); activate(); } });
@@ -12512,6 +13204,8 @@ function renderKeyboardPanel(voicings){
   const i=effectiveKeyboardIndex();
   if(i===null){
     kbWindowStartC=null;kbWindowEndB=null;kbLastActiveIndex=null;
+    const hdrInvEmpty=document.getElementById('vl-header-inv');
+    if(hdrInvEmpty) hdrInvEmpty.innerHTML='';
     return;
   }
   const s=seq[i],ch=lib[s.idx];
@@ -12529,6 +13223,19 @@ function renderKeyboardPanel(voicings){
   title.className='keyboard-panel-title';
   title.innerHTML=`Keyboard for chord ${i+1} · <strong>${keySpell(s.root,keyRoot,keyMode)} ${ch.n}</strong>. Click any note in the chord to add or remove it. Dimmed keys aren't in this chord.`;
   panel.appendChild(title);
+  if(stringArranger){
+    const partsRow=document.createElement('p');
+    partsRow.className='keyboard-panel-title';
+    partsRow.style.marginTop='-6px';
+    const sp=window._stringParts&&window._stringParts[i];
+    if(sp){
+      partsRow.innerHTML='String Arranger — '+STRING_PART_NAMES.map(p=>sp[p]!=null?`<span style="color:${stringPartColor(p)}">${STRING_PART_LABELS[p]} ${midiToNote(sp[p])}</span>`:`<span style="opacity:.4">${STRING_PART_LABELS[p]} —</span>`).join(' · ');
+    } else {
+      partsRow.style.opacity='.7';
+      partsRow.textContent='String Arranger — this chord is unmanaged (hand-edited or imported): shown verbatim, no part identity.';
+    }
+    panel.appendChild(partsRow);
+  }
 
   const mvImported=mvSet&&s.voicingSource==='import';
   const status=document.createElement('p');
@@ -12594,20 +13301,31 @@ function renderKeyboardPanel(voicings){
   // what's actually audible, not just what's in the chord. Falls back to the original plain
   // amber (via the CSS custom property's fallback) for the rare case a slot can't resolve.
   const isSoundingNow=isPlaying&&activeChordIndex===i;
-  const soundingVoiceColor=new Map(); // note -> VOICE_COLORS[slot], only for notes really audible
+  const soundingVoiceColor=new Map(); // note -> color, only for notes really audible
+  // String Arranger mode (additive, mode-gated): color by fixed part identity instead of
+  // dynamic voice-thread slot, when this chord is under arranger management.
+  const stringPartColorForNote=new Map();
+  if(stringArranger && window._stringParts && window._stringParts[i]){
+    const parts=window._stringParts[i];
+    STRING_PART_NAMES.forEach(p=>{ if(parts[p]!=null) stringPartColorForNote.set(parts[p], stringPartColor(p)); });
+  }
   if(isSoundingNow){
-    const kbChordIdxs=[]; (voicings||[]).forEach((vv,vi)=>{ if(vv&&!isMarker(seq[vi])) kbChordIdxs.push(vi); });
-    const col=kbChordIdxs.indexOf(i);
-    if(col!==-1){
-      const kbChordVoicings=kbChordIdxs.map(vi=>voicings[vi]);
-      const kbStats=computeVLStats(kbChordVoicings,vlNorm);
-      const {slotOfNoteAt}=computeVoiceThreads(kbChordVoicings,kbStats);
-      computed.forEach(n=>{
-        const slot=slotOfNoteAt[col].get(n);
-        if(slot===undefined) return;
-        if(voiceSolo.size>0 && !voiceSolo.has(slot)) return; // resting under solo — stays dark
-        soundingVoiceColor.set(n,VOICE_COLORS[slot]);
-      });
+    if(stringArranger && stringPartColorForNote.size){
+      computed.forEach(n=>{ if(stringPartColorForNote.has(n)) soundingVoiceColor.set(n, stringPartColorForNote.get(n)); });
+    } else {
+      const kbChordIdxs=[]; (voicings||[]).forEach((vv,vi)=>{ if(vv&&!isMarker(seq[vi])) kbChordIdxs.push(vi); });
+      const col=kbChordIdxs.indexOf(i);
+      if(col!==-1){
+        const kbChordVoicings=kbChordIdxs.map(vi=>voicings[vi]);
+        const kbStats=computeVLStats(kbChordVoicings,vlNorm);
+        const {slotOfNoteAt}=computeVoiceThreads(kbChordVoicings,kbStats);
+        computed.forEach(n=>{
+          const slot=slotOfNoteAt[col].get(n);
+          if(slot===undefined) return;
+          if(voiceSolo.size>0 && !voiceSolo.has(slot)) return; // resting under solo — stays dark
+          soundingVoiceColor.set(n,VOICE_COLORS[slot]);
+        });
+      }
     }
   }
 
@@ -12686,6 +13404,10 @@ function renderKeyboardPanel(voicings){
   // the same chord (Ricky's request). Shares buildInvOptionsRow with the standalone
   // Inversion panel, so behavior (including "Manual" replacing "Auto" and an inversion
   // click clearing manual voicing) stays identical in both places.
+  // v110: Inversion moved out of this panel into the Voice Leading header row, next to
+  // Notes/Flow and the solo buttons (Ricky's mockup) -- same buildInvOptionsRow output,
+  // same per-chord (s,ch) behavior, only relocated. Cleared and rebuilt here every render
+  // so it always reflects the chord this keyboard panel (i) is currently showing.
   const invRow=document.createElement('div');
   invRow.className='keyboard-inv-row';
   const invRowLabel=document.createElement('p');
@@ -12693,7 +13415,33 @@ function renderKeyboardPanel(voicings){
   invRowLabel.textContent='Inversion';
   invRow.appendChild(invRowLabel);
   invRow.appendChild(buildInvOptionsRow(s,ch));
-  panel.appendChild(invRow);
+  const hdrInv=document.getElementById('vl-header-inv');
+  if(hdrInv){ hdrInv.innerHTML=''; hdrInv.appendChild(invRow); }
+
+  // Circle of fifths chord indicator (Ricky's request): another place to check a chord's
+  // shape on the circle of fifths while monitoring the keyboard and Notes/Flow, without
+  // switching to Full Theory. Reuses ccChordData/ccRenderSvg directly -- the exact same
+  // chord-tone, spelling, and SVG-geometry authority Full Theory's own circle uses, not a
+  // second implementation. Deliberately NOT wired through ccMode/ccSeqIdx/
+  // renderCurrentChordCircle: those track Full Theory's own inspected/sounding selection,
+  // which can legitimately differ from the chord this keyboard panel is showing (i), so
+  // sharing that state would make the two tabs fight over it. This is a plain, stateless
+  // read of chord i's data, recomputed every time renderKeyboardPanel runs -- already
+  // re-invoked on every relevant redraw (chord click, playback step, inversion change,
+  // manual-voicing edit), so this circle stays live with no new hook or render loop.
+  // v110: now the keyboard panel's full width (Inversion moved above), so it's centered
+  // rather than squeezed into a narrow side-by-side column.
+  const ccWrap=document.createElement('div');
+  ccWrap.className='keyboard-cc-wrap';
+  const ccData=ccChordData(i);
+  if(ccData){
+    ccWrap.innerHTML=`
+      <p class="keyboard-cc-label">Circle of fifths</p>
+      <div class="cc-head"><span class="cc-chordname">${esc(ccData.label)}</span></div>
+      <svg class="cc-svg" viewBox="0 0 340 340" role="img" aria-label="Circle of fifths showing ${esc(ccData.label)}'s chord tones">${ccRenderSvg(ccData,ccData.tones,ccData.bass)}</svg>
+    `;
+  }
+  panel.appendChild(ccWrap);
 
   keyboardpanel.appendChild(panel);
 }
@@ -12841,7 +13589,7 @@ function renderInfo(voicings){
   info.innerHTML=`<p class="info-chord">${label}<span class="notes">${notes}</span></p><p class="info-body">${move}${dn}${mn}${invn}${bn}${mln}${cvn}</p>`;
 }
 
-function renderAll(){if(isPlaying)stopPlayback();buildRoots();renderDiatonicList();renderSecDoms();renderBorrowedModes();renderBorrowedChords();renderDots();renderPath();const v=voicingsForSeq();renderStrip(v);renderInvPanel(v);renderMelodyPanel(v);renderRoll(v);renderNotesRoll(v);renderVoiceSoloRow(v);renderKeyboardPanel(v);renderInfo(v);renderSessionOverview();window._voicings=v;renderSuggestions(v);renderVLMetrics();renderMarkerEditor();renderRhythmTab();renderLinesRoll();renderAnalysisTab();pushHistory();if(window.cylSync)window.cylSync();}
+function renderAll(){if(isPlaying)stopPlayback();buildRoots();renderDiatonicList();renderSecDoms();renderBorrowedModes();renderBorrowedChords();renderDots();renderPath();const v=getActiveVoicings();renderStrip(v);renderInvPanel(v);renderMelodyPanel(v);renderRoll(v);renderNotesRoll(v);renderVoiceSoloRow(v);renderKeyboardPanel(v);renderInfo(v);renderSessionOverview();window._voicings=v;renderSuggestions(v);renderVLMetrics();renderMarkerEditor();renderRhythmTab();renderLinesRoll();renderAnalysisTab();pushHistory();if(window.cylSync)window.cylSync();}
 
 // --- Undo/redo history: snapshots of seq as JSON strings, with a pointer ---
 // pushHistory() runs at the end of renderAll (and once directly from the
@@ -14216,6 +14964,7 @@ function stopPlayback(){
   // inside clearPlaybackHighlights() above, which fires on every chord transition too and
   // keeps its existing, unrelated meaning (pulse/ring reset) unchanged.
   if(window.cylOnPlaybackStopped) window.cylOnPlaybackStopped();
+  anOnPlaybackStopped();
   // The panel's own fallback (first chord, when nothing's explicitly selected) means it
   // can have something showing even with activeKeyboardIndex still null, so refresh it
   // unconditionally to clear any leftover "now playing" key glow.
@@ -14381,6 +15130,7 @@ function highlightChord(idx){
   // Cylinder view (if built) subscribes to this transport-timed highlight to launch its
   // traveling pulse + arrival ring. Read-only subscriber — no scheduling logic touched here.
   if(window.cylOnChordPlay) window.cylOnChordPlay(idx);
+  anOnChordPlay(idx);
 }
 
 // Item 17 — "play from here": startIndex is the seq index to begin playback at (a real
@@ -14458,7 +15208,7 @@ function playProgression(startIndex){
     // signal the Cylinder label feature needs to know a chord has stopped sounding (e.g. a
     // rest before the next onset) — nothing here changes audio playback or timing itself.
     Tone.Transport.schedule(time=>{
-      Tone.Draw.schedule(()=>{ if(window.cylOnChordStop) window.cylOnChordStop(i); },time);
+      Tone.Draw.schedule(()=>{ if(window.cylOnChordStop) window.cylOnChordStop(i); anOnChordStop(i); },time);
     },noteTime+durSec);
   });
 
@@ -14513,6 +15263,7 @@ function playProgression(startIndex){
         // button, so reaching the end of the progression on its own also brings back every
         // progression-instance label rather than leaving the last one isolated.
         if(window.cylOnPlaybackStopped) window.cylOnPlaybackStopped();
+        anOnPlaybackStopped();
       },time);
     }
   },cumTime);
@@ -14721,7 +15472,7 @@ updateGlobalDurModButtons();
 // undo snapshot (pref changes aren't progression edits). The map/related lists don't depend
 // on voicing, so they're left untouched.
 function refreshVoicings(){
-  const v=voicingsForSeq();
+  const v=getActiveVoicings();
   window._voicings=v;
   renderStrip(v); renderInvPanel(v); renderRoll(v); renderInfo(v);
   renderVLMetrics(); renderSessionOverview(); updateVoicingNote();
@@ -14747,6 +15498,8 @@ function updateVoicingNote(){
   if(spreadSel) spreadSel.onchange=function(){maxSpread=this.value;refreshVoicings();};
   if(pcvlChk) pcvlChk.onchange=function(){preferCloseVL=this.checked;refreshVoicings();};
   if(craftChk){ craftChk.checked=craftVoiceLeading; craftChk.onchange=function(){craftVoiceLeading=this.checked;refreshVoicings();}; }
+  const stringArrangerChk=document.getElementById('string-arranger-mode');
+  if(stringArrangerChk){ stringArrangerChk.checked=stringArranger; stringArrangerChk.onchange=function(){stringArranger=this.checked;refreshVoicings();}; }
   updateVoicingNote();
 })();
 
@@ -14764,7 +15517,9 @@ function updateVoicingNote(){
 function saveState(){
   if(!seq.length){ alert('Nothing to save — add some chords first.'); return; }
   const state={
-    version:15, // .chordspace.json SAVE-SCHEMA version — independent of APP_VERSION above; do not conflate
+    version:16, // .chordspace.json SAVE-SCHEMA version — independent of APP_VERSION above; do not conflate
+    // v16 (String Arranger Phase 1): adds the boolean stringArranger mode flag. Absent/old
+    // files default to false (Close/Open/Spread behavior, byte-identical to pre-feature saves).
     // v14 (Block 3 Phase 1): chords store durUnits (integer grid units) instead of the dur
     // notation string; markers now carry their own startUnit. Old files migrate on load.
     // v15 (item 100): adds an optional per-chord manualVoicingChordKey — the idx+root the
@@ -14777,7 +15532,7 @@ function saveState(){
     sessionName, // v12: free-text session label; empty string = untitled, same as before this field existed
     keyRoot, keyMode, currentRoot, mode, bpm, globalDur,
     voicingStyle, voiceRange, maxSpread, preferCloseVL, craftVoiceLeading, loopEnabled, swingAmount,
-    voicingOctaveOffset,
+    voicingOctaveOffset, stringArranger,
     timeSignature, // v8: starting meter, {num,den}
     gridLengthUnits, // v10: fixed Rhythm-tab grid length in grid units, or null = auto-size
     // v6: seq may contain key markers ({marker,keyRoot,keyMode}) interleaved with chords.
@@ -14872,6 +15627,8 @@ function loadState(file){
       preferCloseVL=(typeof state.preferCloseVL==='boolean')?state.preferCloseVL:true;
       // Item 24: absent field = any pre-item-24 save = OFF, so that file sounds exactly as it did.
       craftVoiceLeading=(typeof state.craftVoiceLeading==='boolean')?state.craftVoiceLeading:false;
+      // v16: safe false default for any file saved before this feature existed.
+      stringArranger=(typeof state.stringArranger==='boolean')?state.stringArranger:false;
       loopEnabled=(typeof state.loopEnabled==='boolean')?state.loopEnabled:false;
       // Item 4: absent field = any pre-item-4 save = 0% (straight), so that file plays
       // back with exactly the timing it always had.
@@ -15004,6 +15761,7 @@ function loadState(file){
       document.getElementById('global-dur').value=durBaseKey(globalDur);
       if(typeof updateGlobalDurModButtons==='function') updateGlobalDurModButtons();
       const styleSel=document.getElementById('voicing-style'); if(styleSel) styleSel.value=voicingStyle;
+      const stringArrangerChkLoad=document.getElementById('string-arranger-mode'); if(stringArrangerChkLoad) stringArrangerChkLoad.checked=stringArranger;
       const rangeSel=document.getElementById('voice-range'); if(rangeSel) rangeSel.value=voiceRange;
       const spreadSel=document.getElementById('max-spread'); if(spreadSel) spreadSel.value=maxSpread;
       const pcvlChk=document.getElementById('prefer-close-vl'); if(pcvlChk) pcvlChk.checked=preferCloseVL;
@@ -15776,6 +16534,16 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     else { if(window.cylOnHide) window.cylOnHide(); }
     // Full Theory's lower half is drawn only while visible (item 81), so draw it on arrival.
     if(name==='analysis' && window.renderAnalysisDoc){ try{ window.renderAnalysisDoc(); }catch(e){ console.error('analysis doc',e); } }
+    // Current Chord Circle (Phase 1): same "drawn only while visible" treatment as the line
+    // above, plus Section 5's arrival rule — if Transport is actively playing, sync to
+    // whatever's genuinely sounding right now rather than showing a stale inspected chord
+    // from before the tab was last hidden (its own hooks are no-ops while hidden).
+    if(name==='analysis' && window.renderCurrentChordCircle){
+      try{
+        if(typeof isPlaying!=='undefined' && isPlaying && typeof activeChordIndex!=='undefined' && activeChordIndex>=0){ ccMode='sounding'; ccSeqIdx=activeChordIndex; }
+        window.renderCurrentChordCircle();
+      }catch(e){ console.error('current chord circle',e); }
+    }
   }
   tabs.forEach(function(t){ t.addEventListener('click', function(){ activate(t.dataset.tab); }); });
   // Jumping to import from the transport should land you on the Session tab where the preview renders.
@@ -16727,12 +17495,11 @@ buildKeyRoots();buildModes();buildSuggModeSelect();populateSessionKeyControls();
     // until the first cylOnChordPlay call un-dims the actual starting chord.
     labelsDimmed=true;
     activeLabelSeqIdx=null;
-    // auto-frame-then-free: ease to a view that faces the bulk of the path, then release.
-    if(!sceneData.progression.length) return;
-    let sx=0, sy=0;
-    sceneData.progression.forEach(d=>{ const th=angleOf(d.root); sx+=Math.cos(th); sy+=Math.sin(th); });
-    const meanTh = Math.atan2(sy, sx);
-    target = { az: -Math.PI/2 - meanTh, el: DEF_EL, dist: DEF_DIST, fx:0, fy:0, fz:0 };
+    // Auto-frame-then-free camera move on play REMOVED per Ricky's request: the map should
+    // hold whatever position the user last left it in (rotation, tilt, zoom, focus) when
+    // playback starts, not ease to a computed framing. No `target` is set here anymore --
+    // `az`/`el`/`camDist`/`focus` are simply left alone. Reset view / Fit / the zoom buttons
+    // are completely untouched and still work exactly as before.
   };
   // Animated chord labels (Phase 1): new, additive hook — fired once per chord at the exact
   // moment that chord's own sound ends (see the new offset schedule call in playProgression,
